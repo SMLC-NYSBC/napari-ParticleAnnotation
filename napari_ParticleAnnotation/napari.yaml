@@ -4,10 +4,10 @@ contributions:
   commands:
     # Read/Write files
     - id: napari-ParticleAnnotation.import_data
-      python_name: napari_ParticleAnnotation.utils.import_data:napari_import_data
+      python_name: napari_ParticleAnnotation.utils._reader:get_reader
       title: Open micrograph
     - id: napari-ParticleAnnotation.write_to_file
-      python_name: napari_ParticleAnnotation.utils.export_data:napari_write_to_file
+      python_name: napari_ParticleAnnotation.utils.export_data:write_to_file
       title: Save annotation data
 
     # Widgets
