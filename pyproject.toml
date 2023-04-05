@@ -1,14 +1,16 @@
 [build-system]
-requires = ["setuptools", "wheel", "setuptools_scm"]
+requires = ["setuptools>42.0", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 
 [tool.setuptools_scm]
 write_to = "napari_ParticleAnnotation/_version.py"
 
-[tool.black]
-line-length = 120
-
 [tool.isort]
 profile = "black"
 line_length = 120
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
