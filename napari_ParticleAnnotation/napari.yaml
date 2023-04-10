@@ -4,7 +4,10 @@ contributions:
   commands:
     # Read/Write files
     - id: napari-ParticleAnnotation.import_data
-      python_name: napari_ParticleAnnotation.utils._reader:get_reader
+      python_name: napari_ParticleAnnotation.utils._reader:get_reader_img
+      title: Open micrograph
+    - id: napari-ParticleAnnotation.import_xyz
+      python_name: napari_ParticleAnnotation.utils._reader:get_reader_xyz
       title: Open micrograph
     - id: napari-ParticleAnnotation.write_to_file
       python_name: napari_ParticleAnnotation.utils.export_data:write_to_file
@@ -12,18 +15,24 @@ contributions:
 
     # Widgets
     - id: napari-ParticleAnnotation.general
-      python_name: napari_ParticleAnnotation._qt.general:SelectData
+      python_name: napari_ParticleAnnotation._qt.general:MultipleViewerWidget
       title: Select data & start annotation
 
   readers:
     - command: napari-ParticleAnnotation.import_data
       accepts_directories: False
-      filename_patterns: ['*.csv','*.npy','*.mrc','*.st','*.rec','*.tif','*.tiff', '*.am']
+      filename_patterns: ['*.mrc','*.st','*.rec','*.tif','*.tiff','*.am']
+    - command: napari-ParticleAnnotation.import_xyz
+      accepts_directories: False
+      filename_patterns: [ '*.csv','*.npy', '*.star']
+
   writers:
     - command: napari-ParticleAnnotation.write_to_file
       layer_types: ['points*', 'image*', 'shapes*']
       filename_extensions: ['.csv','.npy','.am']
+
   sample_data: []
+
   widgets:
     - command: napari-ParticleAnnotation.general
-      display_name: ParticleAnnotation
+      display_name: Particle_Annotation
