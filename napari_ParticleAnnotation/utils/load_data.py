@@ -1,50 +1,137 @@
+from typing import Union
+
 import numpy as np
 import mrcfile
+import tifffile.tifffile as tiff
 
 
 def load_image(path):
+    """
+    Load an image file from disk.
+
+    Args:
+        path: A string or sequence of strings representing the path(s) of the file(s) to read.
+
+    Returns:
+        A list of tuples, where each tuple contains the image data, additional keyword arguments, and the layer type.
+        If the image data is complex, two tuples will be returned for the amplitude and phase components.
+    """
     paths = [path] if isinstance(path, str) else path
-
-    add_kwargs = {}
-
-    # optional, default is "image"
-    layer_type = "image"
-
-    # load all files into array
     layer_data = []
     for _path in paths:
         # Read mrcfile as a memory mapped file
-        data = mrcfile.mmap(_path, permissive=True).data
+        if _path.endswith((".mrc", ".rec")):
+            data = mrcfile.mmap(_path, permissive=True).data
+        elif _path.endswith(".tif"):
+            data = tiff.imread(_path)
+        elif _path.endswith(".am"):
+            data = import_am(_path)
 
         # Append two layers if the data type is complex
-        if data.dtype in [np.complex64, np.complex128]:
-            layer_data.append((np.abs(data), {"name": "amplitude"}, layer_type))
-            layer_data.append((np.angle(data), {"name": "phase"}, layer_type))
+        if np.issubdtype(data.dtype, np.complexfloating):
+            layer_data.append((np.abs(data), {"name": "amplitude"}, "image"))
+            layer_data.append((np.angle(data), {"name": "phase"}, "image"))
         else:
-            layer_data.append((data, add_kwargs, layer_type))
-
+            layer_data.append((data, {}, "image"))
     return layer_data
 
 
 def load_xyz(path):
-    layer_type = "points"
-    add_kwargs = {}
+    """
+    Load an XYZ point cloud file from disk.
 
+    Args:
+        path: A string or sequence of strings representing the path(s) of the file(s) to read.
+
+    Returns:
+        A list of tuples, where each tuple contains the point cloud data, additional keyword arguments, and the layer type.
+    """
     paths = [path] if isinstance(path, str) else path
     layer_data = []
+    xyz = None
+
     for _path in paths:
         # Load Numpy
-        if path.endswith(".npy"):
-            xyz = np.load(path)
+        if _path.endswith(".npy"):
+            xyz = np.load(_path)
 
         # Load CSV
-        if path.endswith(".csv"):
-            xyz = np.genfromtxt(path, delimiter=",")
+        if _path.endswith(".csv"):
+            xyz = np.genfromtxt(_path, delimiter=",")
 
         # Load Star
-        if path.endswith(".star"):
-            xyz = None
+        if _path.endswith(".star"):
+            xyz = None  # TODO: implement support for Star format
 
-        assert xyz.ndim == 2 and xyz.shape[1] in [2, 3], "Need 2D or 3D point cloud!"
+        if isinstance(xyz[0, 0], str):
+            xyz = xyz[1:, :]
 
-        layer_data.append((xyz, add_kwargs, layer_type))
+        if xyz.shape[1] == 3:  # No labels
+            xyz_layer = np.zeros((len(xyz), 5))
+            xyz_layer[:, 2:] = xyz
+        elif xyz.shape[1] == 4:  # Labels
+            xyz_layer = np.zeros((len(xyz), 5))
+            xyz_layer[:, 1:] = xyz
+
+        layer_data.append((xyz_layer, {}, "points"))
+    return layer_data
+
+
+def import_am(am_file: str):
+    """
+    Function to load Amira binary image data.
+
+    Args:
+        am_file (str): Amira binary image .am file.
+
+    Returns:
+        np.ndarray, float, float, list: Image file as well images parameters.
+    """
+    am = open(am_file, "r", encoding="iso-8859-1").read(8000)
+
+    asci = False
+    if "AmiraMesh 3D ASCII" in am:
+        assert "define Lattice" in am
+        asci = True
+
+    size = [word for word in am.split("\n") if word.startswith("define Lattice ")][0][
+        15:
+    ].split(" ")
+
+    nx, ny, nz = int(size[0]), int(size[1]), int(size[2])
+
+    if "Lattice { byte Data }" in am:
+        if asci:
+            img = (
+                open("../../rand_sample/T216_grid3b.am", "r", encoding="iso-8859-1")
+                .read()
+                .split("\n")
+            )
+            img = [x for x in img if x != ""]
+            img = np.asarray(img)
+            return img
+        else:
+            img = np.fromfile(am_file, dtype=np.uint8)
+
+    elif "Lattice { sbyte Data }" in am:
+        img = np.fromfile(am_file, dtype=np.int8)
+        img = img + 128
+
+    binary_start = str.find(am, "\n@1\n") + 4
+    img = img[binary_start:-1]
+    if nz == 1:
+        if len(img) == ny * nx:
+            img = img.reshape((ny, nx))
+        else:
+            df_img = np.zeros((ny * nx), dtype=np.uint8)
+            df_img[: len(img)] = img
+            img = df_img.reshape((ny, nx))
+    else:
+        if len(img) == nz * ny * nx:
+            img = img.reshape((nz, ny, nx))
+        else:
+            df_img = np.zeros((nz * ny * nx), dtype=np.uint8)
+            df_img[: len(img)] = img
+            img = df_img.reshape((nz * ny * nx))
+
+    return img

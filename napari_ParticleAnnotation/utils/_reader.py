@@ -7,25 +7,42 @@ ReaderFunction = Callable[[PathOrPaths], List[LayerData]]
 
 
 def get_reader_img(path: PathOrPaths) -> Optional[ReaderFunction]:
+    """
+    Returns a function that can read image data from a file with the specified path.
+
+    Args:
+        path: A string or sequence of strings representing the path(s) of the file(s) to read.
+
+    Returns:
+        A function that can read image data from the specified file(s), or None if the file extension is not supported.
+    """
     if isinstance(path, list):
-        # reader plugins may be handed single path, or a list of paths.
-        # if it is a list, it is assumed to be an image stack...
-        # so we are only going to look at the first file.
+        # If the input is a list, assume it represents an image stack and look at the first file only.
         path = path[0]
 
-    # if we know we cannot read the file, we immediately return None.
-    extensions = ".mrc", ".mrcs", ".map"
+    # Check if the file extension is supported.
+    extensions = (".mrc", ".mrcs", ".map")
     if not path.endswith(extensions):
         return None
 
-    # otherwise we return the *function* that can read ``path``.
+    # Return the function that can read image data from the file.
     return load_image
 
 
 def get_reader_xyz(path: PathOrPaths) -> Optional[ReaderFunction]:
-    extensions = ".npy", ".csv", ".star"
+    """
+    Returns a function that can read XYZ data from a file with the specified path.
+
+    Args:
+        path: A string or sequence of strings representing the path(s) of the file(s) to read.
+
+    Returns:
+        A function that can read XYZ data from the specified file(s), or None if the file extension is not supported.
+    """
+    # Check if the file extension is supported.
+    extensions = (".npy", ".csv", ".star")
     if not path.endswith(extensions):
         return None
 
-    # otherwise we return the *function* that can read ``path``.
+    # Return the function that can read XYZ data from the file.
     return load_xyz
