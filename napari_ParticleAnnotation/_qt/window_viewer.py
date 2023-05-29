@@ -158,7 +158,11 @@ action_manager.register_action(
     keymapprovider=ViewerModel,
 )
 
-action_manager.bind_shortcut("napari:move_point", "C")
+action_manager.bind_shortcut("napari:move_point", "M")
+action_manager.bind_shortcut("napari:add_point", "W")
+action_manager.bind_shortcut("napari:add_positive", "A")
+action_manager.bind_shortcut("napari:add_negative", "D")
+action_manager.bind_shortcut("napari:remove", "S")
 
 
 class OwnPartial:
@@ -267,7 +271,7 @@ class AnnotationWidget(Container):
         self.component_selector.changed.connect(self._component_num_changed)
 
         self.zoom_factor = create_widget(
-            annotation=float, label="Zoom factor", value=10
+            annotation=float, label="Zoom factor", value=50
         )
         self.zoom_factor.changed.connect(self._component_num_changed)
 

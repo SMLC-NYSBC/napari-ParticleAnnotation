@@ -1,7 +1,16 @@
+# General Napari req
 napari>0.4.0
-
-numpy>=1.23.5
-packaging>=23.0
 qtpy>=2.3.1
 superqt>=0.4.1
+magicgui>=0.7.2
+vispy>=0.11.0
+
+# Image loading and processing
+numpy>=1.23.5
 mrcfile>=1.4.3
+tifffile>=2023.3.21
+scipy>=1.10.1
+
+# ML
+torch>=1.13.0
+topaz-em >=0.2.5
