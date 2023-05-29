@@ -1,10 +1,17 @@
 from enum import Enum
 from functools import partial
 import warnings
-from typing import Optional, Dict, Any
 
-from PartSegImage.image import minimal_dtype
-from magicgui.widgets import Container, HBox, SpinBox, create_widget
+import torch
+from magicgui.widgets import (
+    Container,
+    HBox,
+    SpinBox,
+    create_widget,
+    ComboBox,
+    PushButton,
+    LineEdit,
+)
 from napari import Viewer
 from vispy.geometry import Rect
 
@@ -26,6 +33,15 @@ from napari.utils.action_manager import action_manager
 from napari.utils.events.event import WarningEmitter
 from napari.utils.notifications import show_info
 
+from napari_ParticleAnnotation.utils.active_learning_model import BinaryLogisticRegression, init_model
+from napari_ParticleAnnotation.utils.load_data import downsample
+
+"""
+TODO: Add changing for the lables
+TODO: Synchronize view
+TODO: 
+
+"""
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
 
@@ -214,6 +230,22 @@ class AnnotationWidget(Container):
         super().__init__(layout="vertical")
         self.napari_viewer = napari_viewer
 
+        # Control Downsampling factor
+        options = [1, 2, 4, 8, 16]
+        self.sampling_layer = ComboBox(
+            name="Downsample_factor", value=options[0], choices=options
+        )
+        # self.sampling_layer.changed.connect(self._image_downasmple)
+
+        # Initialize model
+        self.l2 = LineEdit(name='L2', value='1.0')
+        self.pi = LineEdit(name='pi', value='0.01')
+        self.pi_weight = LineEdit(name='pi_weight', value='1000')
+        self.init_model = PushButton(name='Initialize Active Learning model')
+
+        self.init_model.clicked.connect(self._init_model)
+
+        # Control particle viewing
         self.points_layer = create_widget(annotation=Points, label="ROI", options={})
         self.points_layer.changed.connect(self._update_roi_info)
 
@@ -225,21 +257,59 @@ class AnnotationWidget(Container):
         )
         self.zoom_factor.changed.connect(self._component_num_changed)
 
-        layout = HBox(widgets=(self.component_selector,))
+        # Reset view
+        self.reset_view = PushButton(name="Reset View")
+        self.reset_view.clicked.connect(self._reset_view)
+
+        layout0 = HBox(widgets=(self.sampling_layer,))
+        layer_model = HBox(widgets=(
+            self.l2,
+            self.pi,
+            self.pi_weight,
+        ))
+        layer_init = HBox(widgets=(self.init_model,))
+        layout1 = HBox(widgets=(self.component_selector,))
         layout2 = HBox(
             widgets=(
                 self.points_layer,
                 self.zoom_factor,
+                self.reset_view,
             )
         )
-        self.insert(0, layout)
-        self.insert(1, layout2)
+        self.insert(0, layout0)
+        self.insert(1, layer_model)
+        self.insert(2, layer_init)
+        self.insert(3, layout1)
+        self.insert(4, layout2)
 
     def _update_roi_info(self):
         self._component_num_changed()
 
     def _component_num_changed(self):
         self._zoom()
+
+    def _reset_view(self):
+        self.napari_viewer.reset_view()
+
+    def _init_model(self):
+        # Retrieve active image
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        img = self.napari_viewer.layers[active_layer_name]
+
+        # Run some operation on the image data
+        img_process = downsample(img.data, factor=self.sampling_layer.value)
+        _min, _max = np.quantile(img_process.ravel(), [0.1, 0.9])
+        img.data = (img_process - (_max + _min) / 2) / (_max - _min)
+        self._reset_view()
+
+        x, y = init_model(img.data)
+        count = torch.zeros_like(y)
+
+        self.model = BinaryLogisticRegression(n_features=x.shape[1],
+                                              l2=float(self.l2.value),
+                                              pi=float(self.pi.value),
+                                              pi_weight=float(self.pi_weight.value))
+        self.model.fit(x, y.ravel(), weights=count.ravel())
 
     def _zoom(self):
         if self.napari_viewer.dims.ndisplay != 2:
@@ -248,26 +318,32 @@ class AnnotationWidget(Container):
         num = self.component_selector.value
         if num >= len(self.points_layer.value.data):
             num = len(self.points_layer.value.data) - 1
-        points = np.round(self.points_layer.value.data[num]).astype(np.int32)
-        points = np.where(points < 0, 0, points)
 
-        lower_bound = points - 1
-        lower_bound = np.where(lower_bound < 0, 0, lower_bound)
-        upper_bound = points + 1
-        upper_bound = np.where(upper_bound < 0, 0, upper_bound)
-        diff = upper_bound - lower_bound
-        frame = diff * (self.zoom_factor.value - 1)
+        points = self.points_layer.value.data
+        if len(points) > 0:
+            points = np.round(self.points_layer.value.data[num]).astype(np.int32)
+            points = np.where(points < 0, 0, points)
 
-        if self.napari_viewer.dims.ndisplay == 2:
-            rect = Rect(
-                pos=(lower_bound - frame)[-2:][::-1], size=(diff + 2 * frame)[-2:][::-1]
-            )
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", "Public access to Window.qt_viewer")
-                self.napari_viewer.window.qt_viewer.view.camera.set_state(
-                    {"rect": rect}
+            lower_bound = points - 1
+            lower_bound = np.where(lower_bound < 0, 0, lower_bound)
+            upper_bound = points + 1
+            upper_bound = np.where(upper_bound < 0, 0, upper_bound)
+            diff = upper_bound - lower_bound
+            frame = diff * (self.zoom_factor.value - 1)
+
+            if self.napari_viewer.dims.ndisplay == 2:
+                rect = Rect(
+                    pos=(lower_bound - frame)[-2:][::-1],
+                    size=(diff + 2 * frame)[-2:][::-1],
                 )
-        self._update_point(lower_bound, upper_bound)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", "Public access to Window.qt_viewer"
+                    )
+                    self.napari_viewer.window.qt_viewer.view.camera.set_state(
+                        {"rect": rect}
+                    )
+            self._update_point(lower_bound, upper_bound)
 
     def _update_point(self, lower_bound, upper_bound):
         point = (lower_bound + upper_bound) / 2
@@ -296,6 +372,10 @@ class MultipleViewerWidget(QSplitter):
             self.annotation_widget, name="Annotation", area="left"
         )
 
+        self.annotation_widget.reset_view.clicked.connect(self._reset_view)
+
+        self.viewer.camera.events.connect(self._sync_view)
+
         viewer_splitter = QSplitter()
         viewer_splitter.setOrientation(Qt.Vertical)
         viewer_splitter.addWidget(self.qt_viewer1)
@@ -311,6 +391,31 @@ class MultipleViewerWidget(QSplitter):
         self.viewer.layers.selection.events.active.connect(
             self._layer_selection_changed
         )
+
+    def _reset_view(self):
+        self.viewer_model1.reset_view()
+        self.viewer_model2.reset_view()
+
+    def _sync_view(self):
+        self.viewer_model1.camera.zoom = (
+            self.viewer_model2.camera.zoom
+        ) = self.viewer.camera.zoom
+
+        slice_dim = self.viewer.camera.center
+
+        self.viewer_model1.camera.center = (
+            self.viewer.camera.center[0],
+            self.viewer_model1.camera.center[1],
+            self.viewer.camera.center[2],
+        )
+        self.viewer_model1.dims.set_point(1, slice_dim[1])
+
+        self.viewer_model2.camera.center = (
+            self.viewer.camera.center[0],
+            self.viewer.camera.center[1],
+            self.viewer_model2.camera.center[2],
+        )
+        self.viewer_model2.dims.set_point(-1, slice_dim[2])
 
     def _layer_selection_changed(self, event):
         """

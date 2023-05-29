@@ -1,8 +1,51 @@
-from typing import Union
-
 import numpy as np
 import mrcfile
 import tifffile.tifffile as tiff
+
+
+def downsample(img, factor=8):
+    """Downsample 2d/3d array using fourier transform"""
+    if factor == 1:
+        return img
+
+    if len(img.shape) == 3:
+        z, y, x = img.shape
+    else:
+        y, x = img.shape
+        z = 1
+    y = int(y / factor)
+    x = int(x / factor)
+    shape = (y, x)
+
+    if z > 1:
+        f_img = np.zeros((z, y, x))
+        for i in range(z):
+            F = np.fft.rfft2(img[i, ...])
+
+            A = F[..., 0: y // 2, 0: x // 2 + 1]
+            B = F[..., -y // 2:, 0: x // 2 + 1]
+            F = np.concatenate([A, B], axis=0)
+
+            # scale the signal from downsampling
+            a = x * y
+            b = img[i, ...].shape[-2] * img[i, ...].shape[-1]
+            F *= a / b
+
+            f_img[i, ...] = np.fft.irfft2(F, s=shape)
+        return f_img.astype(img.dtype)
+    else:
+        F = np.fft.rfft2(img)
+
+        A = F[..., 0: y // 2, 0: x // 2 + 1]
+        B = F[..., -y // 2:, 0: x // 2 + 1]
+        F = np.concatenate([A, B], axis=0)
+
+        # scale the signal from downsampling
+        a = x * y
+        b = img.shape[-2] * img.shape[-1]
+        F *= a / b
+
+        return np.fft.irfft2(F, s=shape).astype(img.dtype)
 
 
 def load_image(path):
