@@ -11,6 +11,7 @@ from magicgui.widgets import (
     ComboBox,
     PushButton,
     LineEdit,
+    Label,
 )
 from napari import Viewer
 from vispy.geometry import Rect
@@ -33,13 +34,16 @@ from napari.utils.action_manager import action_manager
 from napari.utils.events.event import WarningEmitter
 from napari.utils.notifications import show_info
 
-from napari_ParticleAnnotation.utils.active_learning_model import BinaryLogisticRegression, init_model
+from napari_ParticleAnnotation.utils.active_learning_model import (
+    BinaryLogisticRegression,
+    init_model,
+)
 from napari_ParticleAnnotation.utils.load_data import downsample
 
 """
-TODO: Add changing for the lables
-TODO: Synchronize view
-TODO: 
+TODO: AL interaction
+TODO: Run model
+TODO: Find pick maxima
 
 """
 
@@ -233,17 +237,27 @@ class AnnotationWidget(Container):
         # Control Downsampling factor
         options = [1, 2, 4, 8, 16]
         self.sampling_layer = ComboBox(
-            name="Downsample_factor", value=options[0], choices=options
+            name="Downsample_factor", value=options[3], choices=options
         )
-        # self.sampling_layer.changed.connect(self._image_downasmple)
+        spacer1 = Label(value='------- Initialize Active learning model ------')
+        spacer2 = Label(value='----------- Iteratively train model -----------')
+        spacer3 = Label(value='------------ Visualize labels tool ------------')
 
         # Initialize model
-        self.l2 = LineEdit(name='L2', value='1.0')
-        self.pi = LineEdit(name='pi', value='0.01')
-        self.pi_weight = LineEdit(name='pi_weight', value='1000')
-        self.init_model = PushButton(name='Initialize Active Learning model')
+        self.l2 = LineEdit(name="L2", value="1.0")
+        self.pi = LineEdit(name="pi", value="0.01")
+        self.pi_weight = LineEdit(name="pi_weight", value="1000")
 
+        self.init_model = PushButton(name="Initialize Active Learning model")
         self.init_model.clicked.connect(self._init_model)
+
+        # AL Buttons
+        self.prev = PushButton(name='Preview')
+        self.prev.clicked.connect(self._preview)
+        self.refresh = PushButton(name='Retrain')
+        self.refresh.clicked.connect(self._refresh)
+        self.next = PushButton(name='Next')
+        self.next.clicked.connect(self._next)
 
         # Control particle viewing
         self.points_layer = create_widget(annotation=Points, label="ROI", options={})
@@ -262,25 +276,44 @@ class AnnotationWidget(Container):
         self.reset_view.clicked.connect(self._reset_view)
 
         layout0 = HBox(widgets=(self.sampling_layer,))
-        layer_model = HBox(widgets=(
-            self.l2,
-            self.pi,
-            self.pi_weight,
-        ))
+        layer_model = HBox(
+            widgets=(
+                self.l2,
+                self.pi,
+                self.pi_weight,
+            )
+        )
         layer_init = HBox(widgets=(self.init_model,))
-        layout1 = HBox(widgets=(self.component_selector,))
+        layer_train = HBox(widgets=(
+            self.prev,
+            self.refresh,
+            self.next,
+        ))
+        layout1 = HBox(widgets=(self.points_layer, self.component_selector,))
         layout2 = HBox(
             widgets=(
-                self.points_layer,
                 self.zoom_factor,
                 self.reset_view,
             )
         )
-        self.insert(0, layout0)
-        self.insert(1, layer_model)
-        self.insert(2, layer_init)
-        self.insert(3, layout1)
-        self.insert(4, layout2)
+        self.insert(0, spacer1)
+        self.insert(1, layout0)
+        self.insert(2, layer_model)
+        self.insert(3, layer_init)
+        self.insert(4, spacer2)
+        self.insert(5, layer_train)
+        self.insert(6, spacer3)
+        self.insert(7, layout1)
+        self.insert(8, layout2)
+
+    def _preview(self):
+        pass
+
+    def _refresh(self):
+        pass
+
+    def _next(self):
+        pass
 
     def _update_roi_info(self):
         self._component_num_changed()
@@ -300,15 +333,38 @@ class AnnotationWidget(Container):
         img_process = downsample(img.data, factor=self.sampling_layer.value)
         _min, _max = np.quantile(img_process.ravel(), [0.1, 0.9])
         img.data = (img_process - (_max + _min) / 2) / (_max - _min)
+
+        self.napari_viewer.layers[active_layer_name].contrast_limits = (
+            img.data.min(),
+            img.data.max(),
+        )
         self._reset_view()
+
+        self.napari_viewer.add_points(
+            name=f"{active_layer_name}_positive_label",
+            face_color="#00000000",
+            edge_color='green',
+            edge_width=0.5,
+            symbol='square',
+            size=40,
+        )
+        self.napari_viewer.add_points(
+            name=f"{active_layer_name}_negative_label",
+            face_color="#00000000",
+            edge_color='red',
+            edge_width=0.5,
+            symbol='square',
+            size=40,
+        )
 
         x, y = init_model(img.data)
         count = torch.zeros_like(y)
-
-        self.model = BinaryLogisticRegression(n_features=x.shape[1],
-                                              l2=float(self.l2.value),
-                                              pi=float(self.pi.value),
-                                              pi_weight=float(self.pi_weight.value))
+        self.model = BinaryLogisticRegression(
+            n_features=x.shape[1],
+            l2=float(self.l2.value),
+            pi=float(self.pi.value),
+            pi_weight=float(self.pi_weight.value),
+        )
         self.model.fit(x, y.ravel(), weights=count.ravel())
 
     def _zoom(self):

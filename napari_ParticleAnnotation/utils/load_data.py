@@ -22,8 +22,8 @@ def downsample(img, factor=8):
         for i in range(z):
             F = np.fft.rfft2(img[i, ...])
 
-            A = F[..., 0: y // 2, 0: x // 2 + 1]
-            B = F[..., -y // 2:, 0: x // 2 + 1]
+            A = F[..., 0 : y // 2, 0 : x // 2 + 1]
+            B = F[..., -y // 2 :, 0 : x // 2 + 1]
             F = np.concatenate([A, B], axis=0)
 
             # scale the signal from downsampling
@@ -36,8 +36,8 @@ def downsample(img, factor=8):
     else:
         F = np.fft.rfft2(img)
 
-        A = F[..., 0: y // 2, 0: x // 2 + 1]
-        B = F[..., -y // 2:, 0: x // 2 + 1]
+        A = F[..., 0 : y // 2, 0 : x // 2 + 1]
+        B = F[..., -y // 2 :, 0 : x // 2 + 1]
         F = np.concatenate([A, B], axis=0)
 
         # scale the signal from downsampling
