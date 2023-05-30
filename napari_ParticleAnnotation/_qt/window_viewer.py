@@ -3,6 +3,7 @@ from functools import partial
 import warnings
 
 import torch
+import torch.nn.functional as F
 from magicgui.widgets import (
     Container,
     HBox,
@@ -34,17 +35,22 @@ from napari.utils.action_manager import action_manager
 from napari.utils.events.event import WarningEmitter
 from napari.utils.notifications import show_info
 
-from napari_ParticleAnnotation.utils.active_learning_model import (
+from napari_ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
-    init_model,
+    initialize_model,
+    label_points_to_mask,
 )
 from napari_ParticleAnnotation.utils.load_data import downsample
+from napari_ParticleAnnotation.utils.model.utils import (
+    find_peaks,
+    set_proposals,
+    rank_candidate_locations,
+)
 
 """
 TODO: AL interaction
 TODO: Run model
 TODO: Find pick maxima
-
 """
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
@@ -237,37 +243,45 @@ class AnnotationWidget(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
         self.napari_viewer = napari_viewer
+        self.click_add_point_callback = None
 
         # Control Downsampling factor
         options = [1, 2, 4, 8, 16]
         self.sampling_layer = ComboBox(
             name="Downsample_factor", value=options[3], choices=options
         )
-        spacer1 = Label(value='------- Initialize Active learning model ------')
-        spacer2 = Label(value='----------- Iteratively train model -----------')
-        spacer3 = Label(value='------------ Visualize labels tool ------------')
+        spacer1 = Label(value="------- Initialize Active learning model ------")
+        spacer2 = Label(value="----------- Iteratively train model -----------")
+        spacer3 = Label(value="------------ Visualize labels tool ------------")
 
         # Initialize model
         self.l2 = LineEdit(name="L2", value="1.0")
         self.pi = LineEdit(name="pi", value="0.01")
         self.pi_weight = LineEdit(name="pi_weight", value="1000")
 
-        self.init_model = PushButton(name="Initialize Active Learning model")
-        self.init_model.clicked.connect(self._init_model)
+        self.init_mrc = PushButton(name="Initialize Active Learning model")
+        self.init_mrc.clicked.connect(self._init_mrc)
 
         # AL Buttons
-        self.prev = PushButton(name='Preview')
+        self.init_model = PushButton(name="Init. model")
+        self.init_model.clicked.connect(self._init_model)
+        self.predict = PushButton(name="Predict")
+        self.predict.clicked.connect(self._predict)
+        self.prev = PushButton(name="Preview")
         self.prev.clicked.connect(self._preview)
-        self.refresh = PushButton(name='Retrain')
+        self.refresh = PushButton(name="Retrain")
         self.refresh.clicked.connect(self._refresh)
-        self.next = PushButton(name='Next')
+        self.next = PushButton(name="Next")
         self.next.clicked.connect(self._next)
+
+        self.napari_viewer.bind_key("z", self._positive)
+        self.napari_viewer.bind_key("x", self._negative)
 
         # Control particle viewing
         self.points_layer = create_widget(annotation=Points, label="ROI", options={})
         self.points_layer.changed.connect(self._update_roi_info)
 
-        self.component_selector = SpinBox(name="Protein ID", min=0)
+        self.component_selector = SpinBox(name="Particle ID", min=0)
         self.component_selector.changed.connect(self._component_num_changed)
 
         self.zoom_factor = create_widget(
@@ -287,13 +301,21 @@ class AnnotationWidget(Container):
                 self.pi_weight,
             )
         )
-        layer_init = HBox(widgets=(self.init_model,))
-        layer_train = HBox(widgets=(
-            self.prev,
-            self.refresh,
-            self.next,
-        ))
-        layout1 = HBox(widgets=(self.points_layer, self.component_selector,))
+        layer_init = HBox(widgets=(self.init_mrc,))
+        layer_model1 = HBox(widgets=(self.init_model, self.predict))
+        layer_train = HBox(
+            widgets=(
+                self.prev,
+                self.refresh,
+                self.next,
+            )
+        )
+        layout1 = HBox(
+            widgets=(
+                self.points_layer,
+                self.component_selector,
+            )
+        )
         layout2 = HBox(
             widgets=(
                 self.zoom_factor,
@@ -305,22 +327,87 @@ class AnnotationWidget(Container):
         self.insert(2, layer_model)
         self.insert(3, layer_init)
         self.insert(4, spacer2)
-        self.insert(5, layer_train)
-        self.insert(6, spacer3)
-        self.insert(7, layout1)
-        self.insert(8, layout2)
+        self.insert(5, layer_model1)
+        self.insert(6, layer_train)
+        self.insert(7, spacer3)
+        self.insert(8, layout1)
+        self.insert(9, layout2)
+
+    def _predict(self):
+        pass
 
     def _preview(self):
         pass
 
     def _refresh(self):
-        pass
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+
+        # Retrive points labels
+        try:
+            labels = points_layer.properties["label"]
+            data = np.asarray(points_layer.data)
+            data = np.array(
+                (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
+            ).T
+        except:
+            data = []
+
+        self.y = label_points_to_mask(data, self.shape)
+        self.count = (~torch.isnan(self.y)).float()
+        self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+
+        self.cur_proposal_index, self.proposals = rank_candidate_locations(
+            self.model, self.x, self.shape, self.proposals
+        )
+        print(self.proposals[self.cur_proposal_index])
+        self.add_point(self.proposals[self.cur_proposal_index])
+
+    def _init_model(self):
+        self.disable_click_add_point(self.napari_viewer)
+
+        self.cur_proposal_index, self.proposals = 0, []
+
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+
+        # Retrive points labels
+        try:
+            labels = points_layer.properties["label"]
+            data = np.asarray(points_layer.data)
+            data = np.array(
+                (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
+            ).T
+        except:
+            data = []
+
+        # update y and count
+        self.y = label_points_to_mask(data, self.shape)
+        self.count = torch.where(
+            ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
+        )
+
+        self.model = BinaryLogisticRegression(
+            n_features=self.x.shape[1],
+            l2=float(self.l2.value),
+            pi=float(self.pi.value),
+            pi_weight=float(self.pi_weight.value),
+        )
+        self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+
+        self.cur_proposal_index, self.proposals = rank_candidate_locations(
+            self.model, self.x, self.shape, self.proposals
+        )
+        self.activate_click = False
+        self.add_point(self.proposals[self.cur_proposal_index])
+        self.component_selector.value = len(data) + 1
 
     def _next(self):
         pass
 
     def _update_roi_info(self):
-        self._component_num_changed()
+        if not self.activate_click:
+            self._component_num_changed()
 
     def _component_num_changed(self):
         self._zoom()
@@ -328,13 +415,18 @@ class AnnotationWidget(Container):
     def _reset_view(self):
         self.napari_viewer.reset_view()
 
-    def _init_model(self):
+    def _init_mrc(self):
+        self.activate_click = True
+        self.proposals = []
+        self.cur_proposal_index = 0
+
         # Retrieve active image
         active_layer_name = self.napari_viewer.layers.selection.active.name
         img = self.napari_viewer.layers[active_layer_name]
 
         # Run some operation on the image data
         img_process = downsample(img.data, factor=self.sampling_layer.value)
+        self.shape = img_process.shape
         _min, _max = np.quantile(img_process.ravel(), [0.1, 0.9])
         img.data = (img_process - (_max + _min) / 2) / (_max - _min)
 
@@ -344,32 +436,161 @@ class AnnotationWidget(Container):
         )
         self._reset_view()
 
+        self.x, _ = initialize_model(img.data)
+
+        self.activate_click = True
+        self.setup_click_add_point(self.napari_viewer)
+
+    def setup_click_add_point(self, viewer):
+        active_layer_name = viewer.layers.selection.active.name
+        if active_layer_name.endswith('label'):
+            active_layer_name = active_layer_name[:-6]
+
+        def click_add_point(viewer, event):
+            # Get the coordinates of the clicked point
+            coord = event.position
+
+            # Set the label id depending on which button was clicked
+            if event.button == 1:
+                # Left button clicked, set label id to 1
+                label = True
+            elif event.button == 2:
+                # Right button clicked, set label id to 0
+                label = False
+            else:
+                label = None
+
+            if label is not None:
+                try:
+                    points_layer = self.napari_viewer.layers[
+                        f"{active_layer_name}_label"
+                    ]
+                    if not isinstance(points_layer, Points):
+                        raise ValueError("Expected a Points layer")
+
+                    # Add the clicked point to the points layer and add label
+                    points_layer.add(coord)
+                    points_layer.properties["label"][-1] = label
+                    coord = points_layer.data
+                    label = points_layer.properties["label"]
+
+                    viewer.layers.remove(f"{active_layer_name}_label")
+                    self.napari_viewer.add_points(
+                        coord,
+                        name=f"{active_layer_name}_label",
+                        face_color="#00000000",
+                        properties={"label": np.array(label)},
+                        edge_color="label",
+                        edge_color_cycle=["red", "green", 'black'],
+                        edge_width=0.1,
+                        symbol="square",
+                        size=40,
+                    )
+                except:
+                    self.napari_viewer.add_points(
+                        [coord],
+                        name=f"{active_layer_name}_label",
+                        face_color="#00000000",
+                        properties={"label": np.array([label])},
+                        edge_color="label",
+                        edge_color_cycle=["red", "green", 'black'],
+                        edge_width=0.1,
+                        symbol="square",
+                        size=40,
+                    )
+                self._reset_view()
+
+        # Store the callback in an instance variable
+        self.click_add_point_callback = click_add_point
+
+        # Add the callback to the viewer
+        viewer.mouse_drag_callbacks.append(self.click_add_point_callback)
+
+    def disable_click_add_point(self, viewer):
+        # Check if the callback has been added before
+        if self.click_add_point_callback in viewer.mouse_drag_callbacks:
+            # Remove the callback from the viewer
+            viewer.mouse_drag_callbacks.remove(self.click_add_point_callback)
+
+    def add_point(self, coord):
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+
+        try:
+            points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+            points_layer.add(coord)
+            coord = points_layer.data
+            points_layer.properties["label"][-1] = 2
+            label = points_layer.properties["label"]
+
+            self.napari_viewer.layers.remove(f"{active_layer_name}")
+            self.napari_viewer.add_points(
+                coord,
+                name=f"{active_layer_name}_label",
+                face_color="#00000000",
+                properties={"label": np.array(label)},
+                edge_color="label",
+                edge_color_cycle=["red", "green", 'black'],
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
+        except:
+            self.napari_viewer.add_points(
+                [coord],
+                name=f"{active_layer_name}",
+                face_color="#00000000",
+                properties={"label": np.array([2])},
+                edge_color="label",
+                edge_color_cycle=["red", "green", 'black'],
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
+
+    def update_last_label(self, label_id):
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+
+        coord = points_layer.data
+        label = points_layer.properties["label"]
+        points_layer.properties["label"][-1] = label_id
+
+        self.napari_viewer.layers.remove(f"{active_layer_name}")
         self.napari_viewer.add_points(
-            name=f"{active_layer_name}_positive_label",
+            coord,
+            name=f"{active_layer_name}_label",
             face_color="#00000000",
-            edge_color='green',
-            edge_width=0.5,
-            symbol='square',
-            size=40,
-        )
-        self.napari_viewer.add_points(
-            name=f"{active_layer_name}_negative_label",
-            face_color="#00000000",
-            edge_color='red',
-            edge_width=0.5,
-            symbol='square',
+            properties={"label": np.array(label)},
+            edge_color="label",
+            edge_color_cycle=["red", "green", 'black'],
+            edge_width=0.1,
+            symbol="square",
             size=40,
         )
 
-        x, y = init_model(img.data)
-        count = torch.zeros_like(y)
-        self.model = BinaryLogisticRegression(
-            n_features=x.shape[1],
-            l2=float(self.l2.value),
-            pi=float(self.pi.value),
-            pi_weight=float(self.pi_weight.value),
-        )
-        self.model.fit(x, y.ravel(), weights=count.ravel())
+    def _positive(self, viewer):
+        # Update label
+        self.update_last_label(1)
+
+        # Update model and draw new suggestion
+        self._refresh()
+
+    def _negative(self, viewer):
+        # Update label
+        # Retrain and draw new one
+        self.update_last_label(0)
+
+        # Update model and draw new suggestion
+        self._refresh()
+
+    def _update_point(self, lower_bound, upper_bound):
+        point = (lower_bound + upper_bound) / 2
+        current_point = self.napari_viewer.dims.point[-len(lower_bound) :]
+        dims = len(lower_bound) - self.napari_viewer.dims.ndisplay
+        start_dims = self.napari_viewer.dims.ndim - len(lower_bound)
+        for i in range(dims):
+            if not (lower_bound[i] <= current_point[i] <= upper_bound[i]):
+                self.napari_viewer.dims.set_point(start_dims + i, point[i])
 
     def _zoom(self):
         if self.napari_viewer.dims.ndisplay != 2:
@@ -404,15 +625,6 @@ class AnnotationWidget(Container):
                         {"rect": rect}
                     )
             self._update_point(lower_bound, upper_bound)
-
-    def _update_point(self, lower_bound, upper_bound):
-        point = (lower_bound + upper_bound) / 2
-        current_point = self.napari_viewer.dims.point[-len(lower_bound) :]
-        dims = len(lower_bound) - self.napari_viewer.dims.ndisplay
-        start_dims = self.napari_viewer.dims.ndim - len(lower_bound)
-        for i in range(dims):
-            if not (lower_bound[i] <= current_point[i] <= upper_bound[i]):
-                self.napari_viewer.dims.set_point(start_dims + i, point[i])
 
 
 class MultipleViewerWidget(QSplitter):

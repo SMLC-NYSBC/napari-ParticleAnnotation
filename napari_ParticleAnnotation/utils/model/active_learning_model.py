@@ -39,12 +39,13 @@ def fill_label_region(y, ci, cj, label):
 
 def label_points_to_mask(points, shape):
     y = torch.zeros(*shape) + np.nan
+
     for i, j, label in points:
         fill_label_region(y, i, j, label)
     return y
 
 
-def init_model(mrc):
+def initialize_model(mrc):
     model = load_model("resnet16")
     model = model.features
     model.fill()
@@ -57,8 +58,9 @@ def init_model(mrc):
     x = filter_values.transpose([1, 2, 0])
     x = x.reshape(-1, x.shape[-1])
     x = torch.from_numpy(x).float()
+    y = torch.zeros(len(x)) + np.nan
 
-    return x, label_points_to_mask([], mrc.shape)
+    return x, y
 
 
 class BinaryLogisticRegression:
