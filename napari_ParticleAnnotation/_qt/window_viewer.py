@@ -3,7 +3,6 @@ from functools import partial
 import warnings
 
 import torch
-import torch.nn.functional as F
 from magicgui.widgets import (
     Container,
     HBox,
@@ -27,7 +26,7 @@ from qtpy.QtWidgets import QSplitter
 from packaging.version import parse as parse_version
 
 import napari
-
+from scipy.ndimage import maximum_filter
 from napari.components.viewer_model import ViewerModel
 from napari.layers import Image, Points, Layer
 from napari.qt import QtViewer
@@ -42,8 +41,6 @@ from napari_ParticleAnnotation.utils.model.active_learning_model import (
 )
 from napari_ParticleAnnotation.utils.load_data import downsample
 from napari_ParticleAnnotation.utils.model.utils import (
-    find_peaks,
-    set_proposals,
     rank_candidate_locations,
 )
 
@@ -242,7 +239,7 @@ class QtViewerWrap(QtViewer):
 class AnnotationWidget(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
-        self.color_map_specified = {0: 'red', 1: 'green', 3: 'black'}
+        self.color_map_specified = {0: "red", 1: "green", 2: "black"}
         self.napari_viewer = napari_viewer
         self.click_add_point_callback = None
 
@@ -286,7 +283,7 @@ class AnnotationWidget(Container):
         self.component_selector.changed.connect(self._component_num_changed)
 
         self.zoom_factor = create_widget(
-            annotation=float, label="Zoom factor", value=50
+            annotation=float, label="Zoom factor", value=100
         )
         self.zoom_factor.changed.connect(self._component_num_changed)
 
@@ -342,6 +339,9 @@ class AnnotationWidget(Container):
         data = np.asarray(points_layer.data)
         data = np.array((data[:, 0], data[:, 1], np.array(labels).astype(np.int8))).T
 
+        if data[-1, 2] == 2:
+            data = data[:-1, :]
+
         self.y = label_points_to_mask(data, self.shape)
         self.count = (~torch.isnan(self.y)).float()
 
@@ -350,28 +350,27 @@ class AnnotationWidget(Container):
 
         with torch.no_grad():
             logits = model_pred(self.x).reshape(*self.shape)
+            p = torch.sigmoid(logits)
         logits = logits.numpy()
-
-        from scipy.ndimage import maximum_filter
 
         max_filter = maximum_filter(logits, size=15)
         peaks = logits - max_filter
         peaks = np.where(peaks == 0)
         peaks = np.stack(peaks, axis=-1)
-        peak_logits = logits[peaks[:, 0], peaks[:, 1]]
+        peak_logits = p[peaks[:, 0], peaks[:, 1]]
 
-        order = np.argsort(-peak_logits.ravel())
+        # order = np.argsort(-peak_logits.ravel())
 
         self.napari_viewer.add_points(
-            [order],
-            name=f"{active_layer_name}",
+            peaks,
+            name=f"{active_layer_name}_predict",
             properties={"confidence": peak_logits},
             edge_color="black",
             face_color="confidence",
             face_colormap="viridis",
             edge_width=0.1,
-            symbol="square",
-            size=40,
+            symbol="disc",
+            size=5,
         )
 
     def _preview(self):
@@ -398,8 +397,9 @@ class AnnotationWidget(Container):
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
             self.model, self.x, self.shape, self.proposals
         )
-        print(self.proposals[self.cur_proposal_index])
+
         self.add_point(self.proposals[self.cur_proposal_index])
+        self.component_selector.value = len(data) + 1
 
     def _init_model(self):
         self.disable_click_add_point(self.napari_viewer)
@@ -481,8 +481,6 @@ class AnnotationWidget(Container):
 
     def setup_click_add_point(self, viewer):
         active_layer_name = viewer.layers.selection.active.name
-        if active_layer_name.endswith("label"):
-            active_layer_name = active_layer_name[:-6]
 
         def click_add_point(viewer, event):
             # Get the coordinates of the clicked point
@@ -563,7 +561,7 @@ class AnnotationWidget(Container):
             self.napari_viewer.layers.remove(f"{active_layer_name}")
             self.napari_viewer.add_points(
                 coord,
-                name=f"{active_layer_name}_label",
+                name=f"{active_layer_name}",
                 face_color="#00000000",
                 properties={"label": np.array(label)},
                 edge_color="label",
@@ -596,7 +594,7 @@ class AnnotationWidget(Container):
         self.napari_viewer.layers.remove(f"{active_layer_name}")
         self.napari_viewer.add_points(
             coord,
-            name=f"{active_layer_name}_label",
+            name=f"{active_layer_name}",
             face_color="#00000000",
             properties={"label": np.array(label)},
             edge_color="label",
