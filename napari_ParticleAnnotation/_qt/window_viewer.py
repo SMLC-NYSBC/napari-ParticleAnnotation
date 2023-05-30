@@ -242,6 +242,7 @@ class QtViewerWrap(QtViewer):
 class AnnotationWidget(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
+        self.color_map_specified = {0: 'red', 1: 'green', 3: 'black'}
         self.napari_viewer = napari_viewer
         self.click_add_point_callback = None
 
@@ -334,7 +335,44 @@ class AnnotationWidget(Container):
         self.insert(9, layout2)
 
     def _predict(self):
-        pass
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+
+        labels = points_layer.properties["label"]
+        data = np.asarray(points_layer.data)
+        data = np.array((data[:, 0], data[:, 1], np.array(labels).astype(np.int8))).T
+
+        self.y = label_points_to_mask(data, self.shape)
+        self.count = (~torch.isnan(self.y)).float()
+
+        model_pred = BinaryLogisticRegression(self.x.shape[1], pi_weight=1000)
+        model_pred.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+
+        with torch.no_grad():
+            logits = model_pred(self.x).reshape(*self.shape)
+        logits = logits.numpy()
+
+        from scipy.ndimage import maximum_filter
+
+        max_filter = maximum_filter(logits, size=15)
+        peaks = logits - max_filter
+        peaks = np.where(peaks == 0)
+        peaks = np.stack(peaks, axis=-1)
+        peak_logits = logits[peaks[:, 0], peaks[:, 1]]
+
+        order = np.argsort(-peak_logits.ravel())
+
+        self.napari_viewer.add_points(
+            [order],
+            name=f"{active_layer_name}",
+            properties={"confidence": peak_logits},
+            edge_color="black",
+            face_color="confidence",
+            face_colormap="viridis",
+            edge_width=0.1,
+            symbol="square",
+            size=40,
+        )
 
     def _preview(self):
         pass
@@ -443,7 +481,7 @@ class AnnotationWidget(Container):
 
     def setup_click_add_point(self, viewer):
         active_layer_name = viewer.layers.selection.active.name
-        if active_layer_name.endswith('label'):
+        if active_layer_name.endswith("label"):
             active_layer_name = active_layer_name[:-6]
 
         def click_add_point(viewer, event):
@@ -453,10 +491,10 @@ class AnnotationWidget(Container):
             # Set the label id depending on which button was clicked
             if event.button == 1:
                 # Left button clicked, set label id to 1
-                label = True
+                label = 1
             elif event.button == 2:
                 # Right button clicked, set label id to 0
-                label = False
+                label = 0
             else:
                 label = None
 
@@ -481,7 +519,7 @@ class AnnotationWidget(Container):
                         face_color="#00000000",
                         properties={"label": np.array(label)},
                         edge_color="label",
-                        edge_color_cycle=["red", "green", 'black'],
+                        edge_color_cycle=self.color_map_specified,
                         edge_width=0.1,
                         symbol="square",
                         size=40,
@@ -491,9 +529,9 @@ class AnnotationWidget(Container):
                         [coord],
                         name=f"{active_layer_name}_label",
                         face_color="#00000000",
-                        properties={"label": np.array([label])},
+                        properties={"label": [label]},
                         edge_color="label",
-                        edge_color_cycle=["red", "green", 'black'],
+                        edge_color_cycle=self.color_map_specified,
                         edge_width=0.1,
                         symbol="square",
                         size=40,
@@ -529,7 +567,7 @@ class AnnotationWidget(Container):
                 face_color="#00000000",
                 properties={"label": np.array(label)},
                 edge_color="label",
-                edge_color_cycle=["red", "green", 'black'],
+                edge_color_cycle=self.color_map_specified,
                 edge_width=0.1,
                 symbol="square",
                 size=40,
@@ -541,7 +579,7 @@ class AnnotationWidget(Container):
                 face_color="#00000000",
                 properties={"label": np.array([2])},
                 edge_color="label",
-                edge_color_cycle=["red", "green", 'black'],
+                edge_color_cycle=self.color_map_specified,
                 edge_width=0.1,
                 symbol="square",
                 size=40,
@@ -562,7 +600,7 @@ class AnnotationWidget(Container):
             face_color="#00000000",
             properties={"label": np.array(label)},
             edge_color="label",
-            edge_color_cycle=["red", "green", 'black'],
+            edge_color_cycle=self.color_map_specified,
             edge_width=0.1,
             symbol="square",
             size=40,
