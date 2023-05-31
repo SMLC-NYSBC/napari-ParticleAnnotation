@@ -15,15 +15,15 @@ def find_peaks(score, size=size[0] / 3):
     return peaks
 
 
-def set_proposals(ordered, proposals):
+def set_proposals(ordered, proposals, id_=1):
     proposals.clear()
     proposals.extend(ordered)
-    cur_proposal_index = len(proposals) - 1
+    cur_proposal_index = len(proposals) - id_
 
     return cur_proposal_index, proposals
 
 
-def rank_candidate_locations(model, x, shape, proposals):
+def rank_candidate_locations(model, x, shape, proposals, id_=1):
     # rank the candidates by entropy - ask the user to label
     # the highest entropy location, which is where the model has the most uncertainty
     # about the label
@@ -40,6 +40,6 @@ def rank_candidate_locations(model, x, shape, proposals):
     order = np.argsort(peak_scores)
     ordered = peaks[order]
 
-    cur_proposal_index, proposals = set_proposals(ordered, proposals)
+    cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
 
     return cur_proposal_index, proposals

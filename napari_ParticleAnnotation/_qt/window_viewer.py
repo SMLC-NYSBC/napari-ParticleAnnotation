@@ -12,6 +12,7 @@ from magicgui.widgets import (
     PushButton,
     LineEdit,
     Label,
+    FloatSlider,
 )
 from napari import Viewer
 from vispy.geometry import Rect
@@ -242,6 +243,8 @@ class AnnotationWidget(Container):
         self.color_map_specified = {0: "red", 1: "green", 2: "black"}
         self.napari_viewer = napari_viewer
         self.click_add_point_callback = None
+        self.first_predict = True
+        self.particle = []
 
         # Control Downsampling factor
         options = [1, 2, 4, 8, 16]
@@ -265,8 +268,8 @@ class AnnotationWidget(Container):
         self.init_model.clicked.connect(self._init_model)
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
-        self.prev = PushButton(name="Preview")
-        self.prev.clicked.connect(self._preview)
+        self.prev = PushButton(name="Undo")
+        self.prev.clicked.connect(self._undo)
         self.refresh = PushButton(name="Retrain")
         self.refresh.clicked.connect(self._refresh)
         self.next = PushButton(name="Next")
@@ -274,6 +277,12 @@ class AnnotationWidget(Container):
 
         self.napari_viewer.bind_key("z", self._positive)
         self.napari_viewer.bind_key("x", self._negative)
+        self.slide_pred = FloatSlider(
+            name="Filter Particle",
+            min=0,
+            max=1,
+        )
+        self.slide_pred.changed.connect(self.filter_particle)
 
         # Control particle viewing
         self.points_layer = create_widget(annotation=Points, label="ROI", options={})
@@ -308,6 +317,7 @@ class AnnotationWidget(Container):
                 self.next,
             )
         )
+        layer_filter = HBox(widgets=(self.slide_pred,))
         layout1 = HBox(
             widgets=(
                 self.points_layer,
@@ -327,29 +337,34 @@ class AnnotationWidget(Container):
         self.insert(4, spacer2)
         self.insert(5, layer_model1)
         self.insert(6, layer_train)
-        self.insert(7, spacer3)
-        self.insert(8, layout1)
-        self.insert(9, layout2)
+        self.insert(7, layer_filter)
+        self.insert(8, spacer3)
+        self.insert(9, layout1)
+        self.insert(10, layout2)
 
     def _predict(self):
-        active_layer_name = self.napari_viewer.layers.selection.active.name
-        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+        if self.first_predict:
+            self.first_predict = True
+            active_layer_name = self.napari_viewer.layers.selection.active.name
+            points_layer = self.napari_viewer.layers["Labels"]
 
-        labels = points_layer.properties["label"]
-        data = np.asarray(points_layer.data)
-        data = np.array((data[:, 0], data[:, 1], np.array(labels).astype(np.int8))).T
+            labels = points_layer.properties["label"]
+            data = np.asarray(points_layer.data)
+            data = np.array(
+                (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
+            ).T
 
-        if data[-1, 2] == 2:
-            data = data[:-1, :]
+            if data[-1, 2] == 2:
+                data = data[:-1, :]
 
-        self.y = label_points_to_mask(data, self.shape)
-        self.count = (~torch.isnan(self.y)).float()
+            self.y = label_points_to_mask(data, self.shape)
+            self.count = (~torch.isnan(self.y)).float()
 
-        model_pred = BinaryLogisticRegression(self.x.shape[1], pi_weight=1000)
-        model_pred.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+            self.model_pred = BinaryLogisticRegression(self.x.shape[1], pi_weight=1000)
+            self.model_pred.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
         with torch.no_grad():
-            logits = model_pred(self.x).reshape(*self.shape)
+            logits = self.model_pred(self.x).reshape(*self.shape)
             p = torch.sigmoid(logits)
         logits = logits.numpy()
 
@@ -372,13 +387,67 @@ class AnnotationWidget(Container):
             symbol="disc",
             size=5,
         )
+        self.slide_pred.value = 0
 
-    def _preview(self):
-        pass
+        self.particle = peaks
+        self.confidence = peak_logits
+
+    def filter_particle(self):
+        if len(self.particle) > 0:
+            try:
+                active_layer_name = self.napari_viewer.layers.selection.active.name
+                if active_layer_name.endswith('predict_filter'):
+                    self.napari_viewer.layers.remove(active_layer_name)
+                    active_layer_name = active_layer_name[:-15]
+
+                if len(self.particle) > 0:
+                    keep_id = np.where(self.confidence >= self.slide_pred.value)
+
+                    filter_particle = self.particle[keep_id[0], :]
+                    filter_confidence = self.confidence[keep_id[0]]
+
+                    self.napari_viewer.add_points(
+                        filter_particle,
+                        name=f"{active_layer_name}_predict_filter",
+                        properties={"confidence": filter_confidence},
+                        edge_color="black",
+                        face_color="confidence",
+                        face_colormap="viridis",
+                        edge_width=0.1,
+                        symbol="disc",
+                        size=5,
+                    )
+            except:
+                pass
+
+    def _undo(self):
+        # active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers["Labels"]
+        data = np.asarray(points_layer.data)
+
+        if len(data) > 0:
+            labels = points_layer.properties["label"]
+            data = data[:-1, :]
+            labels = labels[:-1]
+
+            self.napari_viewer.layers.remove("Labels")
+            self.napari_viewer.add_points(
+                data,
+                name="Labels",
+                face_color="#00000000",
+                properties={"label": labels},
+                edge_color="label",
+                edge_color_cycle=self.color_map_specified,
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
 
     def _refresh(self):
-        active_layer_name = self.napari_viewer.layers.selection.active.name
-        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+        self.step_id = 1
+
+        # active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers["Labels"]
 
         # Retrive points labels
         try:
@@ -395,19 +464,20 @@ class AnnotationWidget(Container):
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
-            self.model, self.x, self.shape, self.proposals
+            self.model, self.x, self.shape, self.proposals, id_=self.step_id
         )
 
         self.add_point(self.proposals[self.cur_proposal_index])
         self.component_selector.value = len(data) + 1
 
     def _init_model(self):
+        self.step_id = 1
         self.disable_click_add_point(self.napari_viewer)
 
         self.cur_proposal_index, self.proposals = 0, []
 
-        active_layer_name = self.napari_viewer.layers.selection.active.name
-        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+        # active_layer_name = self.napari_viewer.layers.selection.active.name
+        points_layer = self.napari_viewer.layers["Labels"]
 
         # Retrive points labels
         try:
@@ -434,14 +504,23 @@ class AnnotationWidget(Container):
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
-            self.model, self.x, self.shape, self.proposals
+            self.model,
+            self.x,
+            self.shape,
+            self.proposals,
+            self.step_id,
         )
         self.activate_click = False
         self.add_point(self.proposals[self.cur_proposal_index])
         self.component_selector.value = len(data) + 1
 
     def _next(self):
-        pass
+        self.step_id += 1
+        self._undo()
+        self.cur_proposal_index, self.proposals = rank_candidate_locations(
+            self.model, self.x, self.shape, self.proposals, id_=self.step_id
+        )
+        self.add_point(self.proposals[self.cur_proposal_index])
 
     def _update_roi_info(self):
         if not self.activate_click:
@@ -498,9 +577,7 @@ class AnnotationWidget(Container):
 
             if label is not None:
                 try:
-                    points_layer = self.napari_viewer.layers[
-                        f"{active_layer_name}_label"
-                    ]
+                    points_layer = self.napari_viewer.layers["Labels"]
                     if not isinstance(points_layer, Points):
                         raise ValueError("Expected a Points layer")
 
@@ -510,10 +587,10 @@ class AnnotationWidget(Container):
                     coord = points_layer.data
                     label = points_layer.properties["label"]
 
-                    viewer.layers.remove(f"{active_layer_name}_label")
+                    viewer.layers.remove("Labels")
                     self.napari_viewer.add_points(
                         coord,
-                        name=f"{active_layer_name}_label",
+                        name="Labels",
                         face_color="#00000000",
                         properties={"label": np.array(label)},
                         edge_color="label",
@@ -525,7 +602,7 @@ class AnnotationWidget(Container):
                 except:
                     self.napari_viewer.add_points(
                         [coord],
-                        name=f"{active_layer_name}_label",
+                        name="Labels",
                         face_color="#00000000",
                         properties={"label": [label]},
                         edge_color="label",
@@ -552,13 +629,13 @@ class AnnotationWidget(Container):
         active_layer_name = self.napari_viewer.layers.selection.active.name
 
         try:
-            points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+            points_layer = self.napari_viewer.layers["Labels"]
             points_layer.add(coord)
             coord = points_layer.data
             points_layer.properties["label"][-1] = 2
             label = points_layer.properties["label"]
 
-            self.napari_viewer.layers.remove(f"{active_layer_name}")
+            self.napari_viewer.layers.remove("Labels")
             self.napari_viewer.add_points(
                 coord,
                 name=f"{active_layer_name}",
@@ -573,7 +650,7 @@ class AnnotationWidget(Container):
         except:
             self.napari_viewer.add_points(
                 [coord],
-                name=f"{active_layer_name}",
+                name="Labels",
                 face_color="#00000000",
                 properties={"label": np.array([2])},
                 edge_color="label",
@@ -585,16 +662,16 @@ class AnnotationWidget(Container):
 
     def update_last_label(self, label_id):
         active_layer_name = self.napari_viewer.layers.selection.active.name
-        points_layer = self.napari_viewer.layers[f"{active_layer_name}"]
+        points_layer = self.napari_viewer.layers["Labels"]
 
         coord = points_layer.data
         label = points_layer.properties["label"]
         points_layer.properties["label"][-1] = label_id
 
-        self.napari_viewer.layers.remove(f"{active_layer_name}")
+        self.napari_viewer.layers.remove("Labels")
         self.napari_viewer.add_points(
             coord,
-            name=f"{active_layer_name}",
+            name="Labels",
             face_color="#00000000",
             properties={"label": np.array(label)},
             edge_color="label",
