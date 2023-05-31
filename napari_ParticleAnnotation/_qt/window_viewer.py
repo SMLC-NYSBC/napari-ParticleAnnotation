@@ -240,11 +240,13 @@ class QtViewerWrap(QtViewer):
 class AnnotationWidget(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
+        self.image_layer_name = ""
         self.color_map_specified = {0: "red", 1: "green", 2: "black"}
         self.napari_viewer = napari_viewer
         self.click_add_point_callback = None
         self.first_predict = True
         self.particle = []
+        self.three_D = False
 
         # Control Downsampling factor
         options = [1, 2, 4, 8, 16]
@@ -260,7 +262,7 @@ class AnnotationWidget(Container):
         self.pi = LineEdit(name="pi", value="0.01")
         self.pi_weight = LineEdit(name="pi_weight", value="1000")
 
-        self.init_mrc = PushButton(name="Initialize Active Learning model")
+        self.init_mrc = PushButton(name="Initialize dataset")
         self.init_mrc.clicked.connect(self._init_mrc)
 
         # AL Buttons
@@ -343,9 +345,14 @@ class AnnotationWidget(Container):
         self.insert(10, layout2)
 
     def _predict(self):
+        try:
+            self.napari_viewer.layers[f"{self.image_layer_name}_slice"].visable = False
+            self.napari_viewer.layers["Labels"].visable = False
+        except:
+            pass
+
         if self.first_predict:
             self.first_predict = True
-            active_layer_name = self.napari_viewer.layers.selection.active.name
             points_layer = self.napari_viewer.layers["Labels"]
 
             labels = points_layer.properties["label"]
@@ -363,22 +370,44 @@ class AnnotationWidget(Container):
             self.model_pred = BinaryLogisticRegression(self.x.shape[1], pi_weight=1000)
             self.model_pred.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
-        with torch.no_grad():
-            logits = self.model_pred(self.x).reshape(*self.shape)
-            p = torch.sigmoid(logits)
-        logits = logits.numpy()
+        if self.three_D:
+            img = self.napari_viewer.layers[self.image_layer_name].data
+            df_particle = []
+            df_confidence = []
+            for i in range(img.shape[0]):
+                self.x, _ = initialize_model(img[i, ...])
 
-        max_filter = maximum_filter(logits, size=15)
-        peaks = logits - max_filter
-        peaks = np.where(peaks == 0)
-        peaks = np.stack(peaks, axis=-1)
-        peak_logits = p[peaks[:, 0], peaks[:, 1]]
+                with torch.no_grad():
+                    logits = self.model_pred(self.x).reshape(*self.shape)
+                    p = torch.sigmoid(logits)
+                logits = logits.numpy()
 
-        # order = np.argsort(-peak_logits.ravel())
+                max_filter = maximum_filter(logits, size=15)
+                peaks = logits - max_filter
+                peaks = np.where(peaks == 0)
+                peaks = np.stack(peaks, axis=-1)
+                peak_logits = p[peaks[:, 0], peaks[:, 1]]
+
+                ids = np.full((peaks.shape[0], 1), i)
+                df_particle.append(np.hstack((ids, peaks)))
+                df_confidence.append(peak_logits)
+            peaks = np.concatenate(df_particle)
+            peak_logits = np.concatenate(df_confidence)
+        else:
+            with torch.no_grad():
+                logits = self.model_pred(self.x).reshape(*self.shape)
+                p = torch.sigmoid(logits)
+            logits = logits.numpy()
+
+            max_filter = maximum_filter(logits, size=15)
+            peaks = logits - max_filter
+            peaks = np.where(peaks == 0)
+            peaks = np.stack(peaks, axis=-1)
+            peak_logits = p[peaks[:, 0], peaks[:, 1]]
 
         self.napari_viewer.add_points(
             peaks,
-            name=f"{active_layer_name}_predict",
+            name=f"{self.image_layer_name}_predict",
             properties={"confidence": peak_logits},
             edge_color="black",
             face_color="confidence",
@@ -387,6 +416,8 @@ class AnnotationWidget(Container):
             symbol="disc",
             size=5,
         )
+        self._reset_view()
+        self.napari_viewer.layers["Labels"].visible = False
         self.slide_pred.value = 0
 
         self.particle = peaks
@@ -395,8 +426,15 @@ class AnnotationWidget(Container):
     def filter_particle(self):
         if len(self.particle) > 0:
             try:
+                self.napari_viewer.layers[
+                    f"{self.image_layer_name}_predict"
+                ].visable = False
+            except:
+                pass
+
+            try:
                 active_layer_name = self.napari_viewer.layers.selection.active.name
-                if active_layer_name.endswith('predict_filter'):
+                if active_layer_name.endswith("predict_filter"):
                     self.napari_viewer.layers.remove(active_layer_name)
                     active_layer_name = active_layer_name[:-15]
 
@@ -477,10 +515,9 @@ class AnnotationWidget(Container):
         self.cur_proposal_index, self.proposals = 0, []
 
         # active_layer_name = self.napari_viewer.layers.selection.active.name
-        points_layer = self.napari_viewer.layers["Labels"]
-
         # Retrive points labels
         try:
+            points_layer = self.napari_viewer.layers["Labels"]
             labels = points_layer.properties["label"]
             data = np.asarray(points_layer.data)
             data = np.array(
@@ -539,6 +576,7 @@ class AnnotationWidget(Container):
 
         # Retrieve active image
         active_layer_name = self.napari_viewer.layers.selection.active.name
+        self.image_layer_name = active_layer_name
         img = self.napari_viewer.layers[active_layer_name]
 
         # Run some operation on the image data
@@ -547,10 +585,22 @@ class AnnotationWidget(Container):
         _min, _max = np.quantile(img_process.ravel(), [0.1, 0.9])
         img.data = (img_process - (_max + _min) / 2) / (_max - _min)
 
-        self.napari_viewer.layers[active_layer_name].contrast_limits = (
-            img.data.min(),
-            img.data.max(),
-        )
+        if len(self.shape) == 3:
+            self.three_D = True
+            self.napari_viewer.add_image(
+                img.data[self.shape[0] // 2, ...], name=f"{active_layer_name}_slice"
+            )
+            self.napari_viewer.layers[active_layer_name].contrast_limits = (
+                img.data[self.shape[0] // 2, ...].min(),
+                img.data[self.shape[0] // 2, ...].max(),
+            )
+            self.shape = self.shape[1:]
+            img = self.napari_viewer.layers[f"{active_layer_name}_slice"]
+        else:
+            self.napari_viewer.layers[active_layer_name].contrast_limits = (
+                img.data.min(),
+                img.data.max(),
+            )
         self._reset_view()
 
         self.x, _ = initialize_model(img.data)
@@ -564,6 +614,8 @@ class AnnotationWidget(Container):
         def click_add_point(viewer, event):
             # Get the coordinates of the clicked point
             coord = event.position
+            if len(coord) == 3:
+                coord = coord[1:]
 
             # Set the label id depending on which button was clicked
             if event.button == 1:
@@ -601,7 +653,7 @@ class AnnotationWidget(Container):
                     )
                 except:
                     self.napari_viewer.add_points(
-                        [coord],
+                        coord,
                         name="Labels",
                         face_color="#00000000",
                         properties={"label": [label]},
@@ -626,8 +678,6 @@ class AnnotationWidget(Container):
             viewer.mouse_drag_callbacks.remove(self.click_add_point_callback)
 
     def add_point(self, coord):
-        active_layer_name = self.napari_viewer.layers.selection.active.name
-
         try:
             points_layer = self.napari_viewer.layers["Labels"]
             points_layer.add(coord)
@@ -638,7 +688,7 @@ class AnnotationWidget(Container):
             self.napari_viewer.layers.remove("Labels")
             self.napari_viewer.add_points(
                 coord,
-                name=f"{active_layer_name}",
+                name="Labels",
                 face_color="#00000000",
                 properties={"label": np.array(label)},
                 edge_color="label",
@@ -649,7 +699,7 @@ class AnnotationWidget(Container):
             )
         except:
             self.napari_viewer.add_points(
-                [coord],
+                coord,
                 name="Labels",
                 face_color="#00000000",
                 properties={"label": np.array([2])},
