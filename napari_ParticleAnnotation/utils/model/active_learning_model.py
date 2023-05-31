@@ -147,16 +147,16 @@ class BinaryLogisticRegression:
 
 
 class LinearClassifier(nn.Module):
-    '''A simple convolutional layer without non-linear activation.'''
+    """A simple convolutional layer without non-linear activation."""
 
     def __init__(self, features):
-        '''
+        """
         Args:
             features (:obj:): the sizes associated with the layer
 
         Attributes:
             features (:obj:)
-        '''
+        """
         super(LinearClassifier, self).__init__()
         self.features = features
         self.classifier = nn.Conv3d(features.latent_dim, 1, 1)
@@ -176,14 +176,14 @@ class LinearClassifier(nn.Module):
         self.features.unfill()
 
     def forward(self, x):
-        '''Applies the classifier to an input.
+        """Applies the classifier to an input.
 
         Args:
             x (np.ndarray): the image from which features are extracted and classified
 
         Returns:
             z (np.ndarray): output of the classifer
-        '''
+        """
         z = self.features(x)
         y = self.classifier(z)
         return y
@@ -306,11 +306,15 @@ class ResNet16(ResNet):
 
 
 class BasicConv3d(nn.Module):
-    def __init__(self, nin, nout, kernel_size, dilation=1, stride=1, bn=False, activation=nn.ReLU):
+    def __init__(
+        self, nin, nout, kernel_size, dilation=1, stride=1, bn=False, activation=nn.ReLU
+    ):
         super(BasicConv3d, self).__init__()
 
         bias = not bn
-        self.conv = nn.Conv3d(nin, nout, kernel_size, dilation=dilation, stride=stride, bias=bias)
+        self.conv = nn.Conv3d(
+            nin, nout, kernel_size, dilation=dilation, stride=stride, bias=bias
+        )
         if bn:
             self.bn = nn.BatchNorm3d(nout)
         self.act = activation(inplace=True)
@@ -323,37 +327,44 @@ class BasicConv3d(nn.Module):
 
     def set_padding(self, pad):
         if pad:
-            p = self.dilation*(self.kernel_size//2)
+            p = self.dilation * (self.kernel_size // 2)
             self.conv.padding = (p, p)
             self.padding = p
         else:
-            self.conv.padding = (0,0)
+            self.conv.padding = (0, 0)
             self.padding = 0
 
     def fill(self, stride):
-        self.conv.dilation = (self.og_dilation*stride, self.og_dilation*stride)
-        self.conv.stride = (1,1)
-        self.conv.padding = (self.conv.padding[0]*stride, self.conv.padding[1]*stride)
+        self.conv.dilation = (self.og_dilation * stride, self.og_dilation * stride)
+        self.conv.stride = (1, 1)
+        self.conv.padding = (
+            self.conv.padding[0] * stride,
+            self.conv.padding[1] * stride,
+        )
         self.dilation *= stride
         return self.stride
 
     def unfill(self):
-        stride = self.dilation//self.og_dilation
+        stride = self.dilation // self.og_dilation
         self.conv.dilation = (self.og_dilation, self.og_dilation)
-        self.conv.stride = (self.stride,self.stride)
-        self.conv.padding = (self.conv.padding[0]//stride, self.conv.padding[1]//stride)
+        self.conv.stride = (self.stride, self.stride)
+        self.conv.padding = (
+            self.conv.padding[0] // stride,
+            self.conv.padding[1] // stride,
+        )
         self.dilation = self.og_dilation
 
     def forward(self, x):
         y = self.conv(x)
-        if hasattr(self, 'bn'):
+        if hasattr(self, "bn"):
             y = self.bn(y)
         return self.act(y)
 
 
 class ResidA(nn.Module):
-    def __init__(self, nin, nhidden, nout, dilation=1, stride=1
-                 , activation=nn.ReLU, bn=False):
+    def __init__(
+        self, nin, nhidden, nout, dilation=1, stride=1, activation=nn.ReLU, bn=False
+    ):
         super(ResidA, self).__init__()
 
         self.bn = bn
@@ -367,8 +378,9 @@ class ResidA(nn.Module):
             self.bn0 = nn.BatchNorm3d(nhidden)
         self.act0 = activation(inplace=True)
 
-        self.conv1 = nn.Conv3d(nhidden, nout, 3, dilation=dilation, stride=stride
-                               , bias=bias)
+        self.conv1 = nn.Conv3d(
+            nhidden, nout, 3, dilation=dilation, stride=stride, bias=bias
+        )
         if self.bn:
             self.bn1 = nn.BatchNorm3d(nout)
         self.act1 = activation(inplace=True)
@@ -390,27 +402,44 @@ class ResidA(nn.Module):
 
     def fill(self, stride):
         self.conv0.dilation = (stride, stride)
-        self.conv0.padding = (self.conv0.padding[0] * stride, self.conv0.padding[1] * stride)
-        self.conv1.dilation = (self.conv1.dilation[0] * stride, self.conv1.dilation[1] * stride)
+        self.conv0.padding = (
+            self.conv0.padding[0] * stride,
+            self.conv0.padding[1] * stride,
+        )
+        self.conv1.dilation = (
+            self.conv1.dilation[0] * stride,
+            self.conv1.dilation[1] * stride,
+        )
         self.conv1.stride = (1, 1, 1)
-        self.conv1.padding = (self.conv1.padding[0] * stride, self.conv1.padding[1] * stride)
-        if hasattr(self, 'proj'):
+        self.conv1.padding = (
+            self.conv1.padding[0] * stride,
+            self.conv1.padding[1] * stride,
+        )
+        if hasattr(self, "proj"):
             self.proj.stride = (1, 1, 1)
         self.dilation = self.dilation * stride
         return self.stride
 
     def unfill(self):
         self.conv0.dilation = (1, 1, 1)
-        self.conv0.padding = (self.conv0.padding[0] // self.dilation, self.conv0.padding[1] // self.dilation)
-        self.conv1.dilation = (self.conv1.dilation[0] // self.dilation, self.conv1.dilation[1] // self.dilation)
+        self.conv0.padding = (
+            self.conv0.padding[0] // self.dilation,
+            self.conv0.padding[1] // self.dilation,
+        )
+        self.conv1.dilation = (
+            self.conv1.dilation[0] // self.dilation,
+            self.conv1.dilation[1] // self.dilation,
+        )
         self.conv1.stride = (self.stride, self.stride)
-        self.conv1.padding = (self.conv1.padding[0] // self.dilation, self.conv1.padding[1] // self.dilation)
-        if hasattr(self, 'proj'):
+        self.conv1.padding = (
+            self.conv1.padding[0] // self.dilation,
+            self.conv1.padding[1] // self.dilation,
+        )
+        if hasattr(self, "proj"):
             self.proj.stride = (self.stride, self.stride)
         self.dilation = 1
 
     def forward(self, x):
-
         h = self.conv0(x)
         if self.bn:
             h = self.bn0(h)
@@ -430,10 +459,10 @@ class ResidA(nn.Module):
         edge = self.conv0.dilation[0] + self.conv1.dilation[0]
         x = x[:, :, edge:-edge, edge:-edge]
 
-        if hasattr(self, 'proj'):
+        if hasattr(self, "proj"):
             x = self.proj(x)
         elif self.conv1.stride[0] > 1:
-            x = x[:, :, ::self.stride, ::self.stride]
+            x = x[:, :, :: self.stride, :: self.stride]
 
         y = y + x
         if self.bn:
