@@ -345,21 +345,20 @@ class AnnotationWidget(Container):
         self.insert(10, layout2)
 
     def _predict(self):
-        try:
-            self.napari_viewer.layers[f"{self.image_layer_name}_slice"].visable = False
-            self.napari_viewer.layers["Labels"].visable = False
-        except:
-            pass
-
         if self.first_predict:
             self.first_predict = True
             points_layer = self.napari_viewer.layers["Labels"]
 
             labels = points_layer.properties["label"]
             data = np.asarray(points_layer.data)
-            data = np.array(
-                (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
-            ).T
+            if data.shape[1] == 3:
+                data = np.array(
+                    (data[:, 0], data[:, 1], data[:, 2], np.array(labels).astype(np.int8))
+                ).T
+            else:
+                data = np.array(
+                    (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
+                ).T
 
             if data[-1, 2] == 2:
                 data = data[:-1, :]
@@ -370,39 +369,18 @@ class AnnotationWidget(Container):
             self.model_pred = BinaryLogisticRegression(self.x.shape[1], pi_weight=1000)
             self.model_pred.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
-        if self.three_D:
-            img = self.napari_viewer.layers[self.image_layer_name].data
-            df_particle = []
-            df_confidence = []
-            for i in range(img.shape[0]):
-                self.x, _ = initialize_model(img[i, ...])
+        with torch.no_grad():
+            logits = self.model_pred(self.x).reshape(*self.shape)
+            p = torch.sigmoid(logits)
+        logits = logits.numpy()
 
-                with torch.no_grad():
-                    logits = self.model_pred(self.x).reshape(*self.shape)
-                    p = torch.sigmoid(logits)
-                logits = logits.numpy()
-
-                max_filter = maximum_filter(logits, size=15)
-                peaks = logits - max_filter
-                peaks = np.where(peaks == 0)
-                peaks = np.stack(peaks, axis=-1)
-                peak_logits = p[peaks[:, 0], peaks[:, 1]]
-
-                ids = np.full((peaks.shape[0], 1), i)
-                df_particle.append(np.hstack((ids, peaks)))
-                df_confidence.append(peak_logits)
-            peaks = np.concatenate(df_particle)
-            peak_logits = np.concatenate(df_confidence)
+        max_filter = maximum_filter(logits, size=15)
+        peaks = logits - max_filter
+        peaks = np.where(peaks == 0)
+        peaks = np.stack(peaks, axis=-1)
+        if peaks.shape[1] == 3:
+            peak_logits = p[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
         else:
-            with torch.no_grad():
-                logits = self.model_pred(self.x).reshape(*self.shape)
-                p = torch.sigmoid(logits)
-            logits = logits.numpy()
-
-            max_filter = maximum_filter(logits, size=15)
-            peaks = logits - max_filter
-            peaks = np.where(peaks == 0)
-            peaks = np.stack(peaks, axis=-1)
             peak_logits = p[peaks[:, 0], peaks[:, 1]]
 
         self.napari_viewer.add_points(
@@ -491,13 +469,24 @@ class AnnotationWidget(Container):
         try:
             labels = points_layer.properties["label"]
             data = np.asarray(points_layer.data)
-            data = np.array(
-                (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
-            ).T
+            if data.shape[1] == 2:
+                data = np.array(
+                    (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
+                ).T
+            else:
+                data = np.array(
+                    (
+                        data[:, 0],
+                        data[:, 1],
+                        data[:, 2],
+                        np.array(labels).astype(np.int8),
+                    )
+                ).T
         except:
             data = []
 
         self.y = label_points_to_mask(data, self.shape)
+        self.napari_viewer.add_image(self.y.cpu().detach().numpy())
         self.count = (~torch.isnan(self.y)).float()
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
@@ -520,18 +509,26 @@ class AnnotationWidget(Container):
             points_layer = self.napari_viewer.layers["Labels"]
             labels = points_layer.properties["label"]
             data = np.asarray(points_layer.data)
-            data = np.array(
-                (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
-            ).T
+
+            if data.shape[1] == 3:
+                data = np.array(
+                    (data[:, 0], data[:, 1], data[:, 2], np.array(labels).astype(np.int8))
+                ).T
+            else:
+                data = np.array(
+                    (data[:, 0], data[:, 1], np.array(labels).astype(np.int8))
+                ).T
         except:
             data = []
 
         # update y and count
+        print('Build y')
         self.y = label_points_to_mask(data, self.shape)
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
 
+        print('Build model')
         self.model = BinaryLogisticRegression(
             n_features=self.x.shape[1],
             l2=float(self.l2.value),
@@ -540,6 +537,7 @@ class AnnotationWidget(Container):
         )
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
+        print('Initial proposal')
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
             self.model,
             self.x,
@@ -585,26 +583,16 @@ class AnnotationWidget(Container):
         _min, _max = np.quantile(img_process.ravel(), [0.1, 0.9])
         img.data = (img_process - (_max + _min) / 2) / (_max - _min)
 
-        if len(self.shape) == 3:
-            self.three_D = True
-            self.napari_viewer.add_image(
-                img.data[self.shape[0] // 2, ...], name=f"{active_layer_name}_slice"
-            )
-            self.napari_viewer.layers[active_layer_name].contrast_limits = (
-                img.data[self.shape[0] // 2, ...].min(),
-                img.data[self.shape[0] // 2, ...].max(),
-            )
-            self.shape = self.shape[1:]
-            img = self.napari_viewer.layers[f"{active_layer_name}_slice"]
-        else:
-            self.napari_viewer.layers[active_layer_name].contrast_limits = (
-                img.data.min(),
-                img.data.max(),
-            )
+        self.napari_viewer.layers[active_layer_name].contrast_limits = (
+            img.data.min(),
+            img.data.max(),
+        )
         self._reset_view()
 
         self.x, _ = initialize_model(img.data)
-
+        # df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], img.data.shape[2], 256))
+        # print(df_x.shape)
+        # self.napari_viewer.add_image(df_x.cpu().detach().numpy(), name='features')
         self.activate_click = True
         self.setup_click_add_point(self.napari_viewer)
 
@@ -612,58 +600,57 @@ class AnnotationWidget(Container):
         active_layer_name = viewer.layers.selection.active.name
 
         def click_add_point(viewer, event):
-            # Get the coordinates of the clicked point
-            coord = event.position
-            if len(coord) == 3:
-                coord = coord[1:]
+            if self.activate_click:
+                # Get the coordinates of the clicked point
+                coord = event.position
 
-            # Set the label id depending on which button was clicked
-            if event.button == 1:
-                # Left button clicked, set label id to 1
-                label = 1
-            elif event.button == 2:
-                # Right button clicked, set label id to 0
-                label = 0
-            else:
-                label = None
+                # Set the label id depending on which button was clicked
+                if event.button == 1:
+                    # Left button clicked, set label id to 1
+                    label = 1
+                elif event.button == 2:
+                    # Right button clicked, set label id to 0
+                    label = 0
+                else:
+                    label = None
 
-            if label is not None:
-                try:
-                    points_layer = self.napari_viewer.layers["Labels"]
-                    if not isinstance(points_layer, Points):
-                        raise ValueError("Expected a Points layer")
+                if label is not None:
+                    try:
+                        points_layer = self.napari_viewer.layers["Labels"]
+                        if not isinstance(points_layer, Points):
+                            raise ValueError("Expected a Points layer")
 
-                    # Add the clicked point to the points layer and add label
-                    points_layer.add(coord)
-                    points_layer.properties["label"][-1] = label
-                    coord = points_layer.data
-                    label = points_layer.properties["label"]
+                        # Add the clicked point to the points layer and add label
+                        points_layer.add(coord)
+                        points_layer.properties["label"][-1] = label
+                        coord = points_layer.data
+                        label = points_layer.properties["label"]
 
-                    viewer.layers.remove("Labels")
-                    self.napari_viewer.add_points(
-                        coord,
-                        name="Labels",
-                        face_color="#00000000",
-                        properties={"label": np.array(label)},
-                        edge_color="label",
-                        edge_color_cycle=self.color_map_specified,
-                        edge_width=0.1,
-                        symbol="square",
-                        size=40,
-                    )
-                except:
-                    self.napari_viewer.add_points(
-                        coord,
-                        name="Labels",
-                        face_color="#00000000",
-                        properties={"label": [label]},
-                        edge_color="label",
-                        edge_color_cycle=self.color_map_specified,
-                        edge_width=0.1,
-                        symbol="square",
-                        size=40,
-                    )
-                self._reset_view()
+                        viewer.layers.remove("Labels")
+                        self.napari_viewer.add_points(
+                            coord,
+                            name="Labels",
+                            face_color="#00000000",
+                            properties={"label": np.array(label)},
+                            edge_color="label",
+                            edge_color_cycle=self.color_map_specified,
+                            edge_width=0.1,
+                            symbol="square",
+                            size=40,
+                        )
+                    except:
+                        self.napari_viewer.add_points(
+                            coord,
+                            name="Labels",
+                            face_color="#00000000",
+                            properties={"label": [label]},
+                            edge_color="label",
+                            edge_color_cycle=self.color_map_specified,
+                            edge_width=0.1,
+                            symbol="square",
+                            size=40,
+                        )
+                    self._reset_view()
 
         # Store the callback in an instance variable
         self.click_add_point_callback = click_add_point
@@ -673,9 +660,7 @@ class AnnotationWidget(Container):
 
     def disable_click_add_point(self, viewer):
         # Check if the callback has been added before
-        if self.click_add_point_callback in viewer.mouse_drag_callbacks:
-            # Remove the callback from the viewer
-            viewer.mouse_drag_callbacks.remove(self.click_add_point_callback)
+        viewer.mouse_drag_callbacks.remove(self.click_add_point_callback)
 
     def add_point(self, coord):
         try:
@@ -711,7 +696,6 @@ class AnnotationWidget(Container):
             )
 
     def update_last_label(self, label_id):
-        active_layer_name = self.napari_viewer.layers.selection.active.name
         points_layer = self.napari_viewer.layers["Labels"]
 
         coord = points_layer.data
@@ -736,7 +720,7 @@ class AnnotationWidget(Container):
         self.update_last_label(1)
 
         # Update model and draw new suggestion
-        self._refresh()
+        self._iterative_point_update()
 
     def _negative(self, viewer):
         # Update label
@@ -744,7 +728,23 @@ class AnnotationWidget(Container):
         self.update_last_label(0)
 
         # Update model and draw new suggestion
-        self._refresh()
+        self._iterative_point_update()
+
+    def _iterative_point_update(self):
+        if self.step_id >= 10:
+            self._refresh()
+        else:
+            self.step_id += 1
+
+            points_layer = self.napari_viewer.layers["Labels"]
+            labels = points_layer.properties["label"]
+            data = np.asarray(points_layer.data)
+            self.cur_proposal_index, self.proposals = rank_candidate_locations(
+                self.model, self.x, self.shape, self.proposals, id_=self.step_id
+            )
+
+            self.add_point(self.proposals[self.cur_proposal_index])
+            self.component_selector.value = len(data) + 1
 
     def _update_point(self, lower_bound, upper_bound):
         point = (lower_bound + upper_bound) / 2

@@ -7,16 +7,25 @@ import torch.nn as nn
 
 from topaz.model.utils import insize_from_outsize
 
+from napari_ParticleAnnotation.utils.model.utils import split_tensor, stitch_tensor
 
-def fill_label_region(y, ci, cj, label):
-    neg_radius = 3
-    pos_radius = 3
+
+def fill_label_region(y, ci, cj, label, cz=None):
+    if cz is not None:
+        neg_radius = 2
+        pos_radius = 2
+    else:
+        neg_radius = 3
+        pos_radius = 3
 
     r = max(neg_radius, pos_radius)
     k = r * 2 + 3
-    center = (k // 2, k // 2)
-
-    grid = np.meshgrid(np.arange(k), np.arange(k), indexing="ij")
+    if cz is not None:
+        center = (k // 2, k // 2, k // 2)
+        grid = np.meshgrid(np.arange(k), np.arange(k), np.arange(k), indexing="ij")
+    else:
+        center = (k // 2, k // 2)
+        grid = np.meshgrid(np.arange(k), np.arange(k), indexing="ij")
     grid = np.stack(grid, axis=-1)
 
     d = np.sqrt(np.sum((grid - center) ** 2, axis=-1))
@@ -28,23 +37,49 @@ def fill_label_region(y, ci, cj, label):
     else:
         mask = neg_mask
 
-    k = mask.shape[0]
-    di, dj = np.where(mask)
-    i = ci + di - k // 2
-    j = cj + dj - k // 2
+    if cz is not None:
+        k = mask.shape[0]
 
-    keep = (0 <= i) & (i < y.shape[0]) & (0 <= j) & (j < y.shape[1])
-    i = i[keep]
-    j = j[keep]
+        dz, di, dj = np.where(mask)
+        z = cz + dz - k // 2
+        i = ci + di - k // 2
+        j = cj + dj - k // 2
 
-    y[i, j] = label
+        keep = (
+            (0 <= z)
+            & (z < y.shape[0])
+            & (0 <= i)
+            & (i < y.shape[1])
+            & (0 <= j)
+            & (j < y.shape[2])
+        )
+        z = z[keep]
+        i = i[keep]
+        j = j[keep]
+
+        y[z, i, j] = label
+    else:
+        k = mask.shape[0]
+        di, dj = np.where(mask)
+        i = ci + di - k // 2
+        j = cj + dj - k // 2
+
+        keep = (0 <= i) & (i < y.shape[0]) & (0 <= j) & (j < y.shape[1])
+        i = i[keep]
+        j = j[keep]
+
+        y[i, j] = label
 
 
 def label_points_to_mask(points, shape):
     y = torch.zeros(*shape) + np.nan
 
-    for i, j, label in points:
-        fill_label_region(y, i, j, label)
+    if len(shape) == 3:
+        for z, i, j, label in points:
+            fill_label_region(y, i, j, label, z)
+    else:
+        for i, j, label in points:
+            fill_label_region(y, i, j, label)
     return y
 
 
@@ -54,15 +89,31 @@ def initialize_model(mrc):
     model.fill()
     model.eval()
 
-    with torch.no_grad():
-        filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
-    filter_values = filter_values.numpy()
+    if len(mrc.shape) == 3:
+        mrc = torch.from_numpy(mrc).float().unsqueeze(0)
 
-    x = filter_values.transpose([1, 2, 0])
+        filter_values = []
+        from tqdm import tqdm
+        for i in tqdm(range(mrc.shape[1])):
+            with torch.no_grad():
+                filter_values.append(model(mrc[:, i, ...]).squeeze(0))
+
+        filter_values = stitch_tensor(filter_values).numpy()
+
+        x = filter_values.transpose([1, 2, 3, 0])  # D, H, W, C
+        print(x.shape)
+    else:
+        with torch.no_grad():
+            filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
+        filter_values = filter_values.numpy()
+
+        x = filter_values.transpose([1, 2, 0])
+        print(x.shape)
+
     x = x.reshape(-1, x.shape[-1])
     x = torch.from_numpy(x).float()
     y = torch.zeros(len(x)) + np.nan
-
+    print(x.shape)
     return x, y
 
 
@@ -244,7 +295,7 @@ class ResNet16(ResNet):
         dropout=0.0,
         activation=nn.ReLU,
         pooling=None,
-        **kwargs
+        **kwargs,
     ):
         if units is None:
             units = [32, 64, 128]
