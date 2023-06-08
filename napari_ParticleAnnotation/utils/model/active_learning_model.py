@@ -91,29 +91,26 @@ def initialize_model(mrc):
 
     if len(mrc.shape) == 3:
         mrc = torch.from_numpy(mrc).float().unsqueeze(0)
-
-        filter_values = []
+        _, d, h, w = mrc.shape
+        
+        filter_values = torch.zeros((256, d, h, w))  # C D H W
         from tqdm import tqdm
         for i in tqdm(range(mrc.shape[1])):
             with torch.no_grad():
-                filter_values.append(model(mrc[:, i, ...]).squeeze(0))
+                j = model(mrc[:, i, ...]).squeeze(0)
+                filter_values[:, i, :] = j
 
-        filter_values = stitch_tensor(filter_values).numpy()
-
-        x = filter_values.transpose([1, 2, 3, 0])  # D, H, W, C
-        print(x.shape)
+        x = filter_values.numpy().transpose([1, 2, 3, 0])  # D, H, W, C
     else:
         with torch.no_grad():
             filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
-        filter_values = filter_values.numpy()
+        filter_values = filter_values.numpy()  # C, W, H
 
-        x = filter_values.transpose([1, 2, 0])
-        print(x.shape)
+        x = filter_values.transpose([1, 2, 0])  # W, H, C
 
-    x = x.reshape(-1, x.shape[-1])
+    x = x.reshape(-1, x.shape[-1])  # L, C
     x = torch.from_numpy(x).float()
     y = torch.zeros(len(x)) + np.nan
-    print(x.shape)
     return x, y
 
 
