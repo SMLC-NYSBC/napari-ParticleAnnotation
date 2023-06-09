@@ -353,7 +353,12 @@ class AnnotationWidget(Container):
             data = np.asarray(points_layer.data)
             if data.shape[1] == 3:
                 data = np.array(
-                    (data[:, 0], data[:, 1], data[:, 2], np.array(labels).astype(np.int8))
+                    (
+                        data[:, 0],
+                        data[:, 1],
+                        data[:, 2],
+                        np.array(labels).astype(np.int8),
+                    )
                 ).T
             else:
                 data = np.array(
@@ -437,7 +442,6 @@ class AnnotationWidget(Container):
                 pass
 
     def _undo(self):
-        # active_layer_name = self.napari_viewer.layers.selection.active.name
         points_layer = self.napari_viewer.layers["Labels"]
         data = np.asarray(points_layer.data)
 
@@ -462,7 +466,6 @@ class AnnotationWidget(Container):
     def _refresh(self):
         self.step_id = 1
 
-        # active_layer_name = self.napari_viewer.layers.selection.active.name
         points_layer = self.napari_viewer.layers["Labels"]
 
         # Retrive points labels
@@ -486,7 +489,6 @@ class AnnotationWidget(Container):
             data = []
 
         self.y = label_points_to_mask(data, self.shape)
-        self.napari_viewer.add_image(self.y.cpu().detach().numpy())
         self.count = (~torch.isnan(self.y)).float()
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
@@ -512,7 +514,12 @@ class AnnotationWidget(Container):
 
             if data.shape[1] == 3:
                 data = np.array(
-                    (data[:, 0], data[:, 1], data[:, 2], np.array(labels).astype(np.int8))
+                    (
+                        data[:, 0],
+                        data[:, 1],
+                        data[:, 2],
+                        np.array(labels).astype(np.int8),
+                    )
                 ).T
             else:
                 data = np.array(
@@ -522,13 +529,11 @@ class AnnotationWidget(Container):
             data = []
 
         # update y and count
-        print('Build y')
         self.y = label_points_to_mask(data, self.shape)
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
 
-        print('Build model')
         self.model = BinaryLogisticRegression(
             n_features=self.x.shape[1],
             l2=float(self.l2.value),
@@ -537,7 +542,6 @@ class AnnotationWidget(Container):
         )
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
-        print('Initial proposal')
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
             self.model,
             self.x,
@@ -590,15 +594,18 @@ class AnnotationWidget(Container):
         self._reset_view()
 
         self.x, _ = initialize_model(img.data)
-        # df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], img.data.shape[2], 256))
-        # print(df_x.shape)
-        # self.napari_viewer.add_image(df_x.cpu().detach().numpy(), name='features')
+        if len(self.shape) == 2: 
+            df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], 256))
+            df_x = df_x.numpy().transpose([2, 0, 1])
+        else:
+            df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], img.data.shape[2], 256))
+            df_x = df_x.numpy().transpose([3, 0, 1, 2])
+        self.napari_viewer.add_image(df_x, name='features')
+        print(img.data.shape, df_x.shape)
         self.activate_click = True
         self.setup_click_add_point(self.napari_viewer)
 
     def setup_click_add_point(self, viewer):
-        active_layer_name = viewer.layers.selection.active.name
-
         def click_add_point(viewer, event):
             if self.activate_click:
                 # Get the coordinates of the clicked point

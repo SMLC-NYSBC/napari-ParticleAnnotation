@@ -28,7 +28,7 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     # the highest entropy location, which is where the model has the most uncertainty
     # about the label
     # this is not an optimal strategy, but it works fine for this prototype
-    print('Run model')
+    print("Run model")
     with torch.no_grad():
         logits = model(x)
         log_p = F.logsigmoid(logits).numpy()
@@ -36,10 +36,10 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     entropy = -np.exp(log_p) * log_p - np.exp(log_np) * log_np
     # use peak finding to void finding candidates too close together (good for skip)
     entropy = entropy.reshape(*shape)
-    print('Find peaks')
+    print("Find peaks")
     peaks = find_peaks(entropy)
 
-    print('Pick peaks')
+    print("Pick peaks")
     if peaks.shape[1] == 3:
         peak_scores = entropy[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
     else:

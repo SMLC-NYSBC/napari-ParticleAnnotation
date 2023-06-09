@@ -92,9 +92,10 @@ def initialize_model(mrc):
     if len(mrc.shape) == 3:
         mrc = torch.from_numpy(mrc).float().unsqueeze(0)
         _, d, h, w = mrc.shape
-        
+
         filter_values = torch.zeros((256, d, h, w))  # C D H W
         from tqdm import tqdm
+
         for i in tqdm(range(mrc.shape[1])):
             with torch.no_grad():
                 j = model(mrc[:, i, ...]).squeeze(0)
