@@ -18,21 +18,24 @@ def downsample(img, factor=8):
     shape = (y, x)
 
     if z > 1:
-        f_img = np.zeros((z, y, x))
-        for i in range(z):
-            F = np.fft.rfft2(img[i, ...])
+        F = np.fft.rfftn(img)
+        z, y, x = img.shape
+        factor = 4
+        z = int(z / factor)
+        y = int(y / factor)
+        x = int(x / factor)
 
-            A = F[..., 0 : y // 2, 0 : x // 2 + 1]
-            B = F[..., -y // 2 :, 0 : x // 2 + 1]
-            F = np.concatenate([A, B], axis=0)
+        A = F[..., 0 : y // 2, 0 : x // 2 + 1]
+        B = F[..., -y // 2 :, 0 : x // 2 + 1]
 
-            # scale the signal from downsampling
-            a = x * y
-            b = img[i, ...].shape[-2] * img[i, ...].shape[-1]
-            F *= a / b
+        F = np.concatenate([A, B], axis=1)
 
-            f_img[i, ...] = np.fft.irfft2(F, s=shape)
-        return f_img.astype(img.dtype)
+        # scale the signal from downsampling
+        a = y * x
+        b = img.shape[0] * img.shape[1]
+        F *= a / b
+
+        return np.fft.irfftn(F, s=(z, y, x)).astype(img.dtype)
     else:
         F = np.fft.rfft2(img)
 

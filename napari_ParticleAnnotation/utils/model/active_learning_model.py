@@ -7,19 +7,21 @@ import torch.nn as nn
 
 from topaz.model.utils import insize_from_outsize
 
-from napari_ParticleAnnotation.utils.model.utils import split_tensor, stitch_tensor
 
+def fill_label_region(y, ci, cj, label, size: int, cz=None):
+    neg_radius = size
+    pos_radius = size
 
-def fill_label_region(y, ci, cj, label, cz=None):
-    if cz is not None:
-        neg_radius = 2
-        pos_radius = 2
-    else:
-        neg_radius = 3
-        pos_radius = 3
-
+    # Centralizer mask
     r = max(neg_radius, pos_radius)
-    k = r * 2 + 3
+    k = r * 2
+    if k % 2 == 0:
+        if pos_radius % 2 == 0:
+            k = k + 1
+    else:
+        if pos_radius % 2 == 0:
+            k = k + 1
+
     if cz is not None:
         center = (k // 2, k // 2, k // 2)
         grid = np.meshgrid(np.arange(k), np.arange(k), np.arange(k), indexing="ij")
@@ -29,8 +31,20 @@ def fill_label_region(y, ci, cj, label, cz=None):
     grid = np.stack(grid, axis=-1)
 
     d = np.sqrt(np.sum((grid - center) ** 2, axis=-1))
-    pos_mask = d < pos_radius
-    neg_mask = d < neg_radius
+
+    pos_mask = np.zeros_like(d, dtype=bool)
+    neg_mask = np.zeros_like(d, dtype=bool)
+    if cz is not None:
+        start = center - np.repeat(pos_radius // 2, 3)
+        end = start + pos_radius
+
+        pos_mask[start[0] : end[0], start[1] : end[1], start[2] : end[2]] = True
+        neg_mask[start[0] : end[0], start[1] : end[1], start[2] : end[2]] = True
+    else:
+        start = center - np.repeat(pos_radius // 2, 2)
+        end = start + pos_radius
+        pos_mask[start[0] : end[0], start[1] : end[1]] = True
+        neg_mask[start[0] : end[0], start[1] : end[1]] = True
 
     if label == 1:
         mask = pos_mask
@@ -60,6 +74,7 @@ def fill_label_region(y, ci, cj, label, cz=None):
         y[z, i, j] = label
     else:
         k = mask.shape[0]
+
         di, dj = np.where(mask)
         i = ci + di - k // 2
         j = cj + dj - k // 2
@@ -71,15 +86,17 @@ def fill_label_region(y, ci, cj, label, cz=None):
         y[i, j] = label
 
 
-def label_points_to_mask(points, shape):
+def label_points_to_mask(points, shape, size):
     y = torch.zeros(*shape) + np.nan
 
     if len(shape) == 3:
-        for z, i, j, label in points:
-            fill_label_region(y, i, j, label, z)
+        if len(points) > 0:
+            for z, i, j, label in points:
+                fill_label_region(y, i, j, label, int(size), z)
     else:
-        for i, j, label in points:
-            fill_label_region(y, i, j, label)
+        if len(points) > 0:
+            for i, j, label in points:
+                fill_label_region(y, i, j, label, int(size))
     return y
 
 

@@ -1,11 +1,49 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from scipy.ndimage import maximum_filter
+from scipy.ndimage import maximum_filter, convolve
 
 
 size = (37, 37)
 
+
+def sobel_filter(img):
+    # Define Sobel operator kernels.
+    kernel_x = np.array(
+        [
+            [-1, -2, 0, 2, 1],
+            [-4, -8, 0, 8, 4],
+            [-6, -12, 0, 12, 6],
+            [-4, -8, 0, 8, 4],
+            [-1, -2, 0, 2, 1],
+        ]
+    )
+
+    kernel_y = np.array(
+        [
+            [1, 4, 6, 4, 1],
+            [2, 8, 12, 8, 2],
+            [0, 0, 0, 0, 0],
+            [-2, -8, -12, -8, -2],
+            [-1, -4, -6, -4, -1],
+        ]
+    )
+
+    # Convolve image with kernels to get x and y derivatives of image.
+    g_x = convolve(img, kernel_x)
+    g_y = convolve(img, kernel_y)
+
+    # Calculate magnitude of gradient as sqrt(g_x^2 + g_y^2).
+    g = np.hypot(g_x, g_y)
+    g *= 255.0 / np.max(g)  # normalize (scale) to 0-255
+
+    return g
+
+
+def polar_to_cartesian(rho, theta):
+    x = rho * np.cos(np.radians(theta))
+    y = rho * np.sin(np.radians(theta))
+    return x, y
 
 def find_peaks(score, size=size[0] / 3):
     max_filter = maximum_filter(score, size=size)
@@ -28,7 +66,6 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     # the highest entropy location, which is where the model has the most uncertainty
     # about the label
     # this is not an optimal strategy, but it works fine for this prototype
-    print("Run model")
     with torch.no_grad():
         logits = model(x)
         log_p = F.logsigmoid(logits).numpy()
@@ -36,10 +73,8 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     entropy = -np.exp(log_p) * log_p - np.exp(log_np) * log_np
     # use peak finding to void finding candidates too close together (good for skip)
     entropy = entropy.reshape(*shape)
-    print("Find peaks")
     peaks = find_peaks(entropy)
 
-    print("Pick peaks")
     if peaks.shape[1] == 3:
         peak_scores = entropy[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
     else:

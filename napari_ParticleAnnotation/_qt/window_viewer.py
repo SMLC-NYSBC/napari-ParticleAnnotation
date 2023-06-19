@@ -15,12 +15,16 @@ from magicgui.widgets import (
     FloatSlider,
 )
 from napari import Viewer
+from scipy.spatial import ConvexHull
+from scipy.stats import zscore
+from topaz.model.factory import load_model
 from vispy.geometry import Rect
 
 from napari.components import ViewerModel
 from copy import deepcopy
 
 import numpy as np
+from qtpy.QtGui import QColor
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QSplitter
 
@@ -28,6 +32,8 @@ from packaging.version import parse as parse_version
 
 import napari
 from scipy.ndimage import maximum_filter
+from skimage import filters
+from skimage.measure import regionprops
 from napari.components.viewer_model import ViewerModel
 from napari.layers import Image, Points, Layer
 from napari.qt import QtViewer
@@ -40,16 +46,13 @@ from napari_ParticleAnnotation.utils.model.active_learning_model import (
     initialize_model,
     label_points_to_mask,
 )
+from scipy.ndimage import gaussian_filter
 from napari_ParticleAnnotation.utils.load_data import downsample
 from napari_ParticleAnnotation.utils.model.utils import (
+    find_peaks,
     rank_candidate_locations,
+    sobel_filter, polar_to_cartesian,
 )
-
-"""
-TODO: AL interaction
-TODO: Run model
-TODO: Find pick maxima
-"""
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
 
@@ -244,9 +247,14 @@ class AnnotationWidget(Container):
         self.color_map_specified = {0: "red", 1: "green", 2: "black"}
         self.napari_viewer = napari_viewer
         self.click_add_point_callback = None
+        self.mouse_move_callback = None
         self.first_predict = True
         self.particle = []
         self.three_D = False
+
+        self.model_center = load_model("resnet16")
+        self.model_center.fill()
+        self.model_center.eval()
 
         # Control Downsampling factor
         options = [1, 2, 4, 8, 16]
@@ -261,6 +269,7 @@ class AnnotationWidget(Container):
         self.l2 = LineEdit(name="L2", value="1.0")
         self.pi = LineEdit(name="pi", value="0.01")
         self.pi_weight = LineEdit(name="pi_weight", value="1000")
+        self.box_size = LineEdit(name="Box size", value="5")
 
         self.init_mrc = PushButton(name="Initialize dataset")
         self.init_mrc.clicked.connect(self._init_mrc)
@@ -310,7 +319,12 @@ class AnnotationWidget(Container):
                 self.pi_weight,
             )
         )
-        layer_init = HBox(widgets=(self.init_mrc,))
+        layer_init = HBox(
+            widgets=(
+                self.box_size,
+                self.init_mrc,
+            )
+        )
         layer_model1 = HBox(widgets=(self.init_model, self.predict))
         layer_train = HBox(
             widgets=(
@@ -368,7 +382,7 @@ class AnnotationWidget(Container):
             if data[-1, 2] == 2:
                 data = data[:-1, :]
 
-            self.y = label_points_to_mask(data, self.shape)
+            self.y = label_points_to_mask(data, self.shape, self.box_size.value)
             self.count = (~torch.isnan(self.y)).float()
 
             self.model_pred = BinaryLogisticRegression(self.x.shape[1], pi_weight=1000)
@@ -488,7 +502,7 @@ class AnnotationWidget(Container):
         except:
             data = []
 
-        self.y = label_points_to_mask(data, self.shape)
+        self.y = label_points_to_mask(data, self.shape, self.box_size.value)
         self.count = (~torch.isnan(self.y)).float()
         self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
@@ -512,7 +526,7 @@ class AnnotationWidget(Container):
             labels = points_layer.properties["label"]
             data = np.asarray(points_layer.data)
 
-            if data.shape[1] == 3:
+            if len(self.shape) == 3:
                 data = np.array(
                     (
                         data[:, 0],
@@ -529,7 +543,7 @@ class AnnotationWidget(Container):
             data = []
 
         # update y and count
-        self.y = label_points_to_mask(data, self.shape)
+        self.y = label_points_to_mask(data, self.shape, self.box_size.value)
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
@@ -582,10 +596,11 @@ class AnnotationWidget(Container):
         img = self.napari_viewer.layers[active_layer_name]
 
         # Run some operation on the image data
-        img_process = downsample(img.data, factor=self.sampling_layer.value)
-        self.shape = img_process.shape
-        _min, _max = np.quantile(img_process.ravel(), [0.1, 0.9])
-        img.data = (img_process - (_max + _min) / 2) / (_max - _min)
+        self.img_process = downsample(img.data, factor=self.sampling_layer.value)
+        # print(img_process.shape)
+        self.shape = self.img_process.shape
+        _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
+        img.data = (self.img_process - (_max + _min) / 2) / (_max - _min)
 
         self.napari_viewer.layers[active_layer_name].contrast_limits = (
             img.data.min(),
@@ -594,18 +609,20 @@ class AnnotationWidget(Container):
         self._reset_view()
 
         self.x, _ = initialize_model(img.data)
-        if len(self.shape) == 2: 
-            df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], 256))
-            df_x = df_x.numpy().transpose([2, 0, 1])
-        else:
-            df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], img.data.shape[2], 256))
-            df_x = df_x.numpy().transpose([3, 0, 1, 2])
-        self.napari_viewer.add_image(df_x, name='features')
-        print(img.data.shape, df_x.shape)
+        # if len(self.shape) == 2:
+        #     df_x = self.x.reshape((img.data.shape[0], img.data.shape[1], 256))
+        #     df_x = df_x.numpy().transpose([2, 0, 1])
+        # else:
+        #     df_x = self.x.reshape(
+        #         (img.data.shape[0], img.data.shape[1], img.data.shape[2], 256)
+        #     )
+        #     df_x = df_x.numpy().transpose([3, 0, 1, 2])
+        # self.napari_viewer.add_image(df_x, name="features")
+        # print(img.data.shape, df_x.shape)
         self.activate_click = True
-        self.setup_click_add_point(self.napari_viewer)
+        self.activate_click_add_point(self.napari_viewer)
 
-    def setup_click_add_point(self, viewer):
+    def activate_click_add_point(self, viewer):
         def click_add_point(viewer, event):
             if self.activate_click:
                 # Get the coordinates of the clicked point
@@ -615,6 +632,52 @@ class AnnotationWidget(Container):
                 if event.button == 1:
                     # Left button clicked, set label id to 1
                     label = 1
+
+                    num_dimensions = len(coord)
+                    patch_size = 15
+
+                    if num_dimensions == 2:
+                        coord_df = [coord[0], coord[1]]
+                        center = (patch_size, patch_size)
+                    else:
+                        coord_df = [coord[0], coord[1], coord[2]]
+                        center = (patch_size, patch_size, patch_size)
+
+                    # Calculate the slice object for patch extraction
+                    slice_obj = tuple(
+                        slice(int(coord[i] - patch_size), int(coord[i] + patch_size))
+                        for i in range(num_dimensions)
+                    )
+
+                    patch = self.img_process[slice_obj]
+                    patch = (patch - np.min(patch)) / (np.max(patch) - np.min(patch))
+                    patch = gaussian_filter(patch, sigma=3)
+
+                    # Scan in a circle around the center
+                    distances = np.zeros((90, 2))
+                    for id, theta in enumerate(range(0, 360, 4)):
+                        df = np.zeros(patch_size)
+                        for rho in range(patch_size):
+                            y, x = polar_to_cartesian(rho, theta)
+
+                            x = int(round(x)) + patch_size
+                            y = int(round(y)) + patch_size
+                            df[rho] = patch[y, x]
+
+                        idx = np.where(df == np.min(df))[0][0]
+                        y, x = polar_to_cartesian(idx, theta)
+                        x += patch_size
+                        y += patch_size
+                        distances[id, :] = np.array((x, y))
+
+                    df = [
+                        patch_size - np.mean(distances[:, 0]),
+                        patch_size - np.mean(distances[:, 1]),
+                    ]
+
+                    coord_df[0] = float(coord[0] + df[0])
+                    coord_df[1] = float(coord[1] + df[1])
+                    coord = tuple(coord_df)
                 elif event.button == 2:
                     # Right button clicked, set label id to 0
                     label = 0
@@ -645,7 +708,7 @@ class AnnotationWidget(Container):
                             symbol="square",
                             size=40,
                         )
-                    except:
+                    except KeyError:
                         self.napari_viewer.add_points(
                             coord,
                             name="Labels",
@@ -744,7 +807,7 @@ class AnnotationWidget(Container):
             self.step_id += 1
 
             points_layer = self.napari_viewer.layers["Labels"]
-            labels = points_layer.properties["label"]
+
             data = np.asarray(points_layer.data)
             self.cur_proposal_index, self.proposals = rank_candidate_locations(
                 self.model, self.x, self.shape, self.proposals, id_=self.step_id
@@ -809,6 +872,9 @@ class MultipleViewerWidget(QSplitter):
         self.qt_viewer1 = QtViewerWrap(viewer, self.viewer_model1)
         self.qt_viewer2 = QtViewerWrap(viewer, self.viewer_model2)
 
+        self.points_layer = self.viewer_model1.add_points(
+            [0, 0, 0], name="Mouse Pointer", symbol="cross", size=2
+        )
         self.annotation_widget = AnnotationWidget(viewer)
         viewer.window.add_dock_widget(
             self.annotation_widget, name="Annotation", area="left"
@@ -839,25 +905,35 @@ class MultipleViewerWidget(QSplitter):
         self.viewer_model2.reset_view()
 
     def _sync_view(self):
-        self.viewer_model1.camera.zoom = (
-            self.viewer_model2.camera.zoom
-        ) = self.viewer.camera.zoom
-
+        self.viewer_model2.camera.zoom = self.viewer.camera.zoom
         slice_dim = self.viewer.camera.center
 
-        self.viewer_model1.camera.center = (
-            self.viewer.camera.center[0],
-            self.viewer_model1.camera.center[1],
-            self.viewer.camera.center[2],
-        )
-        self.viewer_model1.dims.set_point(1, slice_dim[1])
+        layer_index = self.viewer_model1.layers.index(self.points_layer)
+        self.viewer_model1.layers.move(layer_index, -1)
 
-        self.viewer_model2.camera.center = (
-            self.viewer.camera.center[0],
-            self.viewer.camera.center[1],
-            self.viewer_model2.camera.center[2],
-        )
-        self.viewer_model2.dims.set_point(-1, slice_dim[2])
+        def _get_mouse_coordinates(viewer, event):
+            # Get mouse position
+            points = np.round(event.position).astype(np.int32)
+            points = np.where(points < 0, 0, points)
+
+            # Update the points layer in the target viewer with the mapped position
+            z = 0
+            if len(points) == 2:
+                points = (0, points[0], points[1])
+            self.points_layer.data = [points]
+
+            # Update zoom
+            self.viewer_model1.camera.zoom = 10
+            self.viewer_model1.camera.center = points
+            self.viewer_model1.dims.set_point(0, points[0])
+
+            self.viewer_model2.camera.center = (points[0], points[1], points[2])
+
+            self.viewer_model2.dims.set_point(-1, points[2])
+
+        # Store the callback in an instance variable
+        self.mouse_move_callback = _get_mouse_coordinates
+        self.viewer.mouse_move_callbacks.append(self.mouse_move_callback)
 
     def _layer_selection_changed(self, event):
         """
@@ -885,8 +961,8 @@ class MultipleViewerWidget(QSplitter):
             self.viewer_model2.dims.order = order
             return
 
-        order[-3:] = order[-2], order[-3], order[-1]
-        self.viewer_model1.dims.order = order
+        # order[-3:] = order[-2], order[-3], order[-1]
+        # self.viewer_model1.dims.order = order
         order = list(self.viewer.dims.order)
         order[-3:] = order[-1], order[-2], order[-3]
         self.viewer_model2.dims.order = order
