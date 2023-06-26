@@ -1050,6 +1050,8 @@ class AnnotationWidgetv2(Container):
         # Global
         self.color_map_specified = {0: "red", 1: "green", 2: "black"}
         self.activate_click = False
+        self.image_layer_name = ''
+        self.particle = []
 
         # Key binding
         self.napari_viewer.bind_key("z", self.ZEvent)
@@ -1079,8 +1081,6 @@ class AnnotationWidgetv2(Container):
                                           value=False)
 
         spacer2 = Label(value="------ Initialize Active learning model -------")
-        self.prev = PushButton(name="Undo")
-        self.prev.clicked.connect(self._undo)
         self.refresh = PushButton(name="Retrain")
         self.refresh.clicked.connect(self._refresh)
         self.predict = PushButton(name="Predict")
@@ -1092,21 +1092,21 @@ class AnnotationWidgetv2(Container):
             min=0,
             max=1,
         )
-        self.slide_pred.changed.connect(self.ToDo)
+        self.slide_pred.changed.connect(self.filter_particle)
 
         self.points_layer = create_widget(annotation=Points, label="ROI", options={})
-        self.points_layer.changed.connect(self.ToDo)
+        self.points_layer.changed.connect(self._update_roi_info)
 
         self.component_selector = SpinBox(name="Particle ID", min=0)
-        self.component_selector.changed.connect(self.ToDo)
+        self.component_selector.changed.connect(self._component_num_changed)
 
         self.zoom_factor = create_widget(
             annotation=float, label="Zoom factor", value=100
         )
-        self.zoom_factor.changed.connect(self.ToDo)
+        self.zoom_factor.changed.connect(self._component_num_changed)
 
         self.reset_view = PushButton(name="Reset View")
-        self.reset_view.clicked.connect(self.ToDo)
+        self.reset_view.clicked.connect(self._reset_view)
 
         layout_model = HBox(widgets=(self.load_ALM, self.save_ALM,))
         layer_init = VBox(
@@ -1117,7 +1117,7 @@ class AnnotationWidgetv2(Container):
                 self.recenter_positive
             )
         )
-        layer_AL = HBox(widgets=(self.prev, self.refresh, self.predict))
+        layer_AL = HBox(widgets=(self.refresh, self.predict))
         layer_slider = HBox(widgets=(self.slide_pred,))
         layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
         layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
@@ -1168,20 +1168,39 @@ class AnnotationWidgetv2(Container):
 
         napari.utils.notifications.show_info(f'Found {sum(p_label[:, 0] == 1)} "Positive" and {sum(p_label[:, 0] == 0)} "negative" labels')
 
-    def _undo(self):
-        pass
-
     def _refresh(self):
         pass
 
     def _predict(self):
         pass
 
-    def _reset_view(self):
-        self.napari_viewer.reset_view()
+    def filter_particle(self):
+        if len(self.particle) > 0:
+            try:
+                active_layer_name = self.napari_viewer.layers.selection.active.name
+                if active_layer_name.endswith("Prediction_Filtered"):
+                    self.napari_viewer.layers.remove(active_layer_name)
+                    active_layer_name = active_layer_name[:-9]
 
-    def ToDo(self):
-        pass
+                if len(self.particle) > 0:
+                    keep_id = np.where(self.confidence >= self.slide_pred.value)
+
+                    filter_particle = self.particle[keep_id[0], :]
+                    filter_confidence = self.confidence[keep_id[0]]
+
+                    self.napari_viewer.add_points(
+                        filter_particle,
+                        name=f"{active_layer_name}_Prediction_Filtered",
+                        properties={"confidence": filter_confidence},
+                        edge_color="black",
+                        face_color="confidence",
+                        face_colormap="viridis",
+                        edge_width=0.1,
+                        symbol="disc",
+                        size=5,
+                    )
+            except:
+                pass
 
     def ZEvent(self, viewer):
         if self.activate_click:
@@ -1273,3 +1292,47 @@ class AnnotationWidgetv2(Container):
             symbol="square",
             size=40,
         )
+
+    def _update_roi_info(self):
+        if not self.activate_click:
+            self._component_num_changed()
+
+    def _component_num_changed(self):
+        self._zoom()
+
+    def _zoom(self):
+        if self.napari_viewer.dims.ndisplay != 2:
+            show_info("Zoom in does not work in 3D mode")
+
+        num = self.component_selector.value
+        if num >= len(self.points_layer.value.data):
+            num = len(self.points_layer.value.data) - 1
+
+        points = self.points_layer.value.data
+        if len(points) > 0:
+            points = np.round(self.points_layer.value.data[num]).astype(np.int32)
+            points = np.where(points < 0, 0, points)
+
+            lower_bound = points - 1
+            lower_bound = np.where(lower_bound < 0, 0, lower_bound)
+            upper_bound = points + 1
+            upper_bound = np.where(upper_bound < 0, 0, upper_bound)
+            diff = upper_bound - lower_bound
+            frame = diff * (self.zoom_factor.value - 1)
+
+            if self.napari_viewer.dims.ndisplay == 2:
+                rect = Rect(
+                    pos=(lower_bound - frame)[-2:][::-1],
+                    size=(diff + 2 * frame)[-2:][::-1],
+                )
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", "Public access to Window.qt_viewer"
+                    )
+                    self.napari_viewer.window.qt_viewer.view.camera.set_state(
+                        {"rect": rect}
+                    )
+            self._update_point(lower_bound, upper_bound)
+
+    def _reset_view(self):
+        self.napari_viewer.reset_view()
