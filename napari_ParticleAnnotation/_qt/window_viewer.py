@@ -6,6 +6,7 @@ import torch
 from magicgui.widgets import (
     Container,
     HBox,
+    VBox,
     SpinBox,
     create_widget,
     ComboBox,
@@ -13,10 +14,10 @@ from magicgui.widgets import (
     LineEdit,
     Label,
     FloatSlider,
+    Checkbox
 )
 from napari import Viewer
-from scipy.spatial import ConvexHull
-from scipy.stats import zscore
+from napari.utils.key_bindings import KeymapHandler
 from topaz.model.factory import load_model
 from vispy.geometry import Rect
 
@@ -24,16 +25,13 @@ from napari.components import ViewerModel
 from copy import deepcopy
 
 import numpy as np
-from qtpy.QtGui import QColor
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QSplitter
+from qtpy.QtWidgets import QSplitter, QFileDialog
 
 from packaging.version import parse as parse_version
 
 import napari
 from scipy.ndimage import maximum_filter
-from skimage import filters
-from skimage.measure import regionprops
 from napari.components.viewer_model import ViewerModel
 from napari.layers import Image, Points, Layer
 from napari.qt import QtViewer
@@ -49,9 +47,7 @@ from napari_ParticleAnnotation.utils.model.active_learning_model import (
 from scipy.ndimage import gaussian_filter
 from napari_ParticleAnnotation.utils.load_data import downsample
 from napari_ParticleAnnotation.utils.model.utils import (
-    find_peaks,
-    rank_candidate_locations,
-    sobel_filter, polar_to_cartesian,
+    rank_candidate_locations,polar_to_cartesian,
 )
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
@@ -875,7 +871,7 @@ class MultipleViewerWidget(QSplitter):
         self.points_layer = self.viewer_model1.add_points(
             [0, 0, 0], name="Mouse Pointer", symbol="cross", size=2
         )
-        self.annotation_widget = AnnotationWidget(viewer)
+        self.annotation_widget = AnnotationWidgetv2(viewer)
         viewer.window.add_dock_widget(
             self.annotation_widget, name="Annotation", area="left"
         )
@@ -1042,3 +1038,238 @@ class MultipleViewerWidget(QSplitter):
             )
         finally:
             self._block = False
+
+
+class AnnotationWidgetv2(Container):
+    def __init__(self, napari_viewer: Viewer):
+        super().__init__(layout="vertical")
+
+        self.click_add_point_callback = None
+        self.napari_viewer = napari_viewer
+
+        # Global
+        self.color_map_specified = {0: "red", 1: "green", 2: "black"}
+        self.activate_click = False
+
+        # Key binding
+        self.napari_viewer.bind_key("z", self.ZEvent)
+        self.napari_viewer.bind_key("x", self.XEvent)
+        self.napari_viewer.bind_key("c", self.CEvent)
+        self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
+        self.napari_viewer.mouse_drag_callbacks.append(self.select_point)
+        self.mouse_position = None
+
+        # Initialize model
+        self.load_ALM = PushButton(name="Load model")
+        self.load_ALM.clicked.connect(self._load_model)
+        self.save_ALM = PushButton(name="Save model")
+        self.save_ALM.clicked.connect(self._save_model)
+
+        spacer1 = Label(value="------- Initialize New Dataset ------")
+        options = [1, 2, 4, 8, 16]
+        self.sampling_layer = ComboBox(
+            name="Downsample_factor", value=options[3], choices=options
+        )
+        self.box_size = LineEdit(name="Box size", value="5")
+
+        self.init_data = PushButton(name="Initialize dataset")
+        self.init_data.clicked.connect(self._initialize_dataset)
+
+        self.recenter_positive = Checkbox(name='Recenter new positive labels',
+                                          value=False)
+
+        spacer2 = Label(value="------ Initialize Active learning model -------")
+        self.prev = PushButton(name="Undo")
+        self.prev.clicked.connect(self._undo)
+        self.refresh = PushButton(name="Retrain")
+        self.refresh.clicked.connect(self._refresh)
+        self.predict = PushButton(name="Predict")
+        self.predict.clicked.connect(self._predict)
+
+        spacer3 = Label(value="------------ Visualize labels tool ------------")
+        self.slide_pred = FloatSlider(
+            name="Filter Particle",
+            min=0,
+            max=1,
+        )
+        self.slide_pred.changed.connect(self.ToDo)
+
+        self.points_layer = create_widget(annotation=Points, label="ROI", options={})
+        self.points_layer.changed.connect(self.ToDo)
+
+        self.component_selector = SpinBox(name="Particle ID", min=0)
+        self.component_selector.changed.connect(self.ToDo)
+
+        self.zoom_factor = create_widget(
+            annotation=float, label="Zoom factor", value=100
+        )
+        self.zoom_factor.changed.connect(self.ToDo)
+
+        self.reset_view = PushButton(name="Reset View")
+        self.reset_view.clicked.connect(self.ToDo)
+
+        layout_model = HBox(widgets=(self.load_ALM, self.save_ALM,))
+        layer_init = VBox(
+            widgets=(
+                self.sampling_layer,
+                self.box_size,
+                self.init_data,
+                self.recenter_positive
+            )
+        )
+        layer_AL = HBox(widgets=(self.prev, self.refresh, self.predict))
+        layer_slider = HBox(widgets=(self.slide_pred,))
+        layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
+        layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
+
+        self.insert(0, layout_model)
+        self.insert(1, spacer1)
+        self.insert(2, layer_init)
+        self.insert(3, spacer2)
+        self.insert(4, layer_AL)
+        self.insert(5, spacer3)
+        self.insert(6, layer_slider)
+        self.insert(7, layer_visual1)
+        self.insert(8, layer_visual2)
+
+    def _load_model(self):
+        """ Logic to load pre-train active learning model """
+        filename, _ = QFileDialog.getSaveFileName(caption='Load File')
+
+    def _save_model(self):
+        """ Logic to save pre-train active learning model """
+        filename, _ = QFileDialog.getSaveFileName(caption='Save File', directory='Active_learn_model.pth')
+
+    def _initialize_dataset(self):
+        # Image data
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        self.image_layer_name = active_layer_name
+        img = self.napari_viewer.layers[active_layer_name]
+
+        """Down_sample dataset"""
+        self.img_process = downsample(img.data, factor=self.sampling_layer.value)
+
+        self.shape = self.img_process.shape
+        _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
+        img.data = (self.img_process - (_max + _min) / 2) / (_max - _min)
+
+        self.napari_viewer.layers[active_layer_name].contrast_limits = (
+            img.data.min(),
+            img.data.max(),
+        )
+
+        """ Initialize model and pick initial particles """
+        # Initialize model
+        self.x, _, p_label = initialize_model(img.data)
+        self.update_point_layer(p_label[:, 1:], p_label[:, 0])
+
+        self._reset_view()
+        self.activate_click = True
+
+        napari.utils.notifications.show_info(f'Found {sum(p_label[:, 0] == 1)} "Positive" and {sum(p_label[:, 0] == 0)} "negative" labels')
+
+    def _undo(self):
+        pass
+
+    def _refresh(self):
+        pass
+
+    def _predict(self):
+        pass
+
+    def _reset_view(self):
+        self.napari_viewer.reset_view()
+
+    def ToDo(self):
+        pass
+
+    def ZEvent(self, viewer):
+        if self.activate_click:
+            if self.activate_click:
+                # if self.activate_click:
+                points_layer = viewer.layers["Initial_Labels"].data
+                label = viewer.layers["Initial_Labels"].properties["label"]
+
+                # Calculate the distance between the mouse position and all points
+                distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+
+                # Identify the index of the closest point
+                closest_point_index = distances.argmin()
+
+                if distances[closest_point_index] > int(self.box_size.value):
+                    points_layer = np.insert(points_layer, 0, self.mouse_position, axis=0)
+                    label = np.insert(label, 0, [0], axis=0)
+                else:
+                    label[closest_point_index] = 0
+
+                self.update_point_layer(points_layer, label)
+
+    def XEvent(self, viewer):
+        if self.activate_click:
+            # if self.activate_click:
+            points_layer = viewer.layers["Initial_Labels"].data
+            label = viewer.layers["Initial_Labels"].properties["label"]
+
+            # Calculate the distance between the mouse position and all points
+            distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+
+            # Identify the index of the closest point
+            closest_point_index = distances.argmin()
+            if distances[closest_point_index] > int(self.box_size.value):
+                points_layer = np.insert(points_layer, 0, self.mouse_position, axis=0)
+                label = np.insert(label, 0, [1], axis=0)
+            else:
+                label[closest_point_index] = 1
+
+            self.update_point_layer(points_layer, label)
+
+    def CEvent(self, viewer):
+        if self.activate_click:
+            # if self.activate_click:
+            points_layer = viewer.layers["Initial_Labels"].data
+            label = viewer.layers["Initial_Labels"].properties["label"]
+
+            # Calculate the distance between the mouse position and all points
+            distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+
+            # Identify the index of the closest point
+            closest_point_index = distances.argmin()
+
+            # Remove that point from the layer
+            points_layer = np.delete(points_layer, closest_point_index, axis=0)
+            label = np.delete(label, closest_point_index, axis=0)
+
+            self.update_point_layer(points_layer, label)
+
+    def track_mouse_position(self, viewer, event):
+        self.mouse_position = event.position
+
+    def select_point(self, viewer, event):
+        # if self.activate_click:
+        points_layer = viewer.layers["Initial_Labels"].data
+
+        # Calculate the distance between the mouse position and all points
+        distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+        closest_point_index = distances.argmin()
+
+        # Clear the current selection and Select the closest point
+        viewer.layers["Initial_Labels"].selected_data = set()
+        viewer.layers["Initial_Labels"].selected_data.add(closest_point_index)
+
+    def update_point_layer(self, point, label):
+        try:
+            self.napari_viewer.layers.remove("Initial_Labels")
+        except:
+            pass
+
+        self.napari_viewer.add_points(
+            point,
+            name="Initial_Labels",
+            face_color="#00000000",
+            properties={"label": label},
+            edge_color="label",
+            edge_color_cycle=self.color_map_specified,
+            edge_width=0.1,
+            symbol="square",
+            size=40,
+        )

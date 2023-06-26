@@ -45,11 +45,18 @@ def polar_to_cartesian(rho, theta):
     y = rho * np.sin(np.radians(theta))
     return x, y
 
-def find_peaks(score, size=size[0] / 3):
+
+def find_peaks(score, size=size[0] / 3, with_score=False):
     max_filter = maximum_filter(score, size=size)
     peaks = score - max_filter
     peaks = np.where(peaks == 0)
     peaks = np.stack(peaks, axis=-1)
+
+    if with_score:
+        scores = []
+        for i in peaks:
+            scores.append(score[i[0], i[1]])
+        return peaks, scores
     return peaks
 
 
