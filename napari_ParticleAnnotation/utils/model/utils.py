@@ -92,36 +92,3 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
 
     return cur_proposal_index, proposals
-
-
-def split_tensor(x, yx_stride):
-    # Get the shape of the input tensor
-    _, _, h, w = x.shape
-
-    # Get the maximum shape
-    max_h, max_w = yx_stride
-
-    # Initialize an empty list to store the cut tensors
-    cut_tensors = []
-    h_range = list(range(0, h, max_h))
-    w_range = list(range(0, w, max_w))[: len(h_range)]
-
-    for i in range(len(h_range)):
-        try:
-            cut_tensors.append(
-                x[..., h_range[i] : h_range[i + 1], w_range[i] : w_range[i + 1]]
-            )
-        except IndexError:
-            cut_tensors.append(x[..., h_range[i] :, w_range[i] :])
-    return cut_tensors
-
-
-def stitch_tensor(x):
-    d = len(x)
-    c, h, w = x[0].shape
-
-    stitch_t = torch.zeros((c, d, h, w))
-    for i in range(d):
-        stitch_t[:, i, ...] = x[i]
-
-    return stitch_t

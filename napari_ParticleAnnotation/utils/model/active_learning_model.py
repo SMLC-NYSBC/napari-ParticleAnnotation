@@ -134,8 +134,8 @@ def initialize_model(mrc, troch=None):
 
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
-    xy_negative = xy[np.where(np.array(score) < 0.01)[0], :]
-    xy_positive = xy[np.where(np.array(score) > 0.8)[0], :]
+    xy_negative = xy[np.where(np.array(score) < 0.005)[0], :]
+    xy_positive = xy[np.where(np.array(score) > 0.9)[0], :]
 
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))
@@ -187,39 +187,41 @@ class BinaryLogisticRegression:
     def __call__(self, x):
         return self.predict(x)
 
-    def fit(self, x, y, weights=None):
-        n_features = x.shape[1]
-        # theta0 = torch.concat([self.weights, self.bias]).detach().numpy()
-        theta0 = np.zeros(n_features + 1)
+    def fit(self, x, y, weights=None, pre_train=None):
+        if pre_train is not None:
+            self.weights = pre_train[0]
+            self.bias = pre_train[1]
+        else:
+            n_features = x.shape[1]
+            theta0 = np.zeros(n_features + 1)
 
-        def loss_fn(theta):
+            def loss_fn(theta):
+                w = torch.from_numpy(theta[:n_features]).float()
+                b = torch.from_numpy(theta[n_features:]).float()
+                w.requires_grad = True
+                b.requires_grad = True
+
+                model = BinaryLogisticRegression(
+                    n_features, l2=self.l2, pi=self.pi, pi_weight=self.pi_weight
+                )
+                model.weights = w
+                model.bias = b
+
+                loss, _ = model.loss(x, y, weights=weights)
+                loss.backward()
+
+                grad = torch.concat([w.grad, b.grad]).detach().numpy()
+                loss = loss.item()
+
+                return loss, grad
+
+            result = minimize(loss_fn, theta0, jac=True)
+            self.result = result
+
+            theta = result.x
             w = torch.from_numpy(theta[:n_features]).float()
             b = torch.from_numpy(theta[n_features:]).float()
-            w.requires_grad = True
-            b.requires_grad = True
-
-            model = BinaryLogisticRegression(
-                n_features, l2=self.l2, pi=self.pi, pi_weight=self.pi_weight
-            )
-            model.weights = w
-            model.bias = b
-
-            loss, _ = model.loss(x, y, weights=weights)
-            loss.backward()
-
-            grad = torch.concat([w.grad, b.grad]).detach().numpy()
-            loss = loss.item()
-
-            return loss, grad
-
-        result = minimize(loss_fn, theta0, jac=True)
-        self.result = result
-
-        theta = result.x
-        w = torch.from_numpy(theta[:n_features]).float()
-        b = torch.from_numpy(theta[n_features:]).float()
-        self.weights = w
-        self.bias = b
+            self.weights = w
+            self.bias = b
 
         return self
-
