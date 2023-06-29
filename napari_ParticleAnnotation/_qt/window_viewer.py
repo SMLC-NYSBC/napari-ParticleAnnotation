@@ -453,8 +453,8 @@ class AnnotationWidgetv2(Container):
 
         spacer1 = Label(value="------- Initialize New Dataset ------")
         options = [1, 2, 4, 8, 16]
-        self.sampling_layer = ComboBox(
-            name="Downsample_factor", value=options[3], choices=options
+        self.sampling_layer = LineEdit(
+            name="Pixel_size", value="0.0"
         )
         self.box_size = LineEdit(name="Box size", value="5")
 
@@ -492,13 +492,13 @@ class AnnotationWidgetv2(Container):
 
         self.reset_view = PushButton(name="Reset View")
         self.reset_view.clicked.connect(self._reset_view)
-
-        layout_model = HBox(
-            widgets=(
-                self.load_ALM,
-                self.save_ALM,
-            )
-        )
+        #
+        # layout_model = HBox(
+        #     widgets=(
+        #         self.load_ALM,
+        #         self.save_ALM,
+        #     )
+        # )
         layer_init = VBox(
             widgets=(
                 self.sampling_layer,
@@ -512,7 +512,7 @@ class AnnotationWidgetv2(Container):
         layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
         layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
 
-        self.insert(0, layout_model)
+        # self.insert(0, layout_model)
         self.insert(1, spacer1)
         self.insert(2, layer_init)
         self.insert(3, spacer2)
@@ -542,7 +542,8 @@ class AnnotationWidgetv2(Container):
         img = self.napari_viewer.layers[active_layer_name]
 
         """Down_sample dataset"""
-        self.img_process = downsample(img.data, factor=self.sampling_layer.value)
+        factor = int(self.sampling_layer.value) / 8
+        self.img_process = downsample(img.data, factor=factor)
 
         self.shape = self.img_process.shape
         _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
@@ -732,7 +733,7 @@ class AnnotationWidgetv2(Container):
                 # Identify the index of the closest point
                 closest_point_index = distances.argmin()
 
-                if distances[closest_point_index] > int(2 * self.box_size.value):
+                if distances[closest_point_index] > 12:
                     points_layer = np.insert(
                         points_layer, 0, self.mouse_position, axis=0
                     )
@@ -753,7 +754,7 @@ class AnnotationWidgetv2(Container):
 
             # Identify the index of the closest point
             closest_point_index = distances.argmin()
-            if distances[closest_point_index] > int(2 * self.box_size.value):
+            if distances[closest_point_index] > 12:
                 points_layer = np.insert(points_layer, 0, self.mouse_position, axis=0)
                 label = np.insert(label, 0, [1], axis=0)
             else:
