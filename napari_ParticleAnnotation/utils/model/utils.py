@@ -54,8 +54,12 @@ def find_peaks(score, size=size[0] / 3, with_score=False):
 
     if with_score:
         scores = []
-        for i in peaks:
-            scores.append(score[i[0], i[1]])
+        if peaks.shape[1] == 3:
+            for i in peaks:
+                scores.append(score[i[0], i[1], i[2]])
+        else:
+            for i in peaks:
+                scores.append(score[i[0], i[1]])
         return peaks, scores
     return peaks
 
@@ -92,3 +96,24 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
 
     return cur_proposal_index, proposals
+
+
+def get_device() -> torch.device:
+    """
+    Return device that can be used for training or predictions
+
+    Returns:
+        torch.device: Device type.
+    """
+    df = torch.rand((1, 1))
+    try:
+        device = torch.device("cuda:0")
+        df.to(device)
+    except AssertionError:
+        try:
+            device = torch.device("mps")
+            df.to(device)
+        except AssertionError:
+            device = torch.device("cpu")
+            df.to(device)
+    return device

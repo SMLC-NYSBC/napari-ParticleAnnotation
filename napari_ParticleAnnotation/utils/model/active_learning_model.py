@@ -99,8 +99,8 @@ def label_points_to_mask(points, shape, size):
     return y
 
 
-def initialize_model(mrc, troch=None):
-    model = load_model("resnet16")
+def initialize_model(mrc):
+    model = load_model("resnet16_u32")
     classifier = model.classifier
     model = model.features
     model.fill()
@@ -111,8 +111,8 @@ def initialize_model(mrc, troch=None):
         mrc = torch.from_numpy(mrc).float().unsqueeze(0)
         _, d, h, w = mrc.shape
 
-        filter_values = torch.zeros((256, d, h, w))  # C D H W
-        classified = np.zeros((256, d, h, w))  # C D H W
+        filter_values = torch.zeros((128, d, h, w))  # C D H W
+        classified = np.zeros((128, d, h, w))  # C D H W
 
         from tqdm import tqdm
 
@@ -124,9 +124,15 @@ def initialize_model(mrc, troch=None):
 
         x = filter_values.permute(1, 2, 3, 0)  # D, H, W, C
     else:
+        model = load_model("resnet16")
+        classifier = model.classifier
+        model = model.features
+        model.fill()
+        model.eval()
+        classifier.eval()
         with torch.no_grad():
             filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
-            classified = torch.sigmoid(classifier(filter_values)).numpy()  # C, W, H
+            classified = torch.sigmoid(classifier(filter_values)).cpu().numpy()  # C, W, H
 
         x = filter_values.permute(1, 2, 0)  # W, H, C
 
@@ -135,8 +141,8 @@ def initialize_model(mrc, troch=None):
 
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
-    xy_negative = xy[np.where(np.array(score) < 0.005)[0], :]
-    xy_positive = xy[np.where(np.array(score) > 0.9)[0], :]
+    xy_negative = xy[[np.array(score).argsort()[:100][::-1]], :][0, ...]
+    xy_positive = xy[[np.array(score).argsort()[-100:][::-1]], :][0, ...]
 
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))

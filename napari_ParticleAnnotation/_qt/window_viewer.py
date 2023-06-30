@@ -48,7 +48,7 @@ from scipy.ndimage import gaussian_filter
 from napari_ParticleAnnotation.utils.load_data import downsample
 from napari_ParticleAnnotation.utils.model.utils import (
     rank_candidate_locations,
-    polar_to_cartesian,
+    polar_to_cartesian
 )
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
@@ -576,7 +576,7 @@ class AnnotationWidgetv2(Container):
             n_features=self.x.shape[1],
             l2=1.0,
             pi=0.01,
-            pi_weight=1000,
+            pi_weight=1000
         )
         if self.filename is not None:
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel(), pre_train=self.AL_weights)
