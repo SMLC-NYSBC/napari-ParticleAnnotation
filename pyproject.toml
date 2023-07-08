@@ -2,9 +2,6 @@
 requires = ["setuptools>42.0", "wheel", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools_scm]
-write_to = "napari_ParticleAnnotation/_version.py"
-
 [tool.isort]
 profile = "black"
 line_length = 120
