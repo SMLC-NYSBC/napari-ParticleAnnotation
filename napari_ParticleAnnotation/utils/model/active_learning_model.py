@@ -90,11 +90,11 @@ def label_points_to_mask(points, shape, size):
 
     if len(shape) == 3:
         if len(points) > 0:
-            for z, i, j, label in points:
+            for label, z, i, j in points:
                 fill_label_region(y, i, j, label, int(size), z)
     else:
         if len(points) > 0:
-            for i, j, label in points:
+            for label, i, j in points:
                 fill_label_region(y, i, j, label, int(size))
     return y
 
@@ -132,7 +132,9 @@ def initialize_model(mrc):
         classifier.eval()
         with torch.no_grad():
             filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
-            classified = torch.sigmoid(classifier(filter_values)).cpu().numpy()  # C, W, H
+            classified = (
+                torch.sigmoid(classifier(filter_values)).cpu().numpy()
+            )  # C, W, H
 
         x = filter_values.permute(1, 2, 0)  # W, H, C
 

@@ -15,8 +15,11 @@ def downsample(img, factor=8):
 
     if len(img.shape) == 3:
         img = ndimage.gaussian_filter(img, sigma=1 / factor - 0.5)
-        img = F.interpolate(torch.Tensor(img).unsqueeze(0).unsqueeze(0),
-                            scale_factor=factor, mode='trilinear').numpy()[0, 0, ...]
+        img = F.interpolate(
+            torch.Tensor(img).unsqueeze(0).unsqueeze(0),
+            scale_factor=factor,
+            mode="trilinear",
+        ).numpy()[0, 0, ...]
     else:
         y, x = img.shape
         y = int(y / (1 / factor))
@@ -173,6 +176,7 @@ def import_am(am_file: str):
             img = df_img.reshape((nz * ny * nx))
 
     return img
+
 
 # int nx
 # int ny

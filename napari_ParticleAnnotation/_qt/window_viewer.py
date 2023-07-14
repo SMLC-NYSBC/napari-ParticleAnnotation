@@ -44,9 +44,7 @@ from napari_ParticleAnnotation.utils.model.active_learning_model import (
 )
 
 from napari_ParticleAnnotation.utils.load_data import downsample
-from napari_ParticleAnnotation.utils.model.utils import (
-    rank_candidate_locations
-)
+from napari_ParticleAnnotation.utils.model.utils import rank_candidate_locations
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
 
@@ -446,9 +444,7 @@ class AnnotationWidgetv2(Container):
 
         spacer1 = Label(value="------- Initialize New Dataset ------")
         options = [1, 2, 4, 8, 16]
-        self.sampling_layer = LineEdit(
-            name="Pixel_size", value="1.0"
-        )
+        self.sampling_layer = LineEdit(name="Pixel_size", value="1.0")
         self.box_size = LineEdit(name="Box size", value="5")
 
         self.init_data = PushButton(name="Initialize dataset")
@@ -518,7 +514,7 @@ class AnnotationWidgetv2(Container):
     def _load_model(self):
         """Logic to load pre-train active learning model"""
         self.filename, _ = QFileDialog.getSaveFileName(caption="Load File")
-        self.AL_weights = torch.load(f'{self.filename}.pth')
+        self.AL_weights = torch.load(f"{self.filename}.pth")
 
     def _save_model(self):
         """Logic to save pre-train active learning model"""
@@ -562,16 +558,17 @@ class AnnotationWidgetv2(Container):
         )
 
         self.model = BinaryLogisticRegression(
-            n_features=self.x.shape[1],
-            l2=1.0,
-            pi=0.01,
-            pi_weight=1000
+            n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
         )
         if self.filename is not None:
-            self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel(), pre_train=self.AL_weights)
+            self.model.fit(
+                self.x,
+                self.y.ravel(),
+                weights=self.count.ravel(),
+                pre_train=self.AL_weights,
+            )
         self._reset_view()
-        napari.utils.notifications.show_info(
-            f'Task finished: Initialize Dataset!')
+        napari.utils.notifications.show_info(f"Task finished: Initialize Dataset!")
 
     def _refresh(self):
         """
@@ -582,21 +579,21 @@ class AnnotationWidgetv2(Container):
 
         if np.any(label == 2):
             napari.utils.notifications.show_info(
-                f'Please Correct all uncertain particles!'
+                f"Please Correct all uncertain particles!"
             )
         else:
             data = np.asarray(points_layer.data)
             if data.shape[1] == 2:
                 data = np.array(
-                    (data[:, 0], data[:, 1], np.array(label).astype(np.int16))
+                    (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
                 ).T
             else:
                 data = np.array(
                     (
+                        np.array(label).astype(np.int16),
                         data[:, 0],
                         data[:, 1],
                         data[:, 2],
-                        np.array(label).astype(np.int16),
                     )
                 ).T
 
@@ -610,19 +607,15 @@ class AnnotationWidgetv2(Container):
 
             # Add point which model are least certain about
             points = np.vstack(self.proposals[-10:])
-            label_unknown = np.zeros((points.shape[0], ))
+            label_unknown = np.zeros((points.shape[0],))
             label_unknown[:] = 2
 
-            if data.shape[1] == 2:  # 2D
-                data = np.vstack((data[:, :2], points.astype(np.float64)))
-            else:  # 3D
-                data = np.vstack((data[:, :3], points.astype(np.float64)))
+            data = np.vstack((data[:, 1:], points.astype(np.float64)))
 
             labels = np.hstack((label, label_unknown))
             self.update_point_layer(data, labels)
 
-            napari.utils.notifications.show_info(
-                f'Task finished: Retrain model!')
+            napari.utils.notifications.show_info(f"Task finished: Retrain model!")
 
     def _predict(self):
         self.activate_click = False
@@ -633,21 +626,21 @@ class AnnotationWidgetv2(Container):
 
         if np.any(label == 2):
             napari.utils.notifications.show_info(
-                f'Please Correct all uncertain particles!'
+                f"Please Correct all uncertain particles!"
             )
         else:
             data = np.asarray(points_layer.data)
             if data.shape[1] == 2:
                 data = np.array(
-                    (data[:, 0], data[:, 1], np.array(label).astype(np.int16))
+                    (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
                 ).T
             else:
                 data = np.array(
                     (
+                        np.array(label).astype(np.int16),
                         data[:, 0],
                         data[:, 1],
                         data[:, 2],
-                        np.array(label).astype(np.int16),
                     )
                 ).T
 
@@ -690,11 +683,9 @@ class AnnotationWidgetv2(Container):
 
             self.particle = peaks
             self.confidence = peak_logits.numpy()
-            napari.utils.notifications.show_info(
-                f'Task finished: Particle peaking!')
+            napari.utils.notifications.show_info(f"Task finished: Particle peaking!")
 
     def filter_particle(self):
-
         if len(self.particle) > 0:
             active_layer_name = self.napari_viewer.layers.selection.active.name
             if active_layer_name.endswith("Prediction_Filtered"):
@@ -785,19 +776,24 @@ class AnnotationWidgetv2(Container):
         self.mouse_position = event.position
 
         if self.activate_click:
-            # if self.activate_click:
-            points_layer = viewer.layers["Initial_Labels"].data
+            try:
+                # if self.activate_click:
+                points_layer = viewer.layers["Initial_Labels"].data
 
-            # Calculate the distance between the mouse position and all points
-            distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
-            closest_point_index = distances.argmin()
+                # Calculate the distance between the mouse position and all points
+                distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+                closest_point_index = distances.argmin()
 
-            # Clear the current selection and Select the closest point
-            if self.selected_particle_id != closest_point_index:
-                self.selected_particle_id = closest_point_index
+                # Clear the current selection and Select the closest point
+                if self.selected_particle_id != closest_point_index:
+                    self.selected_particle_id = closest_point_index
 
-                viewer.layers["Initial_Labels"].selected_data = set()
-                viewer.layers["Initial_Labels"].selected_data.add(closest_point_index)
+                    viewer.layers["Initial_Labels"].selected_data = set()
+                    viewer.layers["Initial_Labels"].selected_data.add(
+                        closest_point_index
+                    )
+            except:
+                pass
 
     def update_point_layer(self, point, label):
         try:
