@@ -120,7 +120,7 @@ def initialize_model(mrc):
             with torch.no_grad():
                 j = model(mrc[:, i, ...]).squeeze(0)
                 filter_values[:, i, :] = j
-                classified[:, i, :] = torch.sigmoid(classifier(filter_values[:, i, :])).numpy()
+                classified[:, i, :] = torch.sigmoid(classifier(j)).numpy()
 
         x = filter_values.permute(1, 2, 3, 0)  # D, H, W, C
     else:
@@ -141,8 +141,8 @@ def initialize_model(mrc):
 
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
-    xy_negative = xy[[np.array(score).argsort()[:100][::-1]], :][0, ...]
-    xy_positive = xy[[np.array(score).argsort()[-100:][::-1]], :][0, ...]
+    xy_negative = xy[[np.array(score).argsort()[:100][::-1]], :][0, ...]  # Bottom 100
+    xy_positive = xy[[np.array(score).argsort()[-100:][::-1]], :][0, ...]  # Top 100
 
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))

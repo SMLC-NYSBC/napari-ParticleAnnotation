@@ -9,7 +9,6 @@ from magicgui.widgets import (
     VBox,
     SpinBox,
     create_widget,
-    ComboBox,
     PushButton,
     LineEdit,
     Label,
@@ -18,7 +17,6 @@ from magicgui.widgets import (
 )
 from napari import Viewer
 from napari.utils.key_bindings import KeymapHandler
-from topaz.model.factory import load_model
 from vispy.geometry import Rect
 
 from napari.components import ViewerModel
@@ -44,11 +42,10 @@ from napari_ParticleAnnotation.utils.model.active_learning_model import (
     initialize_model,
     label_points_to_mask,
 )
-from scipy.ndimage import gaussian_filter
+
 from napari_ParticleAnnotation.utils.load_data import downsample
 from napari_ParticleAnnotation.utils.model.utils import (
-    rank_candidate_locations,
-    polar_to_cartesian
+    rank_candidate_locations
 )
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
@@ -96,10 +93,6 @@ def copy_layer_le_4_16(layer: Layer, name: str = ""):
 
 
 def copy_layer(layer: Layer, name: str = ""):
-    # If napari version >= 0.4.16, use the optimized version of the function
-    if NAPARI_GE_4_16:
-        return copy_layer_le_4_16(layer, name)
-
     # If napari version < 0.4.16, create a new layer object with the same data as the original layer
     res_layer = Layer.create(*layer.as_layer_data_tuple())
 
@@ -454,7 +447,7 @@ class AnnotationWidgetv2(Container):
         spacer1 = Label(value="------- Initialize New Dataset ------")
         options = [1, 2, 4, 8, 16]
         self.sampling_layer = LineEdit(
-            name="Pixel_size", value="0.0"
+            name="Pixel_size", value="1.0"
         )
         self.box_size = LineEdit(name="Box size", value="5")
 
@@ -542,7 +535,7 @@ class AnnotationWidgetv2(Container):
         img = self.napari_viewer.layers[active_layer_name]
 
         """Down_sample dataset"""
-        factor = int(self.sampling_layer.value) / 8
+        factor = float(self.sampling_layer.value) / 8
         self.img_process = downsample(img.data, factor=factor)
 
         self.shape = self.img_process.shape
@@ -561,10 +554,6 @@ class AnnotationWidgetv2(Container):
         self.update_point_layer(p_label[:, 1:], p_label[:, 0])
         self.activate_click = True
 
-        napari.utils.notifications.show_info(
-            f'Found {sum(p_label[:, 0] == 1)} "Positive" and {sum(p_label[:, 0] == 0)} "negative" labels'
-        )
-
         """Initialize new model or load pre-trained"""
         # update y and count
         self.y = label_points_to_mask([], self.shape, self.box_size.value)
@@ -581,6 +570,8 @@ class AnnotationWidgetv2(Container):
         if self.filename is not None:
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel(), pre_train=self.AL_weights)
         self._reset_view()
+        napari.utils.notifications.show_info(
+            f'Task finished: Initialize Dataset!')
 
     def _refresh(self):
         """
@@ -621,9 +612,17 @@ class AnnotationWidgetv2(Container):
             points = np.vstack(self.proposals[-10:])
             label_unknown = np.zeros((points.shape[0], ))
             label_unknown[:] = 2
-            data = np.vstack((data[:, :2], points.astype(np.float64)))
+
+            if data.shape[1] == 2:  # 2D
+                data = np.vstack((data[:, :2], points.astype(np.float64)))
+            else:  # 3D
+                data = np.vstack((data[:, :3], points.astype(np.float64)))
+
             labels = np.hstack((label, label_unknown))
             self.update_point_layer(data, labels)
+
+            napari.utils.notifications.show_info(
+                f'Task finished: Retrain model!')
 
     def _predict(self):
         self.activate_click = False
@@ -691,6 +690,8 @@ class AnnotationWidgetv2(Container):
 
             self.particle = peaks
             self.confidence = peak_logits.numpy()
+            napari.utils.notifications.show_info(
+                f'Task finished: Particle peaking!')
 
     def filter_particle(self):
 
