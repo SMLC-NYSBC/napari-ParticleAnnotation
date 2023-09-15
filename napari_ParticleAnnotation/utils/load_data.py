@@ -62,11 +62,13 @@ def load_image(path):
     for _path in paths:
         # Read mrcfile as a memory mapped file
         if _path.endswith((".mrc", ".rec")):
-            data, _ = load_mrc_file(_path)
+            data, px = load_mrc_file(_path)
         elif _path.endswith(".tif"):
             data = tiff.imread(_path)
+            px = 1.0
         elif _path.endswith(".am"):
             data = import_am(_path)
+            px = 1.0
 
         # Append two layers if the data type is complex
         if np.issubdtype(data.dtype, np.complexfloating):
@@ -74,6 +76,8 @@ def load_image(path):
             layer_data.append((np.angle(data), {"name": "phase"}, "image"))
         else:
             layer_data.append((data, {}, "image"))
+
+    print(f"Loaded {_path} with {px} pixel size")
     return layer_data
 
 

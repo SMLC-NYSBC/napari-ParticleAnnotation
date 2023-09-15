@@ -16,7 +16,7 @@ from magicgui.widgets import (
     Checkbox,
 )
 from napari import Viewer
-from napari.utils.key_bindings import KeymapHandler
+from scipy.spatial import KDTree
 from vispy.geometry import Rect
 
 from napari.components import ViewerModel
@@ -274,7 +274,6 @@ class MultipleViewerWidget(QSplitter):
 
     def _sync_view(self):
         self.viewer_model2.camera.zoom = self.viewer.camera.zoom
-        slice_dim = self.viewer.camera.center
 
         layer_index = self.viewer_model1.layers.index(self.points_layer)
         self.viewer_model1.layers.move(layer_index, -1)
@@ -434,6 +433,7 @@ class AnnotationWidgetv2(Container):
         self.napari_viewer.bind_key("x", self.XEvent)
         self.napari_viewer.bind_key("c", self.CEvent)
         self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
+        # self.napari_viewer.mouse_double_click_callbacks.append(self.move_selected_point)
         self.mouse_position = None
 
         # Initialize model
@@ -443,7 +443,6 @@ class AnnotationWidgetv2(Container):
         self.save_ALM.clicked.connect(self._save_model)
 
         spacer1 = Label(value="------- Initialize New Dataset ------")
-        options = [1, 2, 4, 8, 16]
         self.sampling_layer = LineEdit(name="Pixel_size", value="1.0")
         self.box_size = LineEdit(name="Box size", value="5")
 
@@ -568,7 +567,7 @@ class AnnotationWidgetv2(Container):
                 pre_train=self.AL_weights,
             )
         self._reset_view()
-        napari.utils.notifications.show_info(f"Task finished: Initialize Dataset!")
+        show_info(f"Task finished: Initialize Dataset!")
 
     def _refresh(self):
         """
@@ -578,9 +577,7 @@ class AnnotationWidgetv2(Container):
         label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
 
         if np.any(label == 2):
-            napari.utils.notifications.show_info(
-                f"Please Correct all uncertain particles!"
-            )
+            show_info(f"Please Correct all uncertain particles!")
         else:
             data = np.asarray(points_layer.data)
             if data.shape[1] == 2:
@@ -615,7 +612,7 @@ class AnnotationWidgetv2(Container):
             labels = np.hstack((label, label_unknown))
             self.update_point_layer(data, labels)
 
-            napari.utils.notifications.show_info(f"Task finished: Retrain model!")
+            show_info(f"Task finished: Retrain model!")
 
     def _predict(self):
         self.activate_click = False
@@ -625,9 +622,7 @@ class AnnotationWidgetv2(Container):
         label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
 
         if np.any(label == 2):
-            napari.utils.notifications.show_info(
-                f"Please Correct all uncertain particles!"
-            )
+            show_info(f"Please Correct all uncertain particles!")
         else:
             data = np.asarray(points_layer.data)
             if data.shape[1] == 2:
@@ -683,7 +678,7 @@ class AnnotationWidgetv2(Container):
 
             self.particle = peaks
             self.confidence = peak_logits.numpy()
-            napari.utils.notifications.show_info(f"Task finished: Particle peaking!")
+            show_info(f"Task finished: Particle peaking!")
 
     def filter_particle(self):
         if len(self.particle) > 0:
@@ -714,67 +709,71 @@ class AnnotationWidgetv2(Container):
 
     def ZEvent(self, viewer):
         if self.activate_click:
-            if self.activate_click:
-                # if self.activate_click:
-                points_layer = viewer.layers["Initial_Labels"].data
-                label = viewer.layers["Initial_Labels"].properties["label"]
+            # if self.activate_click:
+            points_layer = viewer.layers["Initial_Labels"].data
+            # label = viewer.layers["Initial_Labels"].properties["label"]
 
-                # Calculate the distance between the mouse position and all points
-                distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+            # Calculate the distance between the mouse position and all points
+            kdtree = KDTree(points_layer)
+            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-                # Identify the index of the closest point
-                closest_point_index = distances.argmin()
+            # if distance > 12:
+            #     points_layer = np.insert(
+            #         points_layer, 0, self.mouse_position, axis=0
+            #     )
+            #     label = np.insert(label, 0, [0], axis=0)
+            # else:
+            #     label[closest_point_index] = 0
 
-                if distances[closest_point_index] > 12:
-                    points_layer = np.insert(
-                        points_layer, 0, self.mouse_position, axis=0
-                    )
-                    label = np.insert(label, 0, [0], axis=0)
-                else:
-                    label[closest_point_index] = 0
-
-                self.update_point_layer(points_layer, label)
+            if distance > 12:
+                self.update_point_layer_2(self.mouse_position, 0, 'add')
+            else:
+                self.update_point_layer_2(closest_point_index, 0, 'update')
+            # self.update_point_layer(points_layer, label)
 
     def XEvent(self, viewer):
         if self.activate_click:
             # if self.activate_click:
             points_layer = viewer.layers["Initial_Labels"].data
-            label = viewer.layers["Initial_Labels"].properties["label"]
+            # label = viewer.layers["Initial_Labels"].properties["label"]
 
             # Calculate the distance between the mouse position and all points
-            distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+            kdtree = KDTree(points_layer)
+            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-            # Identify the index of the closest point
-            closest_point_index = distances.argmin()
-            if distances[closest_point_index] > 12:
-                points_layer = np.insert(points_layer, 0, self.mouse_position, axis=0)
-                label = np.insert(label, 0, [1], axis=0)
+            # if distance > 12:
+            #     points_layer = np.insert(points_layer, 0, self.mouse_position, axis=0)
+            #     label = np.insert(label, 0, [1], axis=0)
+            # else:
+            #     label[closest_point_index] = 1
+
+            if distance > 12:
+                self.update_point_layer_2(self.mouse_position, 1, 'add')
             else:
-                label[closest_point_index] = 1
-
-            self.update_point_layer(points_layer, label)
+                self.update_point_layer_2(closest_point_index, 1, 'update')
+            # self.update_point_layer(points_layer, label)
 
     def CEvent(self, viewer):
         if self.activate_click:
             # if self.activate_click:
             points_layer = viewer.layers["Initial_Labels"].data
-            label = viewer.layers["Initial_Labels"].properties["label"]
+            # label = viewer.layers["Initial_Labels"].properties["label"]
 
             # Calculate the distance between the mouse position and all points
-            distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+            kdtree = KDTree(points_layer)
+            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-            # Identify the index of the closest point
-            closest_point_index = distances.argmin()
+            # # Remove that point from the layer
+            # points_layer = np.delete(points_layer, closest_point_index, axis=0)
+            # label = np.delete(label, closest_point_index, axis=0)
 
-            # Remove that point from the layer
-            points_layer = np.delete(points_layer, closest_point_index, axis=0)
-            label = np.delete(label, closest_point_index, axis=0)
-
-            self.update_point_layer(points_layer, label)
+            self.update_point_layer_2(closest_point_index, 0, 'remove')
+            # self.update_point_layer(points_layer, label)
 
     def track_mouse_position(self, viewer, event):
         self.mouse_position = event.position
 
+    def move_selected_point(self, viewer, event):
         if self.activate_click:
             try:
                 # if self.activate_click:
@@ -813,6 +812,23 @@ class AnnotationWidgetv2(Container):
             size=40,
         )
         self.napari_viewer.layers["Initial_Labels"].mode = "select"
+
+    def update_point_layer_2(self, index, label, func):
+        try:
+            p_layer = self.napari_viewer.layers["Initial_Labels"]
+
+            if func == 'add':
+                p_layer.add(index, properties={'label': [label]})
+            elif func == "remove":
+                p_layer.selected_data = [index]
+                p_layer.remove_selected()
+            elif func == 'update':
+                p_layer.properties['label'][index] = label
+            else:
+                pass
+            p_layer.edge_color_cycle = self.color_map_specified
+        except:
+            pass
 
     def _update_roi_info(self):
         if not self.activate_click:
