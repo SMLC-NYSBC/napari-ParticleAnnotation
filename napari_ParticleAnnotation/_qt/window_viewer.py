@@ -267,8 +267,12 @@ class MultipleViewerWidget(QSplitter):
         self.viewer.layers.selection.events.active.connect(
             self._layer_selection_changed
         )
+        # Store the callback in an instance variable
+        self.mouse_move_callback = self._get_mouse_coordinates
+        self.viewer.mouse_move_callbacks.append(self.mouse_move_callback)
 
     def _reset_view(self):
+        self.viewer.reset_view()
         self.viewer_model1.reset_view()
         self.viewer_model2.reset_view()
 
@@ -278,29 +282,25 @@ class MultipleViewerWidget(QSplitter):
         layer_index = self.viewer_model1.layers.index(self.points_layer)
         self.viewer_model1.layers.move(layer_index, -1)
 
-        def _get_mouse_coordinates(viewer, event):
-            # Get mouse position
-            points = np.round(event.position).astype(np.int32)
-            points = np.where(points < 0, 0, points)
+    def _get_mouse_coordinates(self, viewer, event):
+        # Get mouse position
+        points = np.round(event.position).astype(np.int32)
+        points = np.where(points < 0, 0, points)
 
-            # Update the points layer in the target viewer with the mapped position
-            z = 0
-            if len(points) == 2:
-                points = (0, points[0], points[1])
-            self.points_layer.data = [points]
+        # Update the points layer in the target viewer with the mapped position
+        z = 0
+        if len(points) == 2:
+            points = (0, points[0], points[1])
+        self.points_layer.data = [points]
 
-            # Update zoom
-            self.viewer_model1.camera.zoom = 10
-            self.viewer_model1.camera.center = points
-            self.viewer_model1.dims.set_point(0, points[0])
+        # Update zoom
+        self.viewer_model1.camera.zoom = 10
+        self.viewer_model1.camera.center = points
+        self.viewer_model1.dims.set_point(0, points[0])
 
-            self.viewer_model2.camera.center = (points[0], points[1], points[2])
+        self.viewer_model2.camera.center = (points[0], points[1], points[2])
 
-            self.viewer_model2.dims.set_point(-1, points[2])
-
-        # Store the callback in an instance variable
-        self.mouse_move_callback = _get_mouse_coordinates
-        self.viewer.mouse_move_callbacks.append(self.mouse_move_callback)
+        self.viewer_model2.dims.set_point(-1, points[2])
 
     def _layer_selection_changed(self, event):
         """
@@ -429,11 +429,18 @@ class AnnotationWidgetv2(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
 
         # Key binding
-        self.napari_viewer.bind_key("z", self.ZEvent)
-        self.napari_viewer.bind_key("x", self.XEvent)
-        self.napari_viewer.bind_key("c", self.CEvent)
-        self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
-        # self.napari_viewer.mouse_double_click_callbacks.append(self.move_selected_point)
+        try:
+            self.napari_viewer.bind_key("z", self.ZEvent)
+            self.napari_viewer.bind_key("x", self.XEvent)
+            self.napari_viewer.bind_key("c", self.CEvent)
+        except ValueError:
+            pass
+
+        if self.track_mouse_position not in self.napari_viewer.mouse_move_callbacks:
+            self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
+
+        if self.move_selected_point not in self.napari_viewer.mouse_double_click_callbacks:
+            self.napari_viewer.mouse_double_click_callbacks.append(self.move_selected_point)
         self.mouse_position = None
 
         # Initialize model
@@ -480,13 +487,7 @@ class AnnotationWidgetv2(Container):
 
         self.reset_view = PushButton(name="Reset View")
         self.reset_view.clicked.connect(self._reset_view)
-        #
-        # layout_model = HBox(
-        #     widgets=(
-        #         self.load_ALM,
-        #         self.save_ALM,
-        #     )
-        # )
+
         layer_init = VBox(
             widgets=(
                 self.sampling_layer,
@@ -546,7 +547,7 @@ class AnnotationWidgetv2(Container):
         self.x, _, p_label = initialize_model(img.data)
 
         """ Initialize model and pick initial particles """
-        self.update_point_layer(p_label[:, 1:], p_label[:, 0])
+        self.create_point_layer(p_label[:, 1:], p_label[:, 0])
         self.activate_click = True
 
         """Initialize new model or load pre-trained"""
@@ -573,13 +574,15 @@ class AnnotationWidgetv2(Container):
         """
         Re-train model, and add 10 most uncertain points to the list
         """
+        self.activate_click = True
+
         points_layer = self.napari_viewer.layers["Initial_Labels"].data
         label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
 
         if np.any(label == 2):
             show_info(f"Please Correct all uncertain particles!")
         else:
-            data = np.asarray(points_layer.data)
+            data = np.asarray(points_layer)
             if data.shape[1] == 2:
                 data = np.array(
                     (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
@@ -610,7 +613,7 @@ class AnnotationWidgetv2(Container):
             data = np.vstack((data[:, 1:], points.astype(np.float64)))
 
             labels = np.hstack((label, label_unknown))
-            self.update_point_layer(data, labels)
+            self.create_point_layer(data, labels)
 
             show_info(f"Task finished: Retrain model!")
 
@@ -704,71 +707,46 @@ class AnnotationWidgetv2(Container):
                 symbol="disc",
                 size=5,
             )
-            # except:
-            #     pass
 
     def ZEvent(self, viewer):
         if self.activate_click:
             # if self.activate_click:
             points_layer = viewer.layers["Initial_Labels"].data
-            # label = viewer.layers["Initial_Labels"].properties["label"]
 
             # Calculate the distance between the mouse position and all points
             kdtree = KDTree(points_layer)
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
-
-            # if distance > 12:
-            #     points_layer = np.insert(
-            #         points_layer, 0, self.mouse_position, axis=0
-            #     )
-            #     label = np.insert(label, 0, [0], axis=0)
-            # else:
-            #     label[closest_point_index] = 0
 
             if distance > 12:
                 self.update_point_layer_2(self.mouse_position, 0, 'add')
             else:
                 self.update_point_layer_2(closest_point_index, 0, 'update')
-            # self.update_point_layer(points_layer, label)
 
     def XEvent(self, viewer):
         if self.activate_click:
             # if self.activate_click:
             points_layer = viewer.layers["Initial_Labels"].data
-            # label = viewer.layers["Initial_Labels"].properties["label"]
 
             # Calculate the distance between the mouse position and all points
             kdtree = KDTree(points_layer)
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-            # if distance > 12:
-            #     points_layer = np.insert(points_layer, 0, self.mouse_position, axis=0)
-            #     label = np.insert(label, 0, [1], axis=0)
-            # else:
-            #     label[closest_point_index] = 1
-
             if distance > 12:
+                print('add new')
                 self.update_point_layer_2(self.mouse_position, 1, 'add')
             else:
                 self.update_point_layer_2(closest_point_index, 1, 'update')
-            # self.update_point_layer(points_layer, label)
 
     def CEvent(self, viewer):
         if self.activate_click:
             # if self.activate_click:
             points_layer = viewer.layers["Initial_Labels"].data
-            # label = viewer.layers["Initial_Labels"].properties["label"]
 
             # Calculate the distance between the mouse position and all points
             kdtree = KDTree(points_layer)
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-            # # Remove that point from the layer
-            # points_layer = np.delete(points_layer, closest_point_index, axis=0)
-            # label = np.delete(label, closest_point_index, axis=0)
-
             self.update_point_layer_2(closest_point_index, 0, 'remove')
-            # self.update_point_layer(points_layer, label)
 
     def track_mouse_position(self, viewer, event):
         self.mouse_position = event.position
@@ -794,7 +772,7 @@ class AnnotationWidgetv2(Container):
             except:
                 pass
 
-    def update_point_layer(self, point, label):
+    def create_point_layer(self, point, label):
         try:
             self.napari_viewer.layers.remove("Initial_Labels")
         except:
@@ -818,15 +796,26 @@ class AnnotationWidgetv2(Container):
             p_layer = self.napari_viewer.layers["Initial_Labels"]
 
             if func == 'add':
-                p_layer.add(index, properties={'label': [label]})
+                point_layer = p_layer.data
+                labels = p_layer.properties["label"]
+
+                points_layer = np.insert(point_layer, 0, self.mouse_position, axis=0)
+                labels = np.insert(labels, 0, [label], axis=0)
+
+                self.create_point_layer(points_layer, labels)
             elif func == "remove":
                 p_layer.selected_data = [index]
                 p_layer.remove_selected()
             elif func == 'update':
-                p_layer.properties['label'][index] = label
+                point_layer = p_layer.data
+                labels = p_layer.properties["label"]
+                labels[index] = label
+
+                self.create_point_layer(point_layer, labels)
             else:
                 pass
             p_layer.edge_color_cycle = self.color_map_specified
+            self._reset_view()
         except:
             pass
 
