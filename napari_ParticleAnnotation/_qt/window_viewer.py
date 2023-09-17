@@ -288,7 +288,6 @@ class MultipleViewerWidget(QSplitter):
         points = np.where(points < 0, 0, points)
 
         # Update the points layer in the target viewer with the mapped position
-        z = 0
         if len(points) == 2:
             points = (0, points[0], points[1])
         self.points_layer.data = [points]
@@ -557,9 +556,10 @@ class AnnotationWidgetv2(Container):
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
 
-        self.model = BinaryLogisticRegression(
-            n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
-        )
+        if self.model is None:
+            self.model = BinaryLogisticRegression(
+                n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+            )
         if self.filename is not None:
             self.model.fit(
                 self.x,
@@ -649,7 +649,9 @@ class AnnotationWidgetv2(Container):
 
             with torch.no_grad():
                 logits = self.model(self.x).reshape(*self.shape)
-                p = torch.sigmoid(logits)
+                # p = torch.sigmoid(logits)
+                p = torch.clone(logits)
+
             logits = logits.numpy()
 
             max_filter = maximum_filter(logits, size=15)
@@ -681,6 +683,9 @@ class AnnotationWidgetv2(Container):
 
             self.particle = peaks
             self.confidence = peak_logits.numpy()
+            self.slide_pred.min = np.min(self.confidence)
+            self.slide_pred.max = np.max(self.confidence)
+
             show_info(f"Task finished: Particle peaking!")
 
     def filter_particle(self):
@@ -732,7 +737,6 @@ class AnnotationWidgetv2(Container):
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
             if distance > 12:
-                print('add new')
                 self.update_point_layer_2(self.mouse_position, 1, 'add')
             else:
                 self.update_point_layer_2(closest_point_index, 1, 'update')
@@ -804,14 +808,19 @@ class AnnotationWidgetv2(Container):
 
                 self.create_point_layer(points_layer, labels)
             elif func == "remove":
-                p_layer.selected_data = [index]
-                p_layer.remove_selected()
+                point_layer = p_layer.data
+                labels = p_layer.properties["label"]
+
+                points_layer = np.delete(point_layer, index, axis=0)
+                labels = np.delete(labels, index, axis=0)
+
+                self.create_point_layer(points_layer, labels)
             elif func == 'update':
                 point_layer = p_layer.data
                 labels = p_layer.properties["label"]
-                labels[index] = label
-
-                self.create_point_layer(point_layer, labels)
+                if labels[index] != label:
+                    labels[index] = label
+                    self.create_point_layer(point_layer, labels)
             else:
                 pass
             p_layer.edge_color_cycle = self.color_map_specified
