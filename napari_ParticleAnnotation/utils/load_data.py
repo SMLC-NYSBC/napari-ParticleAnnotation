@@ -102,7 +102,7 @@ def load_xyz(path):
 
         # Load CSV
         if _path.endswith(".csv"):
-            xyz = np.genfromtxt(_path, delimiter=",")
+            xyz = np.genfromtxt(_path, delimiter=",", dtype=float)
 
         # Load Star
         if _path.endswith(".star"):
@@ -111,14 +111,10 @@ def load_xyz(path):
         if isinstance(xyz[0, 0], str):
             xyz = xyz[1:, :]
 
-        if xyz.shape[1] == 3:  # No labels
-            xyz_layer = np.zeros((len(xyz), 5))
-            xyz_layer[:, 2:] = xyz
-        elif xyz.shape[1] == 4:  # Labels
-            xyz_layer = np.zeros((len(xyz), 5))
-            xyz_layer[:, 1:] = xyz
+        if isinstance(xyz[0, 0], float):
+            xyz = xyz[1:, 1:]
 
-        layer_data.append((xyz_layer, {}, "points"))
+        layer_data.append((xyz, {}, "points"))
     return layer_data
 
 

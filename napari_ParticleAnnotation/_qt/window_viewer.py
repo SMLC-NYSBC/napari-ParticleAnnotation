@@ -2,6 +2,8 @@ from enum import Enum
 from functools import partial
 import warnings
 
+import scipy.ndimage as nd
+
 import torch
 from magicgui.widgets import (
     Container,
@@ -17,6 +19,7 @@ from magicgui.widgets import (
 )
 from napari import Viewer
 from scipy.spatial import KDTree
+from topaz.stats import normalize
 from vispy.geometry import Rect
 
 from napari.components import ViewerModel
@@ -438,8 +441,13 @@ class AnnotationWidgetv2(Container):
         if self.track_mouse_position not in self.napari_viewer.mouse_move_callbacks:
             self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
 
-        if self.move_selected_point not in self.napari_viewer.mouse_double_click_callbacks:
-            self.napari_viewer.mouse_double_click_callbacks.append(self.move_selected_point)
+        if (
+            self.move_selected_point
+            not in self.napari_viewer.mouse_double_click_callbacks
+        ):
+            self.napari_viewer.mouse_double_click_callbacks.append(
+                self.move_selected_point
+            )
         self.mouse_position = None
 
         # Initialize model
@@ -487,6 +495,10 @@ class AnnotationWidgetv2(Container):
         self.reset_view = PushButton(name="Reset View")
         self.reset_view.clicked.connect(self._reset_view)
 
+        spacer4 = Label(value="------------ Manual labels tool ------------")
+        self.manual_label = PushButton(name="Gaussian pre-process")
+        self.manual_label.clicked.connect(self.initialize_labeling)
+
         layer_init = VBox(
             widgets=(
                 self.sampling_layer,
@@ -499,7 +511,7 @@ class AnnotationWidgetv2(Container):
         layer_slider = HBox(widgets=(self.slide_pred,))
         layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
         layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
-
+        label = HBox(widgets=(self.manual_label,))
         # self.insert(0, layout_model)
         self.insert(1, spacer1)
         self.insert(2, layer_init)
@@ -509,6 +521,8 @@ class AnnotationWidgetv2(Container):
         self.insert(6, layer_slider)
         self.insert(7, layer_visual1)
         self.insert(8, layer_visual2)
+        self.insert(9, spacer4)
+        self.insert(10, label)
 
     def _load_model(self):
         """Logic to load pre-train active learning model"""
@@ -534,8 +548,8 @@ class AnnotationWidgetv2(Container):
         self.img_process = downsample(img.data, factor=factor)
 
         self.shape = self.img_process.shape
-        _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
-        img.data = (self.img_process - (_max + _min) / 2) / (_max - _min)
+        # _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
+        img.data, _ = normalize(self.img_process, method="gmm", use_cuda=False)
 
         self.napari_viewer.layers[active_layer_name].contrast_limits = (
             img.data.min(),
@@ -649,12 +663,12 @@ class AnnotationWidgetv2(Container):
 
             with torch.no_grad():
                 logits = self.model(self.x).reshape(*self.shape)
-                # p = torch.sigmoid(logits)
+                p_sigm = torch.sigmoid(logits)
                 p = torch.clone(logits)
 
-            logits = logits.numpy()
+            logits = p.numpy()
 
-            max_filter = maximum_filter(logits, size=15)
+            max_filter = maximum_filter(logits, size=25)
             peaks = logits - max_filter
             peaks = np.where(peaks == 0)
             peaks = np.stack(peaks, axis=-1)
@@ -713,6 +727,29 @@ class AnnotationWidgetv2(Container):
                 size=5,
             )
 
+    def initialize_labeling(self, viewer):
+        self.activate_click = True
+
+        # Image data
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        self.image_layer_name = active_layer_name
+        img = self.napari_viewer.layers[active_layer_name]
+
+        """Down_sample dataset"""
+        factor = float(self.sampling_layer.value) / 8
+        self.img_process = downsample(img.data, factor=factor)
+
+        self.shape = self.img_process.shape
+        # _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
+        img.data, _ = normalize(self.img_process, method="gmm", use_cuda=False)
+
+        self.napari_viewer.layers[active_layer_name].contrast_limits = (
+            img.data.min(),
+            img.data.max(),
+        )
+
+        img.data = nd.gaussian_filter(img.data, 2)
+
     def ZEvent(self, viewer):
         if self.activate_click:
             # if self.activate_click:
@@ -723,9 +760,9 @@ class AnnotationWidgetv2(Container):
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
             if distance > 12:
-                self.update_point_layer_2(self.mouse_position, 0, 'add')
+                self.update_point_layer_2(self.mouse_position, 0, "add")
             else:
-                self.update_point_layer_2(closest_point_index, 0, 'update')
+                self.update_point_layer_2(closest_point_index, 0, "update")
 
     def XEvent(self, viewer):
         if self.activate_click:
@@ -737,9 +774,9 @@ class AnnotationWidgetv2(Container):
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
             if distance > 12:
-                self.update_point_layer_2(self.mouse_position, 1, 'add')
+                self.update_point_layer_2(self.mouse_position, 1, "add")
             else:
-                self.update_point_layer_2(closest_point_index, 1, 'update')
+                self.update_point_layer_2(closest_point_index, 1, "update")
 
     def CEvent(self, viewer):
         if self.activate_click:
@@ -750,7 +787,7 @@ class AnnotationWidgetv2(Container):
             kdtree = KDTree(points_layer)
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-            self.update_point_layer_2(closest_point_index, 0, 'remove')
+            self.update_point_layer_2(closest_point_index, 0, "remove")
 
     def track_mouse_position(self, viewer, event):
         self.mouse_position = event.position
@@ -799,7 +836,7 @@ class AnnotationWidgetv2(Container):
         try:
             p_layer = self.napari_viewer.layers["Initial_Labels"]
 
-            if func == 'add':
+            if func == "add":
                 point_layer = p_layer.data
                 labels = p_layer.properties["label"]
 
@@ -815,7 +852,7 @@ class AnnotationWidgetv2(Container):
                 labels = np.delete(labels, index, axis=0)
 
                 self.create_point_layer(points_layer, labels)
-            elif func == 'update':
+            elif func == "update":
                 point_layer = p_layer.data
                 labels = p_layer.properties["label"]
                 if labels[index] != label:
