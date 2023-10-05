@@ -1,0 +1,36 @@
+name: ParticleAnnotation
+display_name: Particle Annotation
+contributions:
+  commands:
+    # Read/Write files
+    - id: ParticleAnnotation.import_data
+      python_name: ParticleAnnotation.utils._reader:get_reader_img
+      title: Open micrograph
+    - id: ParticleAnnotation.import_xyz
+      python_name: ParticleAnnotation.utils._reader:get_reader_xyz
+      title: Open particle label
+    - id: ParticleAnnotation.write_to_file
+      python_name: ParticleAnnotation.utils.export_data:write_to_file
+      title: Save annotation data
+
+    # Widgets
+    - id: ParticleAnnotation.viewer
+      python_name: ParticleAnnotation._qt.window_viewer:MultipleViewerWidget
+      title: Split View Window
+
+  readers:
+    - command: ParticleAnnotation.import_data
+      accepts_directories: False
+      filename_patterns: ['*.mrc', '*.rec', '*.tiff', '*.tif', '*.am']
+    - command: ParticleAnnotation.import_xyz
+      accepts_directories: False
+      filename_patterns: [ '*.csv','*.npy', '*.star']
+
+  writers:
+    - command: ParticleAnnotation.write_to_file
+      layer_types: ['points*', 'image*', 'shapes*']
+      filename_extensions: ['.csv','.npy']
+
+  widgets:
+    - command: ParticleAnnotation.viewer
+      display_name: Active Learning
