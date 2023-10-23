@@ -12,12 +12,12 @@ dir_ = "/api/data/images/"
 
 
 def check_dir():
-    if not isdir("/api/"):
-        mkdir("/api/")
-    if not isdir("/api/data/"):
-        mkdir("/api/data/")
-    if not isdir("/api/data/images/"):
-        mkdir("/api/data/images/")
+    if not isdir("api/"):
+        mkdir("api/")
+    if not isdir("api/data/"):
+        mkdir("api/data/")
+    if not isdir("api/data/images/"):
+        mkdir("api/data/images/")
 
 
 @app.get("/listfiles/", response_model=List[str])
