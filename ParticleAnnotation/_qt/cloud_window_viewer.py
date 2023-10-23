@@ -24,7 +24,7 @@ from qtpy.QtWidgets import QFileDialog
 from napari.layers import Points
 import napari
 
-from ParticleAnnotation.cloud.aws_api import url
+from ParticleAnnotation.cloud.aws_api import url, dir_
 
 from ParticleAnnotation._qt.viewer_utils import (
     ViewerModel,
@@ -315,7 +315,7 @@ class AnnotationWidgetv2(Container):
         root, extension = splitext(self.filename)
         format_ = extension[1:] if extension else None
 
-        files = {'file': (self.filename, open(f"/api/data/{self.filename}", 'rb'), f'image/{format_}')}
+        files = {'file': (dir_ + self.filename, open(f"{self.filename}", 'rb'), f'image/{format_}')}
 
         response = requests.post(url, files=files)
 

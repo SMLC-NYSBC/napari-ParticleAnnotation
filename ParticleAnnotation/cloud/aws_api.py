@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException,  File, UploadFile
 
 app = FastAPI()
 url = 'http://3.236.232.251:8000/api'
-dir_ = "api/data/images/"
+dir_ = "/api/data/images/"
 
 
 @app.get("/listfiles/", response_model=List[str])
