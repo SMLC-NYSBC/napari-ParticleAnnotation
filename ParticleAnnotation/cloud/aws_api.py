@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException,  File, UploadFile
 app = FastAPI()
 url = 'http://3.236.232.251:8000/'
 dir_ = "api/data/images/"
+formats = ["mrc, rec, tiff"]
 
 
 def check_dir():
@@ -28,9 +29,8 @@ async def list_files():
         # List all files in the predefined folder
         files = listdir(dir_)
 
-        if format:
-            files = [file for file in files if file.endswith(f".{format}")]
-        return files
+        return [file for file in files if file.endswith(f".{formats}")]
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
