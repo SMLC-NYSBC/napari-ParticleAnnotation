@@ -2,47 +2,30 @@ import warnings
 from os.path import splitext
 
 import requests
-import scipy.ndimage as nd
 
-import torch
 from magicgui.widgets import (
     Container,
-    HBox,
     VBox,
-    SpinBox,
     create_widget,
     PushButton,
     LineEdit,
     Label,
     FloatSlider,
-    Checkbox,
 )
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QSplitter
 
 from napari import Viewer
-from scipy.spatial import KDTree
-from topaz.stats import normalize
-from vispy.geometry import Rect
 
 import numpy as np
 from qtpy.QtWidgets import QFileDialog
 
-from scipy.ndimage import maximum_filter
 from napari.layers import Points
-from napari.utils.notifications import show_info
 import napari
 
 from ParticleAnnotation.cloud.aws_api import url
-from ParticleAnnotation.utils.model.active_learning_model import (
-    BinaryLogisticRegression,
-    initialize_model,
-    label_points_to_mask,
-)
 
-from ParticleAnnotation.utils.load_data import downsample
-from ParticleAnnotation.utils.model.utils import rank_candidate_locations
 from ParticleAnnotation._qt.viewer_utils import (
     ViewerModel,
     QtViewerWrap,
