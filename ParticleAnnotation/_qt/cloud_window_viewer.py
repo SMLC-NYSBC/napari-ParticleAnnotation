@@ -302,7 +302,7 @@ class AnnotationWidgetv2(Container):
         pass
 
     def _update_data_list(self):
-        response = requests.get(url)
+        response = requests.get(url+"listfiles")
 
         if response.status_code == 200:
             file_list = response.json()
@@ -317,7 +317,7 @@ class AnnotationWidgetv2(Container):
 
         files = {'file': (dir_ + self.filename, open(f"{self.filename}", 'rb'), f'image/{format_}')}
 
-        response = requests.post(url, files=files)
+        response = requests.post(url+"uploadfile", files=files)
 
         if response.status_code == 200:
             print("File uploaded successfully:", response.json())

@@ -7,7 +7,7 @@ import shutil
 from fastapi import FastAPI, HTTPException,  File, UploadFile
 
 app = FastAPI()
-url = 'http://3.236.232.251:8000/api'
+url = 'http://3.236.232.251:8000/'
 dir_ = "/api/data/images/"
 
 
