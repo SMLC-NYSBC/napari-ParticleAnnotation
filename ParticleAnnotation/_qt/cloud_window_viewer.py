@@ -2,6 +2,7 @@ import warnings
 from os.path import splitext
 
 import requests
+from PyQt5.QtWidgets import QComboBox
 
 from magicgui.widgets import (
     Container,
@@ -11,6 +12,8 @@ from magicgui.widgets import (
     LineEdit,
     Label,
     FloatSlider,
+    Select,
+    ComboBox,
 )
 
 from qtpy.QtCore import Qt
@@ -218,18 +221,19 @@ class MultipleViewerWidget(QSplitter):
 class AnnotationWidgetv2(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
+        self.napari_viewer = napari_viewer
+
+        self.file_list = []
 
         # Initialize model
         spacer1 = Label(value="-- Step 1: Initialize  Topaz  Active  learning --")
-        self.load_ALM = create_widget(
-            annotation=Points, label="Select Model", options={}
-        )
+        self.load_ALM = ComboBox(name="Select Model", choices=[])
         self.load_ALM.changed.connect(self._update_model_list)
         self.new_ALM = PushButton(name="New Model")
         self.new_ALM.clicked.connect(self._create_new_model)
 
-        self.load_data = create_widget(annotation=Points, label="Load Data", options={})
-        self.load_data.changed.connect(self._update_data_list)
+        self.load_data = ComboBox(name="Load Data", choices=())
+        self.load_data.changed.connect(self._load_file)
         self.send_data = PushButton(name="Send Data")
         self.send_data.clicked.connect(self._send_image_to_aws)
 
@@ -295,6 +299,9 @@ class AnnotationWidgetv2(Container):
         # Widget initialization
         self._update_data_list()
 
+    def _load_file(self):
+        pass
+
     def _update_model_list(self):
         pass
 
@@ -302,11 +309,15 @@ class AnnotationWidgetv2(Container):
         pass
 
     def _update_data_list(self):
-        response = requests.get(url+"listfiles")
+        response = requests.get(url + "listfiles")
 
         if response.status_code == 200:
-            file_list = response.json()
-            self.load_data.data = file_list
+            self.file_list = response.json()
+            file_list = [f[:5] for f in self.file_list]
+
+            self.load_data.choices = tuple(file_list)
+            self.load_data.value = file_list[0]
+
         else:
             print("Failed to fetch files:", response.status_code)
             print("Failed to fetch files:", response.text)
@@ -318,9 +329,9 @@ class AnnotationWidgetv2(Container):
         format_ = extension[1:] if extension else None
         name_ = self.filename.split("/")[-1]
 
-        files = {'file': (name_, open(f"{self.filename}", 'rb'), f'image/{format_}')}
+        files = {"file": (name_, open(f"{self.filename}", "rb"), f"image/{format_}")}
 
-        response = requests.post(url+"uploadfile", files=files)
+        response = requests.post(url + "uploadfile", files=files)
 
         if response.status_code == 200:
             print("File uploaded successfully:", response.json())

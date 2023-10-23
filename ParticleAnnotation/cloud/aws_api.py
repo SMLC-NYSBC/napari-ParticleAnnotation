@@ -4,10 +4,10 @@ from typing import List
 
 from fastapi.responses import JSONResponse
 import shutil
-from fastapi import FastAPI, HTTPException,  File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile
 
 app = FastAPI()
-url = 'http://3.236.232.251:8000/'
+url = "http://3.236.232.251:8000/"
 dir_ = "api/data/images/"
 formats = ("mrc", "rec", "tiff")
 
@@ -46,5 +46,3 @@ async def create_upload_file(file: UploadFile = File(...)):
         return JSONResponse(status_code=200, content={"filename": file.filename})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
