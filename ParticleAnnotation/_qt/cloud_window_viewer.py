@@ -309,6 +309,7 @@ class AnnotationWidgetv2(Container):
             self.load_data.options(file_list)
         else:
             print("Failed to fetch files:", response.status_code)
+            print("Failed to fetch files:", response.json())
 
     def _send_image_to_aws(self):
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
