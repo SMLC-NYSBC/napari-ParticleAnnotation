@@ -14,3 +14,7 @@ scipy>=1.10.1
 # ML
 torch>=1.13.0
 topaz-em >=0.2.5
+
+# Clound compute
+fastapi>=0.104.0
+uvicorn>=0.23.0

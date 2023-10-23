@@ -273,7 +273,7 @@ class AnnotationWidgetv2(Container):
         self.save_ALM = PushButton(name="Save model")
         self.save_ALM.clicked.connect(self._save_model)
 
-        spacer1 = Label(value="------- Initialize New Dataset ------")
+        spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
         self.sampling_layer = LineEdit(name="Pixel_size", value="1.0")
         self.box_size = LineEdit(name="Box size", value="5")
 
@@ -289,13 +289,13 @@ class AnnotationWidgetv2(Container):
         self.load = PushButton(name="Load Model")
         self.load.clicked.connect(self._load_model)
 
-        spacer2 = Label(value="------ Initialize Active learning model -------")
+        spacer2 = Label(value="------ Step 2: Initialize Active learning model -------")
         self.refresh = PushButton(name="Retrain")
         self.refresh.clicked.connect(self._refresh)
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
-        spacer3 = Label(value="------------ Visualize labels tool ------------")
+        spacer3 = Label(value="------------ Step 3: Visualize labels tool ------------")
         self.slide_pred = FloatSlider(
             name="Filter Particle",
             min=0,
@@ -317,7 +317,7 @@ class AnnotationWidgetv2(Container):
         self.reset_view = PushButton(name="Reset View")
         self.reset_view.clicked.connect(self._reset_view)
 
-        spacer4 = Label(value="------------ Manual labels tool ------------")
+        spacer4 = Label(value="------------ Step 4: Manual labels tool ------------")
         self.manual_label = PushButton(name="Gaussian pre-process")
         self.manual_label.clicked.connect(self.initialize_labeling)
 

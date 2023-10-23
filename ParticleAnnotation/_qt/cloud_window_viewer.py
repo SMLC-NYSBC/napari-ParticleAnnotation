@@ -1,5 +1,7 @@
 import warnings
+from os.path import splitext
 
+import requests
 import scipy.ndimage as nd
 
 import torch
@@ -31,6 +33,8 @@ from scipy.ndimage import maximum_filter
 from napari.layers import Points
 from napari.utils.notifications import show_info
 import napari
+
+from ParticleAnnotation.cloud.aws_api import url
 from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     initialize_model,
@@ -231,3 +235,127 @@ class MultipleViewerWidget(QSplitter):
 class AnnotationWidgetv2(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
+
+        # Initialize model
+        spacer1 = Label(value="-- Step 1: Initialize  Topaz  Active  learning --")
+        self.load_ALM = create_widget(
+            annotation=Points, label="Select Model", options={}
+        )
+        self.load_ALM.changed.connect(self._update_model_list)
+        self.new_ALM = PushButton(name="New Model")
+        self.new_ALM.clicked.connect(self._create_new_model)
+
+        self.load_data = create_widget(annotation=Points, label="Load Data", options={})
+        self.load_data.changed.connect(self._update_data_list)
+        self.send_data = PushButton(name="Send Data")
+        self.send_data.clicked.connect(self._send_image_to_aws)
+
+        self.init_data = PushButton(name="Initialize dataset")
+        self.init_data.clicked.connect(self._initialize_model)
+
+        spacer2 = Label(value="---------- Step 2: Iterative  Training ----------")
+        self.num_particles_al = LineEdit(name="Num. of Particles", value="1")
+        self.refresh = PushButton(name="Retrain")
+        self.refresh.clicked.connect(self._refresh)
+        self.reset_view = PushButton(name="Reset View")
+        self.reset_view.clicked.connect(self._reset_view)
+
+        spacer3 = Label(value="---------------- Step 3: Predict ----------------")
+        self.predict = PushButton(name="Predict")
+        self.predict.clicked.connect(self._predict)
+        self.update_model = PushButton(name="Update server model")
+        self.update_model.clicked.connect(self._update_on_aws)
+
+        spacer4 = Label(value="--------- Step 4: Visualize labels tool ---------")
+        self.slide_pred = FloatSlider(
+            name="Filter Particle",
+            min=0,
+            max=1,
+        )
+        self.slide_pred.changed.connect(self._filter_particle)
+
+        # Space 1
+        self.insert(1, spacer1)
+        self.insert(
+            2,
+            VBox(
+                widgets=(
+                    self.load_ALM,
+                    self.new_ALM,
+                )
+            ),
+        )
+        self.insert(
+            3,
+            VBox(
+                widgets=(
+                    self.load_data,
+                    self.send_data,
+                )
+            ),
+        )
+        self.insert(4, VBox(widgets=(self.init_data,)))
+
+        # Space 2
+        self.insert(5, spacer2)
+        self.insert(6, VBox(widgets=(self.num_particles_al, self.refresh)))
+        self.insert(7, VBox(widgets=(self.reset_view,)))
+
+        # Space 3
+        self.insert(8, spacer3)
+        self.insert(9, VBox(widgets=(self.predict, self.update_model)))
+
+        # Space 4
+        self.insert(10, spacer4)
+        self.insert(11, VBox(widgets=(self.slide_pred,)))
+
+        # Widget initialization
+        self._update_data_list()
+
+    def _update_model_list(self):
+        pass
+
+    def _create_new_model(self):
+        pass
+
+    def _update_data_list(self):
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            file_list = response.json()
+            self.load_data.options(file_list)
+        else:
+            print("Failed to fetch files:", response.status_code)
+
+    def _send_image_to_aws(self):
+        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
+        root, extension = splitext(self.filename)
+        format_ = extension[1:] if extension else None
+
+        files = {'file': (self.filename, open(f"/api/data/{self.filename}", 'rb'), f'image/{format_}')}
+
+        response = requests.post(url, files=files)
+
+        if response.status_code == 200:
+            print("File uploaded successfully:", response.json())
+            self._update_data_list()
+        else:
+            print("Failed to upload file:", response.status_code, response.text)
+
+    def _initialize_model(self):
+        pass
+
+    def _refresh(self):
+        pass
+
+    def _reset_view(self):
+        pass
+
+    def _predict(self):
+        pass
+
+    def _filter_particle(self):
+        pass
+
+    def _update_on_aws(self):
+        pass

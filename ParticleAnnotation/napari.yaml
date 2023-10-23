@@ -40,4 +40,4 @@ contributions:
       display_name: Local [CPU/GPU]
 
     - command: ParticleAnnotation.viewer_cloud
-      display_name: AWS Cloud
+      display_name: AWS Cloud [GPU - G5.xlarge]
