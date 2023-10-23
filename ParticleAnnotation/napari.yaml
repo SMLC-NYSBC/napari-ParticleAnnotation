@@ -1,5 +1,5 @@
 name: ParticleAnnotation
-display_name: Particle Annotation
+display_name: Topaz Active Learning
 contributions:
   commands:
     # Read/Write files
@@ -16,7 +16,11 @@ contributions:
     # Widgets
     - id: ParticleAnnotation.viewer
       python_name: ParticleAnnotation._qt.window_viewer:MultipleViewerWidget
-      title: Split View Window
+      title: Local training/prediction
+
+    - id: ParticleAnnotation.viewer_cloud
+      python_name: ParticleAnnotation._qt.cloud_window_viewer:MultipleViewerWidget
+      title: Cloud training/prediction
 
   readers:
     - command: ParticleAnnotation.import_data
@@ -33,4 +37,7 @@ contributions:
 
   widgets:
     - command: ParticleAnnotation.viewer
-      display_name: Active Learning
+      display_name: Local [CPU/GPU]
+
+    - command: ParticleAnnotation.viewer_cloud
+      display_name: AWS Cloud
