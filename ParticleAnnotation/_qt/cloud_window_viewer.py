@@ -306,7 +306,6 @@ class AnnotationWidgetv2(Container):
 
         if response.status_code == 200:
             file_list = response.json()
-
             self.load_data.data = file_list
         else:
             print("Failed to fetch files:", response.status_code)
