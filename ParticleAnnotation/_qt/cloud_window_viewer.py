@@ -1,5 +1,6 @@
 import warnings
 from os.path import splitext
+import io
 
 import requests
 from PyQt5.QtWidgets import QComboBox
@@ -302,8 +303,12 @@ class AnnotationWidgetv2(Container):
         self._update_data_list()
 
     def _load_file(self):
-        response = requests.get(url + "getrawfiles", data={'f_name': self.load_data.value})
-        image = bytes_io_to_numpy_array(response.json())
+        response = requests.get(
+            url + "getrawfiles", data={"f_name": self.load_data.value}, timeout=None
+        )
+
+        image = io.BytesIO(response.content)
+        image = np.load(image, allow_pickle=False)
 
         load_data_aws(image)
 

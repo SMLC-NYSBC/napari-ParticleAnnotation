@@ -5,13 +5,13 @@ from typing import List
 from fastapi.responses import JSONResponse
 import shutil
 from fastapi import FastAPI, HTTPException, File, UploadFile
-from starlette.responses import StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from ParticleAnnotation.cloud.utils import numpy_array_to_bytes_io
 from ParticleAnnotation.utils.load_data import load_image
 
 app = FastAPI()
-url = "http://3.236.232.251:8000/"
+url = "http://3.236.214.3:8000/"
 dir_ = "api/data/images/"
 formats = ("mrc", "rec", "tiff")
 
