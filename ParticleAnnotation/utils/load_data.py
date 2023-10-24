@@ -82,7 +82,7 @@ def load_image(path, aws=False):
 
 def load_data_aws(image):
     layer_data = []
-    image = image
+    image = image[0]
 
     # Append two layers if the data type is complex
     if np.issubdtype(image.dtype, np.complexfloating):
