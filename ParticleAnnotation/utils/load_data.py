@@ -67,7 +67,7 @@ def load_image(path, aws=False):
             px = 1.0
 
         if aws:
-            return [data, px]
+            return data
 
         # Append two layers if the data type is complex
         if np.issubdtype(data.dtype, np.complexfloating):

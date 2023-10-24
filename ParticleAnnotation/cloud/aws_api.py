@@ -1,5 +1,4 @@
-import io
-from os import listdir, mkdir, makedirs
+from os import listdir, mkdir
 from os.path import isdir
 from typing import List
 
