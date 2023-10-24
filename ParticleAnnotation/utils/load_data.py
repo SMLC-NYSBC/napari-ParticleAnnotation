@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from scipy import ndimage
 
 
-def downsample(img, factor=8):
+def downsample(img: np.ndarray, factor=8):
     """Downsample 2d/3d array using fourier transform"""
     if factor == 1:
         return img

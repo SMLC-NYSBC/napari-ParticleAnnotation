@@ -1,20 +1,16 @@
-import warnings
-from os.path import splitext
 import io
+from os.path import splitext
 
 import requests
-from PyQt5.QtWidgets import QComboBox
 
 from magicgui.widgets import (
     Container,
     VBox,
-    create_widget,
     PushButton,
     LineEdit,
     Label,
     FloatSlider,
-    Select,
-    ComboBox,
+    ComboBox, HBox,
 )
 
 from qtpy.QtCore import Qt
@@ -37,28 +33,27 @@ from ParticleAnnotation._qt.viewer_utils import (
     copy_layer,
     OwnPartial,
 )
-from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
-from ParticleAnnotation.utils.load_data import load_data_aws
 
 
 class MultipleViewerWidget(QSplitter):
-    def __init__(self, viewer: napari.Viewer) -> None:
+    def __init__(self, viewer_cloud: napari.Viewer) -> None:
         super().__init__()
-        self.viewer = viewer
+        self.viewer = viewer_cloud
         self.viewer_model1 = ViewerModel(title="View_1")
         self.viewer_model2 = ViewerModel(title="View_2")
         self._block = False
-        self.qt_viewer1 = QtViewerWrap(viewer, self.viewer_model1)
-        self.qt_viewer2 = QtViewerWrap(viewer, self.viewer_model2)
+        self.qt_viewer1 = QtViewerWrap(self.viewer, self.viewer_model1)
+        self.qt_viewer2 = QtViewerWrap(self.viewer, self.viewer_model2)
 
         self.points_layer = self.viewer_model1.add_points(
             [0, 0, 0], name="Mouse Pointer", symbol="cross", size=2
         )
-        self.annotation_widget = AnnotationWidgetv2(viewer)
-        viewer.window.add_dock_widget(
+        self.annotation_widget = AnnotationWidgetv2(self.viewer)
+        self.viewer.window.add_dock_widget(
             self.annotation_widget, name="Annotation", area="left"
         )
 
+        self.annotation_widget._update_data_list()
         self.annotation_widget.reset_view.clicked.connect(self._reset_view)
 
         self.viewer.camera.events.connect(self._sync_view)
@@ -236,7 +231,8 @@ class AnnotationWidgetv2(Container):
         self.new_ALM.clicked.connect(self._create_new_model)
 
         self.load_data = ComboBox(name="Load Data", choices=())
-        self.load_data.changed.connect(self._load_file)
+        self.load_data_btt = PushButton(name="Load")
+        self.load_data_btt.clicked.connect(self._load_file)
         self.send_data = PushButton(name="Send Data")
         self.send_data.clicked.connect(self._send_image_to_aws)
 
@@ -275,34 +271,42 @@ class AnnotationWidgetv2(Container):
                 )
             ),
         )
-        self.insert(
-            3,
-            VBox(
-                widgets=(
-                    self.load_data,
-                    self.send_data,
-                )
-            ),
-        )
-        self.insert(4, VBox(widgets=(self.init_data,)))
+        self.insert(3, HBox(widgets=(self.load_data, self.load_data_btt,)))
+        self.insert(4, VBox(widgets=(self.send_data,)))
+        self.insert(5, VBox(widgets=(self.init_data,)))
 
         # Space 2
-        self.insert(5, spacer2)
-        self.insert(6, VBox(widgets=(self.num_particles_al, self.refresh)))
-        self.insert(7, VBox(widgets=(self.reset_view,)))
+        self.insert(6, spacer2)
+        self.insert(7, VBox(widgets=(self.num_particles_al, self.refresh)))
+        self.insert(8, VBox(widgets=(self.reset_view,)))
 
         # Space 3
-        self.insert(8, spacer3)
-        self.insert(9, VBox(widgets=(self.predict, self.update_model)))
+        self.insert(9, spacer3)
+        self.insert(10, VBox(widgets=(self.predict, self.update_model)))
 
         # Space 4
-        self.insert(10, spacer4)
-        self.insert(11, VBox(widgets=(self.slide_pred,)))
+        self.insert(11, spacer4)
+        self.insert(12, VBox(widgets=(self.slide_pred,)))
 
         # Widget initialization
         self._update_data_list()
+        self._update_model_list()
+
+        if self.track_mouse_position not in self.napari_viewer.mouse_move_callbacks:
+            self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
+
+        if (
+            self.move_selected_point
+            not in self.napari_viewer.mouse_double_click_callbacks
+        ):
+            self.napari_viewer.mouse_double_click_callbacks.append(
+                self.move_selected_point
+            )
+        self.mouse_position = None
+        self.click_add_point_callback = None
 
     def _load_file(self):
+        print(f'Try Loading file: {self.load_data.value}')
         response = requests.get(
             url + "getrawfiles", params={"f_name": self.load_data.value}, timeout=None
         )
@@ -310,7 +314,7 @@ class AnnotationWidgetv2(Container):
         image = io.BytesIO(response.content)
         image = np.load(image, allow_pickle=True)
 
-        self.napari_viewer.add_image(image, name="Raw_Image")
+        self.napari_viewer.add_image(data=image, name="Raw_Image")
 
     def _update_model_list(self):
         pass
@@ -325,7 +329,7 @@ class AnnotationWidgetv2(Container):
             self.file_list = response.json()
 
             self.load_data.choices = tuple(self.file_list)
-            self.load_data.value = self.file_list[0]
+            print(self.load_data.choices, self.load_data.value)
 
         else:
             print("Failed to fetch files:", response.status_code)
@@ -355,7 +359,7 @@ class AnnotationWidgetv2(Container):
         pass
 
     def _reset_view(self):
-        pass
+        self.napari_viewer.reset_view()
 
     def _predict(self):
         pass
@@ -365,3 +369,27 @@ class AnnotationWidgetv2(Container):
 
     def _update_on_aws(self):
         pass
+
+    def track_mouse_position(self, viewer, event):
+        self.mouse_position = event.position
+
+    def move_selected_point(self, viewer, event):
+        if self.activate_click:
+            try:
+                # if self.activate_click:
+                points_layer = viewer.layers["Initial_Labels"].data
+
+                # Calculate the distance between the mouse position and all points
+                distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+                closest_point_index = distances.argmin()
+
+                # Clear the current selection and Select the closest point
+                if self.selected_particle_id != closest_point_index:
+                    self.selected_particle_id = closest_point_index
+
+                    viewer.layers["Initial_Labels"].selected_data = set()
+                    viewer.layers["Initial_Labels"].selected_data.add(
+                        closest_point_index
+                    )
+            except:
+                pass

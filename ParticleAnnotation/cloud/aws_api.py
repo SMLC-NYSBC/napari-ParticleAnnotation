@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ParticleAnnotation.cloud.utils import numpy_array_to_bytes_io
-from ParticleAnnotation.utils.load_data import load_image
+from ParticleAnnotation.utils.load_data import load_image, downsample
 
 app = FastAPI()
 url = "http://3.236.214.3:8000/"
@@ -56,6 +56,7 @@ async def create_upload_file(file: UploadFile = File(...)):
 async def list_files(f_name: str):
     try:
         image = load_image(dir_ + f_name, aws=True)
+        image = downsample(image, 1 / 8)
         image = numpy_array_to_bytes_io(image)
 
         return StreamingResponse(image)

@@ -231,8 +231,6 @@ class MultipleViewerWidget(QSplitter):
 class AnnotationWidgetv2(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
-
-        self.click_add_point_callback = None
         self.napari_viewer = napari_viewer
 
         # Global
@@ -266,6 +264,7 @@ class AnnotationWidgetv2(Container):
                 self.move_selected_point
             )
         self.mouse_position = None
+        self.click_add_point_callback = None
 
         # Initialize model
         self.load_ALM = PushButton(name="Load model")
