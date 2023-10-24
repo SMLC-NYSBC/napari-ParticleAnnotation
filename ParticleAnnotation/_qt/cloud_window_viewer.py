@@ -300,9 +300,8 @@ class AnnotationWidgetv2(Container):
         # Widget initialization
         self._update_data_list()
 
-    @staticmethod
-    def _load_file():
-        response = requests.get(url + "getrawfiles")
+    def _load_file(self):
+        response = requests.get(url + "getrawfiles", data={'f_name': self.load_data.value})
         load_data_aws(response.json())
 
     def _update_model_list(self):

@@ -2,6 +2,7 @@ from os import listdir, mkdir, makedirs
 from os.path import isdir
 from typing import List
 
+import numpy as np
 from fastapi.responses import JSONResponse
 import shutil
 from fastapi import FastAPI, HTTPException, File, UploadFile
@@ -50,7 +51,7 @@ async def create_upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/getrawfiles/", response_model=List[str])
+@app.get("/getrawfiles/", response_model=np.ndarray)
 async def list_files(f_name: str):
     try:
         return load_image(dir_ + f_name, aws=True)
