@@ -302,7 +302,7 @@ class AnnotationWidgetv2(Container):
 
     def _load_file(self):
         response = requests.get(url + "getrawfiles", data={'f_name': self.load_data.value})
-        load_data_aws(response.json())
+        load_data_aws(response.json()[0])
 
     def _update_model_list(self):
         pass

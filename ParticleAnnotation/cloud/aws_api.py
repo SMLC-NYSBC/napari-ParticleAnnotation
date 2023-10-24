@@ -51,9 +51,9 @@ async def create_upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/getrawfiles/", response_model=np.ndarray)
+@app.get("/getrawfiles/", response_model=list)
 async def list_files(f_name: str):
     try:
-        return load_image(dir_ + f_name, aws=True)
+        return [load_image(dir_ + f_name, aws=True)]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
