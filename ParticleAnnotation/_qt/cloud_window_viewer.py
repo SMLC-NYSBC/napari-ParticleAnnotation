@@ -304,13 +304,13 @@ class AnnotationWidgetv2(Container):
 
     def _load_file(self):
         response = requests.get(
-            url + "getrawfiles", data={"f_name": self.load_data.value}, timeout=None
+            url + "getrawfiles", params={"f_name": self.load_data.value}, timeout=None
         )
 
         image = io.BytesIO(response.content)
-        image = np.load(image, allow_pickle=False)
+        image = np.load(image, allow_pickle=True)
 
-        load_data_aws(image)
+        self.napari_viewer.add_image(image, name="Raw_Image")
 
     def _update_model_list(self):
         pass
@@ -323,10 +323,9 @@ class AnnotationWidgetv2(Container):
 
         if response.status_code == 200:
             self.file_list = response.json()
-            file_list = [f[:5] for f in self.file_list]
 
-            self.load_data.choices = tuple(file_list)
-            self.load_data.value = file_list[0]
+            self.load_data.choices = tuple(self.file_list)
+            self.load_data.value = self.file_list[0]
 
         else:
             print("Failed to fetch files:", response.status_code)
