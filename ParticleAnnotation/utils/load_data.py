@@ -41,12 +41,13 @@ def downsample(img, factor=8):
     return img.astype(img.dtype)
 
 
-def load_image(path):
+def load_image(path, aws=False):
     """
     Load an image file from disk.
 
     Args:
         path: A string or sequence of strings representing the path(s) of the file(s) to read.
+        aws: Load data from AWS
 
     Returns:
         A list of tuples, where each tuple contains the image data, additional keyword arguments, and the layer type.
@@ -65,6 +66,9 @@ def load_image(path):
             data = import_am(_path)
             px = 1.0
 
+        if aws:
+            return [data, px]
+
         # Append two layers if the data type is complex
         if np.issubdtype(data.dtype, np.complexfloating):
             layer_data.append((np.abs(data), {"name": "amplitude"}, "image"))
@@ -73,6 +77,20 @@ def load_image(path):
             layer_data.append((data, {}, "image"))
 
     print(f"Loaded {_path} with {px} pixel size")
+    return layer_data
+
+
+def load_data_aws(image):
+    layer_data = []
+    image = image
+
+    # Append two layers if the data type is complex
+    if np.issubdtype(image.dtype, np.complexfloating):
+        layer_data.append((np.abs(image), {"name": "amplitude"}, "image"))
+        layer_data.append((np.angle(image), {"name": "phase"}, "image"))
+    else:
+        layer_data.append((image, {}, "image"))
+
     return layer_data
 
 

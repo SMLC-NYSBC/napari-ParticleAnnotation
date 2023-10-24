@@ -36,6 +36,7 @@ from ParticleAnnotation._qt.viewer_utils import (
     copy_layer,
     OwnPartial,
 )
+from ParticleAnnotation.utils.load_data import load_data_aws
 
 
 class MultipleViewerWidget(QSplitter):
@@ -227,7 +228,7 @@ class AnnotationWidgetv2(Container):
 
         # Initialize model
         spacer1 = Label(value="-- Step 1: Initialize  Topaz  Active  learning --")
-        self.load_ALM = ComboBox(name="Select Model", choices=[])
+        self.load_ALM = ComboBox(name="Select Model", choices=())
         self.load_ALM.changed.connect(self._update_model_list)
         self.new_ALM = PushButton(name="New Model")
         self.new_ALM.clicked.connect(self._create_new_model)
@@ -299,8 +300,10 @@ class AnnotationWidgetv2(Container):
         # Widget initialization
         self._update_data_list()
 
-    def _load_file(self):
-        pass
+    @staticmethod
+    def _load_file():
+        response = requests.get(url + "getrawfiles")
+        load_data_aws(response.json())
 
     def _update_model_list(self):
         pass

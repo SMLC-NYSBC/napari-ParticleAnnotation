@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 import shutil
 from fastapi import FastAPI, HTTPException, File, UploadFile
 
+from ParticleAnnotation.utils.load_data import load_image
+
 app = FastAPI()
 url = "http://3.236.232.251:8000/"
 dir_ = "api/data/images/"
@@ -44,5 +46,13 @@ async def create_upload_file(file: UploadFile = File(...)):
         with open(file_location, "wb+") as file_object:
             shutil.copyfileobj(file.file, file_object)
         return JSONResponse(status_code=200, content={"filename": file.filename})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/getrawfiles/", response_model=List[str])
+async def list_files(f_name: str):
+    try:
+        return load_image(dir_ + f_name, aws=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
