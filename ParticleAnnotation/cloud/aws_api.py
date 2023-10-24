@@ -1,12 +1,14 @@
+import io
 from os import listdir, mkdir, makedirs
 from os.path import isdir
 from typing import List
 
-import numpy as np
 from fastapi.responses import JSONResponse
 import shutil
 from fastapi import FastAPI, HTTPException, File, UploadFile
+from starlette.responses import StreamingResponse
 
+from ParticleAnnotation.cloud.utils import numpy_array_to_bytes_io
 from ParticleAnnotation.utils.load_data import load_image
 
 app = FastAPI()
@@ -54,6 +56,9 @@ async def create_upload_file(file: UploadFile = File(...)):
 @app.get("/getrawfiles/")
 async def list_files(f_name: str):
     try:
-        return load_image(dir_ + f_name, aws=True)
+        image = load_image(dir_ + f_name, aws=True)
+        image = numpy_array_to_bytes_io(image)
+
+        return StreamingResponse(image)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

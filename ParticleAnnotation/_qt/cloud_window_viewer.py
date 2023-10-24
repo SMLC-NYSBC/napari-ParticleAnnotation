@@ -36,6 +36,7 @@ from ParticleAnnotation._qt.viewer_utils import (
     copy_layer,
     OwnPartial,
 )
+from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
 from ParticleAnnotation.utils.load_data import load_data_aws
 
 
@@ -302,7 +303,9 @@ class AnnotationWidgetv2(Container):
 
     def _load_file(self):
         response = requests.get(url + "getrawfiles", data={'f_name': self.load_data.value})
-        load_data_aws(response.json()[0])
+        image = bytes_io_to_numpy_array(response.json())
+
+        load_data_aws(image)
 
     def _update_model_list(self):
         pass
