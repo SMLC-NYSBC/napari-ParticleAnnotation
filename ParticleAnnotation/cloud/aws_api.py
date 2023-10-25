@@ -89,7 +89,7 @@ async def get_raw_files(f_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/new_model/")
+@app.get("/new_model/")
 async def new_model():
     # Initialize new model with weight and bias at 0.0
     model = BinaryLogisticRegression(
@@ -101,13 +101,13 @@ async def new_model():
     model_ids = model_ids[max(model_ids)] + 1
 
     # ToDo output 000 values
-    model_name = f"topaz_al_model_{model_ids:3i}.pth"
+    model_name = f"topaz_al_model_{model_ids:03}.pth"
 
     torch.save(model, dir_ + "data/models/" + model_name)
     return model_name
 
 
-@app.post("/initialize_model")
+@app.post("/initialize_model/")
 async def initialize_model(m_name: Union[str, None], f_name: str):
     # Initialize temp_dir
     if isdir(dir_+"data/temp/"):
@@ -152,8 +152,3 @@ async def initialize_model(m_name: Union[str, None], f_name: str):
     )
 
     torch.save(model, dir_ + "data/models/" + m_name)
-
-
-@app.post("/initialize_used_model")
-async def initialize_new_model():
-    pass
