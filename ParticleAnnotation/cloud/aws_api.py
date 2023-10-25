@@ -1,6 +1,6 @@
 from os import listdir, mkdir, rmdir
 from os.path import isdir
-from typing import List
+from typing import List, Union
 
 import numpy as np
 import torch
@@ -108,7 +108,7 @@ async def new_model():
 
 
 @app.post("/initialize_model")
-async def initialize_model(m_name: str, f_name: str):
+async def initialize_model(m_name: Union[str, None], f_name: str):
     # Initialize temp_dir
     if isdir(dir_+"data/temp/"):
         rmdir(dir_ + "data")
@@ -129,6 +129,16 @@ async def initialize_model(m_name: str, f_name: str):
     count = torch.where(
         ~torch.isnan(y), torch.ones_like(y), torch.zeros_like(y)
     )
+
+    # Check if model exist and pick it's checkpoint
+    list_model = listdir(dir_ + "data/models/")
+    model_ids = [int(f[len(f) - 7:-4]) for f in list_model if f.endswith("pth")]
+
+    if m_name in model_ids or m_name is None:
+        AL_weights = torch.load(dir_ + "data/models/" + m_name)
+        AL_weights = [AL_weights.weight, AL_weights.bias]
+    else:
+        AL_weights = None
 
     # Build model
     model = BinaryLogisticRegression(

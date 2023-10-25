@@ -228,7 +228,7 @@ class AnnotationWidgetv2(Container):
         spacer1 = Label(value="-- Step 1: Initialize  Topaz  Active  learning --")
         self.load_ALM = ComboBox(name="Select Model", choices=self._update_model_list())
         self.load_ALM_btt = PushButton(name="Load")
-        self.load_ALM_btt.changed.connect(self._update_model_list)
+        self.load_ALM_btt.changed.connect(self._load_model)
         self.new_ALM = PushButton(name="New Model")
         self.new_ALM.clicked.connect(self._create_new_model)
 
@@ -343,6 +343,13 @@ class AnnotationWidgetv2(Container):
             show_info(f"Connection Error to {url}. Check if server is running.")
             return ()
 
+    def _load_model(self):
+        """
+
+        Returns:
+        """
+        self.model_name = self.load_ALM.value
+
     def _create_new_model(self):
         """
 
@@ -455,6 +462,7 @@ class AnnotationWidgetv2(Container):
     def _initialize_model(self):
         params = {"m_name": self.model_name,
                   "f_name": self.load_data.value}
+        print(params)
         try:
             response = requests.post(url + "initialize_model", params=params)
 
