@@ -10,11 +10,11 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 from topaz.stats import normalize
 
-from ParticleAnnotation.cloud.utils import numpy_array_to_bytes_io
+from ParticleAnnotation.cloud.utils import numpy_array_to_bytes_io, get_model_name_and_weights
 from ParticleAnnotation.utils.load_data import load_image, downsample
 from ParticleAnnotation.utils.model.active_learning_model import BinaryLogisticRegression, initialize_model, \
     label_points_to_mask
-from ParticleAnnotation.utils.model.utils import get_device
+from ParticleAnnotation.utils.model.utils import get_device, find_peaks
 
 app = FastAPI()
 url = "http://3.230.8.116:8000/"
@@ -62,6 +62,28 @@ async def list_models():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/new_model/")
+async def new_model():
+    # Initialize new model with weight and bias at 0.0
+    model = BinaryLogisticRegression(
+        n_features=128, l2=1.0, pi=0.01, pi_weight=1000
+    )
+    # Save model withe unique ID name
+    list_model = listdir(dir_+"data/models/")
+    model_ids = [int(f[len(f)-7:-4]) for f in list_model if f.endswith("pth")]
+
+    if len(model_ids) > 0:
+        model_ids = model_ids[max(model_ids)] + 1
+    else:
+        model_ids = 0
+
+    model_name = f"topaz_al_model_{model_ids:03}.pth"
+    state_name = f"state_{model_ids:03}.pth"
+    torch.save(model, dir_ + "data/models/" + model_name)
+    torch.save(model, dir_ + "data/models/" + state_name)
+
+    return model_name
+
 @app.post("/upload_file/")
 async def upload_file(file: UploadFile = File(...)):
     check_dir()
@@ -89,29 +111,18 @@ async def get_raw_files(f_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/new_model/")
-async def new_model():
-    # Initialize new model with weight and bias at 0.0
-    model = BinaryLogisticRegression(
-        n_features=128, l2=1.0, pi=0.01, pi_weight=1000
-    )
-    # Save model withe unique ID name
-    list_model = listdir(dir_+"data/models/")
-    model_ids = [int(f[len(f)-7:-4]) for f in list_model if f.endswith("pth")]
-
-    if len(model_ids) > 0:
-        model_ids = model_ids[max(model_ids)] + 1
-    else:
-        model_ids = 0
-
-    model_name = f"topaz_al_model_{model_ids:03}.pth"
-
-    torch.save(model, dir_ + "data/models/" + model_name)
-    return model_name
-
-
 @app.post("/initialize_model/")
-async def initialize_model(m_name: Union[str, None], f_name: str):
+async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: int):
+    """
+    Initialize model from new or pre-trained BinaryLogisticRegression class
+
+    Args:
+        m_name (str, None):
+        f_name (str):
+
+    Returns:
+        torch.save: Save model and stat_dict
+    """
     # Initialize temp_dir
     if isdir(dir_+"data/temp/"):
         shutil.rmtree(dir_ + "data/temp/")
@@ -125,7 +136,10 @@ async def initialize_model(m_name: Union[str, None], f_name: str):
     image, _ = normalize(image, method="gmm", use_cuda=False)
 
     # Compute image feature map
-    x, _, p_label = initialize_model(image)
+    x, _, p_label = initialize_model(image, n_part)
+
+    # Create point label
+    # TODO build aray with labels or 2 arrays one what to label, the other one with consensus
 
     # Initialize AL model
     y = label_points_to_mask([], shape, 10)
@@ -136,17 +150,17 @@ async def initialize_model(m_name: Union[str, None], f_name: str):
     # Check if model exist and pick it's checkpoint
     list_model = listdir(dir_ + "data/models/")
     model_ids = [int(f[len(f) - 7:-4]) for f in list_model if f.endswith("pth")]
-
-    if m_name in model_ids or m_name is None:
-        AL_weights = torch.load(dir_ + "data/models/" + m_name)
-        AL_weights = [AL_weights.weight, AL_weights.bias]
-    else:
-        AL_weights = None
+    m_name, state_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
 
     # Build model
-    model = BinaryLogisticRegression(
-        n_features=x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
-    )
+    if AL_weights is not None:
+        model = torch.load(dir_ + "data/models/" + m_name)
+        model.load_state_dict(torch.load(dir_ + "data/models/" + state_name))
+    else:
+        model = BinaryLogisticRegression(
+            n_features=x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+        )
+
     model.fit(
         x,
         y.ravel(),
@@ -155,3 +169,6 @@ async def initialize_model(m_name: Union[str, None], f_name: str):
     )
 
     torch.save(model, dir_ + "data/models/" + m_name)
+    torch.save(model.state_dict(), dir_ + "data/models/" + state_name)
+
+    # TODO return particles array

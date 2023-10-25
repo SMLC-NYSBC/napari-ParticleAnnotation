@@ -99,7 +99,7 @@ def label_points_to_mask(points, shape, size):
     return y
 
 
-def initialize_model(mrc):
+def initialize_model(mrc, n_part=10):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
@@ -147,7 +147,7 @@ def initialize_model(mrc):
 
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
-    xy_negative = xy[[np.array(score).argsort()[:10][::-1]], :][0, ...]  # Bottom 10
+    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]  # Bottom 10
 
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     p_xy = xy_negative

@@ -361,7 +361,7 @@ class AnnotationWidgetv2(Container):
             response = requests.get(url + "new_model")
 
             # Update model name and indicate we are working on a new model not pre-trained
-            self.model_name = response.text
+            self.model_name = response.json()
             self.model_type = "New"
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
@@ -461,7 +461,8 @@ class AnnotationWidgetv2(Container):
 
     def _initialize_model(self):
         params = {"m_name": self.model_name,
-                  "f_name": self.load_data.value}
+                  "f_name": self.load_data.value,
+                  "n_part": self.num_particles_al.value}
         print(params)
         try:
             response = requests.post(url + "initialize_model", params=params)
