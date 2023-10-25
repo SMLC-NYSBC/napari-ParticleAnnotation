@@ -1,4 +1,4 @@
-from os import listdir, mkdir, rmdir
+from os import listdir, mkdir
 from os.path import isdir
 from typing import List, Union
 
@@ -98,9 +98,12 @@ async def new_model():
     # Save model withe unique ID name
     list_model = listdir(dir_+"data/models/")
     model_ids = [int(f[len(f)-7:-4]) for f in list_model if f.endswith("pth")]
-    model_ids = model_ids[max(model_ids)] + 1
 
-    # ToDo output 000 values
+    if len(model_ids) > 0:
+        model_ids = model_ids[max(model_ids)] + 1
+    else:
+        model_ids = 0
+
     model_name = f"topaz_al_model_{model_ids:03}.pth"
 
     torch.save(model, dir_ + "data/models/" + model_name)
@@ -111,7 +114,7 @@ async def new_model():
 async def initialize_model(m_name: Union[str, None], f_name: str):
     # Initialize temp_dir
     if isdir(dir_+"data/temp/"):
-        rmdir(dir_ + "data")
+        shutil.rmtree(dir_ + "data/temp/")
     mkdir(dir_+"data/temp/")
 
     # Load image and pre-process
