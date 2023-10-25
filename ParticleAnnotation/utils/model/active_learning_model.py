@@ -4,7 +4,7 @@ import numpy as np
 from topaz.model.factory import load_model
 import torch
 
-from ParticleAnnotation.utils.model.utils import find_peaks
+from ParticleAnnotation.utils.model.utils import find_peaks, get_device
 
 
 def fill_label_region(y, ci, cj, label, size: int, cz=None):
@@ -100,18 +100,20 @@ def label_points_to_mask(points, shape, size):
 
 
 def initialize_model(mrc):
+    device_ = get_device()
+
     if len(mrc.shape) == 3:
         model = load_model("resnet8_u32")
-        classifier = model.classifier
-        model = model.features
+        classifier = model.classifier.to(device_)
+        model = model.features.to(device_)
         model.fill()
         model.eval()
         classifier.eval()
 
-        mrc = torch.from_numpy(mrc).float().unsqueeze(0)
+        mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
         _, d, h, w = mrc.shape
 
-        filter_values = torch.zeros((64, d, h, w))  # C D H W
+        filter_values = torch.zeros((64, d, h, w)).to(device_)  # C D H W
         classified = np.zeros((64, d, h, w))  # C D H W
 
         from tqdm import tqdm
@@ -120,23 +122,25 @@ def initialize_model(mrc):
             with torch.no_grad():
                 j = model(mrc[:, i, ...]).squeeze(0)
                 filter_values[:, i, :] = j
-                classified[:, i, :] = torch.sigmoid(classifier(j)).numpy()
+                classified[:, i, :] = torch.sigmoid(classifier(j))
 
         x = filter_values.permute(1, 2, 3, 0)  # D, H, W, C
     else:
         model = load_model("resnet16")
-        classifier = model.classifier
-        model = model.features
+        classifier = model.classifier.to(device_)
+        model = model.features.to(device_)
         model.fill()
         model.eval()
         classifier.eval()
+
         with torch.no_grad():
             filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
-            classified = (
-                torch.sigmoid(classifier(filter_values)).cpu().numpy()
-            )  # C, W, H
+            classified = torch.sigmoid(classifier(filter_values))
 
-        x = filter_values.permute(1, 2, 0)  # W, H, C
+        x = filter_values.permute(1, 2, 0)
+
+    x = x.detach().cpu().numpy()
+    classified = classified.detach().cpu().numpy()
 
     x = x.reshape(-1, x.shape[-1])  # L, C
     y = torch.zeros(len(x)) + np.nan

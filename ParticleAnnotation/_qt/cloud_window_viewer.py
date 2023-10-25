@@ -1,4 +1,3 @@
-import io
 from os.path import splitext
 
 import requests
@@ -10,9 +9,10 @@ from magicgui.widgets import (
     LineEdit,
     Label,
     FloatSlider,
-    ComboBox, HBox,
+    ComboBox,
+    HBox,
 )
-
+from napari.utils.notifications import show_info
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QSplitter
 
@@ -24,7 +24,7 @@ from qtpy.QtWidgets import QFileDialog
 from napari.layers import Points
 import napari
 
-from ParticleAnnotation.cloud.aws_api import url, dir_
+from ParticleAnnotation.cloud.aws_api import url
 
 from ParticleAnnotation._qt.viewer_utils import (
     ViewerModel,
@@ -33,6 +33,7 @@ from ParticleAnnotation._qt.viewer_utils import (
     copy_layer,
     OwnPartial,
 )
+from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
 
 
 class MultipleViewerWidget(QSplitter):
@@ -53,7 +54,6 @@ class MultipleViewerWidget(QSplitter):
             self.annotation_widget, name="Annotation", area="left"
         )
 
-        self.annotation_widget._update_data_list()
         self.annotation_widget.reset_view.clicked.connect(self._reset_view)
 
         self.viewer.camera.events.connect(self._sync_view)
@@ -222,15 +222,17 @@ class AnnotationWidgetv2(Container):
         self.napari_viewer = napari_viewer
 
         self.file_list = []
+        self.model_name, self.model_type = None, None
 
         # Initialize model
         spacer1 = Label(value="-- Step 1: Initialize  Topaz  Active  learning --")
-        self.load_ALM = ComboBox(name="Select Model", choices=())
-        self.load_ALM.changed.connect(self._update_model_list)
+        self.load_ALM = ComboBox(name="Select Model", choices=self._update_model_list())
+        self.load_ALM_btt = PushButton(name="Load")
+        self.load_ALM_btt.changed.connect(self._update_model_list)
         self.new_ALM = PushButton(name="New Model")
         self.new_ALM.clicked.connect(self._create_new_model)
 
-        self.load_data = ComboBox(name="Load Data", choices=())
+        self.load_data = ComboBox(name="Load Data", choices=self._update_data_list())
         self.load_data_btt = PushButton(name="Load")
         self.load_data_btt.clicked.connect(self._load_file)
         self.send_data = PushButton(name="Send Data")
@@ -250,7 +252,7 @@ class AnnotationWidgetv2(Container):
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
         self.update_model = PushButton(name="Update server model")
-        self.update_model.clicked.connect(self._update_on_aws)
+        self.update_model.clicked.connect(self._update_model_on_aws)
 
         spacer4 = Label(value="--------- Step 4: Visualize labels tool ---------")
         self.slide_pred = FloatSlider(
@@ -266,32 +268,46 @@ class AnnotationWidgetv2(Container):
             2,
             VBox(
                 widgets=(
-                    self.load_ALM,
+                    HBox(
+                        widgets=(
+                            self.load_ALM,
+                            self.load_ALM_btt,
+                        )
+                    ),
                     self.new_ALM,
+                    HBox(
+                        widgets=(
+                            self.load_data,
+                            self.load_data_btt,
+                        )
+                    ),
+                    self.send_data,
+                    self.init_data,
                 )
             ),
         )
-        self.insert(3, HBox(widgets=(self.load_data, self.load_data_btt,)))
-        self.insert(4, VBox(widgets=(self.send_data,)))
-        self.insert(5, VBox(widgets=(self.init_data,)))
 
         # Space 2
-        self.insert(6, spacer2)
-        self.insert(7, VBox(widgets=(self.num_particles_al, self.refresh)))
-        self.insert(8, VBox(widgets=(self.reset_view,)))
+        self.insert(3, spacer2)
+        self.insert(
+            4,
+            VBox(
+                widgets=(
+                    HBox(widgets=(self.num_particles_al, self.refresh)),
+                    self.reset_view,
+                )
+            ),
+        )
 
         # Space 3
-        self.insert(9, spacer3)
-        self.insert(10, VBox(widgets=(self.predict, self.update_model)))
+        self.insert(5, spacer3)
+        self.insert(6, VBox(widgets=(self.predict, self.update_model)))
 
         # Space 4
-        self.insert(11, spacer4)
-        self.insert(12, VBox(widgets=(self.slide_pred,)))
+        self.insert(7, spacer4)
+        self.insert(8, VBox(widgets=(self.slide_pred,)))
 
         # Widget initialization
-        self._update_data_list()
-        self._update_model_list()
-
         if self.track_mouse_position not in self.napari_viewer.mouse_move_callbacks:
             self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
 
@@ -305,37 +321,114 @@ class AnnotationWidgetv2(Container):
         self.mouse_position = None
         self.click_add_point_callback = None
 
-    def _load_file(self):
-        print(f'Try Loading file: {self.load_data.value}')
-        response = requests.get(
-            url + "getrawfiles", params={"f_name": self.load_data.value}, timeout=None
-        )
+    def _update_model_list(self) -> tuple:
+        """
+        API call to get a list of available [.pth] files on the AWS EC2 instance
 
-        image = io.BytesIO(response.content)
-        image = np.load(image, allow_pickle=True)
+         Returns:
+              tuple: List of available pre-trained models
+        """
+        # Call API for response
+        try:
+            response = requests.get(url + "list_models")
 
-        self.napari_viewer.add_image(data=image, name="Raw_Image")
+            # If server responded process the response
+            if response.status_code == 200:
+                self.model_list = response.json()
 
-    def _update_model_list(self):
-        pass
+                return tuple(self.model_list)
+            else:
+                return ()
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
+            return ()
 
     def _create_new_model(self):
-        pass
+        """
 
-    def _update_data_list(self):
-        response = requests.get(url + "listfiles")
+        Return:
+            str: Filename of the newly created model. This is needed for model update.
+        """
+        # Call API for response
+        try:
+            response = requests.get(url + "new_model")
 
-        if response.status_code == 200:
-            self.file_list = response.json()
+            # Update model name and indicate we are working on a new model not pre-trained
+            self.model_name = response.text
+            self.model_type = "New"
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
+            return ()
 
-            self.load_data.choices = tuple(self.file_list)
-            print(self.load_data.choices, self.load_data.value)
+    def _update_data_list(self) -> tuple:
+        """
+        API call to get a list of available image files on the AWS EC2 instance
 
-        else:
-            print("Failed to fetch files:", response.status_code)
-            print("Failed to fetch files:", response.text)
+        Note:
+            Sent to local machine images are already down-sample to reduce the size.
+            Shown image is just a visual, all calculations are handle by server.
+
+         Returns:
+              tuple: List of available pre-trained models
+        """
+        # Call API for response
+        try:
+            response = requests.get(url + "list_files")
+
+            # If server responded process the response
+            if response.status_code == 200:
+                self.file_list = response.json()
+
+                return tuple(self.file_list)
+            else:
+                return ()
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
+            return ()
+
+    def _load_file(self):
+        """
+        Load a down-sample image file to work on.
+
+        Note:
+            If we cannot establish the connection. Return random 2D file.
+
+        Return:
+             napari.viewer.add_image: New Image layer.
+        """
+        # Call API for response
+        try:
+            response = requests.get(
+                url + "get_raw_files",
+                params={"f_name": self.load_data.value},
+                timeout=None,
+            )
+
+            # Decode bytes to np.array
+            image = bytes_io_to_numpy_array(response.content)
+
+            # Build new image layer
+            self.napari_viewer.add_image(data=image, name="Raw_Image")
+            self.napari_viewer.layers["Raw_Image"].contrast_limits = (
+                image.min(),
+                image.max(),
+            )
+            self._reset_view()
+            print(f"Try Loaded: {self.load_data.value}")
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
+            self.napari_viewer.add_image(
+                data=np.random.random(size=(512, 512)), name="Connection_Error"
+            )
 
     def _send_image_to_aws(self):
+        """
+        Send image file to AWS EC2 instance.
+
+        Return:
+            napari.show_info: User info prompt to indicate output.
+        """
+        # Package image file in correct format
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         root, extension = splitext(self.filename)
 
@@ -344,15 +437,37 @@ class AnnotationWidgetv2(Container):
 
         files = {"file": (name_, open(f"{self.filename}", "rb"), f"image/{format_}")}
 
-        response = requests.post(url + "uploadfile", files=files)
+        # Call API for response
+        try:
+            response = requests.post(url + "upload_file", files=files)
 
-        if response.status_code == 200:
-            print("File uploaded successfully:", response.json())
-            self._update_data_list()
-        else:
-            print("Failed to upload file:", response.status_code, response.text)
+            if response.status_code == 200:
+                show_info(f"File uploaded successfully: {response.json()}")
+            else:
+                show_info(
+                    "Failed to upload file: \n"
+                    f"Error: {response.status_code} \n"
+                    f"Message:{response.text}"
+                )
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
 
     def _initialize_model(self):
+        params = {"m_name": self.model_name,
+                  "f_name": self.load_data.value}
+        try:
+            response = requests.post(url + "initialize_model", params=params)
+
+            if response.status_code == 200:
+                show_info(f"Model successfully initialized: {response.json()}")
+            else:
+                show_info(
+                    "Failed to initialized model: \n"
+                    f"Error: {response.status_code} \n"
+                    f"Message:{response.text}"
+                )
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
         pass
 
     def _refresh(self):
@@ -367,7 +482,7 @@ class AnnotationWidgetv2(Container):
     def _filter_particle(self):
         pass
 
-    def _update_on_aws(self):
+    def _update_model_on_aws(self):
         pass
 
     def track_mouse_position(self, viewer, event):

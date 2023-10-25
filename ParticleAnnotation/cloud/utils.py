@@ -9,6 +9,7 @@ def numpy_array_to_bytes_io(array: np.ndarray) -> io.BytesIO:
     return bytes_io
 
 
-def bytes_io_to_numpy_array(bytes_io: io.BytesIO) -> np.ndarray:
-    bytes_io.seek(0)
-    return np.load(bytes_io, allow_pickle=False)
+def bytes_io_to_numpy_array(bytes_file) -> np.ndarray:
+    bytes_file = io.BytesIO(bytes_file)
+
+    return np.load(bytes_file, allow_pickle=True)
