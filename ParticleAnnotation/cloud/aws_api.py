@@ -111,7 +111,7 @@ async def get_raw_files(f_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/initialize_model/")
+@app.get("/initialize_model/")
 async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: int):
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class
@@ -139,7 +139,8 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
     x, _, p_label = initialize_model(image, n_part)
 
     # Create point label
-    # TODO build aray with labels or 2 arrays one what to label, the other one with consensus
+    label = np.repeat(2, n_part).reshape((-1, 1))
+    particle_to_label = np.vstack((label, p_label))
 
     # Initialize AL model
     y = label_points_to_mask([], shape, 10)
@@ -171,4 +172,5 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
     torch.save(model, dir_ + "data/models/" + m_name)
     torch.save(model.state_dict(), dir_ + "data/models/" + state_name)
 
-    # TODO return particles array
+    return particle_to_label
+

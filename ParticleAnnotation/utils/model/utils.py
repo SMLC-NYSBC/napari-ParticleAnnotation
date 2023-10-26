@@ -117,3 +117,25 @@ def get_device() -> torch.device:
             device = torch.device("cpu")
             df.to(device)
     return device
+
+
+def build_consensus(points: np.ndarray, multi=False) -> np.ndarray:
+    """
+    From multiple selection of the same point output unified consensus of a label
+
+    Args:
+        points (np.ndarray): Array of points to marge. Allow for single or multiple selections.
+            If consensus should be built for multiple points, it requires ID label in the first column
+        multi (bool): If True, expect point IDs in the first column
+
+    Returns:
+        np.ndarray: single consensus point as an array of shape [N, (2,3)]
+    """
+    if multi:
+        unique_ids = np.unique(points[:, 0])
+        consensus_list = [np.mean(points[np.where(points[:, 0] == u)[0], 1:], axis=1) for u in unique_ids]
+        consensus = np.concatenate(consensus_list)
+    else:
+        consensus = np.mean(points, axis=1)
+
+    return consensus
