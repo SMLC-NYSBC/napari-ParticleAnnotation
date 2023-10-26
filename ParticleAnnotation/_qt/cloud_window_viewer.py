@@ -460,9 +460,11 @@ class AnnotationWidgetv2(Container):
             show_info(f"Connection Error to {url}. Check if server is running.")
 
     def _initialize_model(self):
-        params = {"m_name": self.model_name,
-                  "f_name": self.load_data.value,
-                  "n_part": self.num_particles_al.value}
+        params = {
+            "m_name": self.model_name,
+            "f_name": self.load_data.value,
+            "n_part": self.num_particles_al.value,
+        }
         print(params)
         try:
             response = requests.post(url + "initialize_model", params=params)

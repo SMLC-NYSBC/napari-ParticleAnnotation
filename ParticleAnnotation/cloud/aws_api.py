@@ -10,10 +10,16 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 from topaz.stats import normalize
 
-from ParticleAnnotation.cloud.utils import numpy_array_to_bytes_io, get_model_name_and_weights
+from ParticleAnnotation.cloud.utils import (
+    numpy_array_to_bytes_io,
+    get_model_name_and_weights,
+)
 from ParticleAnnotation.utils.load_data import load_image, downsample
-from ParticleAnnotation.utils.model.active_learning_model import BinaryLogisticRegression, initialize_model, \
-    label_points_to_mask
+from ParticleAnnotation.utils.model.active_learning_model import (
+    BinaryLogisticRegression,
+    initialize_model,
+    label_points_to_mask,
+)
 from ParticleAnnotation.utils.model.utils import get_device, find_peaks
 
 app = FastAPI()
@@ -40,7 +46,7 @@ async def list_files():
 
     try:
         # List all files in the predefined folder
-        files = listdir(dir_+"data/images/")
+        files = listdir(dir_ + "data/images/")
 
         return [f for f in files if f.endswith(formats)]
 
@@ -54,7 +60,7 @@ async def list_models():
 
     try:
         # List all files in the predefined folder
-        files = listdir(dir_+"data/models/")
+        files = listdir(dir_ + "data/models/")
 
         return [f for f in files if f.endswith("pth")]
 
@@ -65,12 +71,10 @@ async def list_models():
 @app.get("/new_model/")
 async def new_model():
     # Initialize new model with weight and bias at 0.0
-    model = BinaryLogisticRegression(
-        n_features=128, l2=1.0, pi=0.01, pi_weight=1000
-    )
+    model = BinaryLogisticRegression(n_features=128, l2=1.0, pi=0.01, pi_weight=1000)
     # Save model withe unique ID name
-    list_model = listdir(dir_+"data/models/")
-    model_ids = [int(f[len(f)-7:-4]) for f in list_model if f.endswith("pth")]
+    list_model = listdir(dir_ + "data/models/")
+    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
 
     if len(model_ids) > 0:
         model_ids = model_ids[max(model_ids)] + 1
@@ -84,12 +88,13 @@ async def new_model():
 
     return model_name
 
+
 @app.post("/upload_file/")
 async def upload_file(file: UploadFile = File(...)):
     check_dir()
 
     try:
-        dir_image = dir_+"data/images/"
+        dir_image = dir_ + "data/images/"
         file_location = f"{dir_image}/{file.filename}"
         with open(file_location, "wb+") as file_object:
             shutil.copyfileobj(file.file, file_object)
@@ -124,9 +129,9 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
         torch.save: Save model and stat_dict
     """
     # Initialize temp_dir
-    if isdir(dir_+"data/temp/"):
+    if isdir(dir_ + "data/temp/"):
         shutil.rmtree(dir_ + "data/temp/")
-    mkdir(dir_+"data/temp/")
+    mkdir(dir_ + "data/temp/")
 
     # Load image and pre-process
     image = load_image(dir_ + "data/images/" + f_name, aws=True)
@@ -144,13 +149,11 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
 
     # Initialize AL model
     y = label_points_to_mask([], shape, 10)
-    count = torch.where(
-        ~torch.isnan(y), torch.ones_like(y), torch.zeros_like(y)
-    )
+    count = torch.where(~torch.isnan(y), torch.ones_like(y), torch.zeros_like(y))
 
     # Check if model exist and pick it's checkpoint
     list_model = listdir(dir_ + "data/models/")
-    model_ids = [int(f[len(f) - 7:-4]) for f in list_model if f.endswith("pth")]
+    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
     m_name, state_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
 
     # Build model
@@ -173,4 +176,3 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
     torch.save(model.state_dict(), dir_ + "data/models/" + state_name)
 
     return particle_to_label
-
