@@ -159,19 +159,18 @@ def initialize_model(mrc, n_part=10):
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
         self.device = get_device()
-        self.weights = torch.zeros(n_features).to(self.device)
-        self.bias = torch.zeros(1).to(self.device)
+        self.weights = torch.zeros(n_features, device=self.device)
+        self.bias = torch.zeros(1, device=self.device)
         self.l2 = l2
         self.pi = pi
         self.pi_logit = np.log(pi) - np.log1p(-pi)
         self.pi_weight = pi_weight
 
     def loss(self, x, y, weights=None):
-        print(x.get_device(), self.weights.get_device(), self.bias.get_device())
         logits = torch.matmul(x, self.weights) + self.bias
 
         if weights is None:
-            weights = torch.ones_like(y).to(self.device)
+            weights = torch.ones_like(y, device=self.device)
 
         # binary cross entropy for labeled y's
         is_labeled = ~torch.isnan(y)
@@ -194,8 +193,8 @@ class BinaryLogisticRegression:
         return loss
 
     def predict(self, x):
-        logits = torch.matmul(x, self.weights) + self.bias
-        return logits
+
+        return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):
         return self.predict(x)
@@ -208,6 +207,7 @@ class BinaryLogisticRegression:
             self.bias = self.bias.to(self.device)
         else:
             x, y = x.to(self.device), y.to(self.device)
+
             if weights is not None:
                 weights = weights.to(self.device)
 
@@ -215,8 +215,8 @@ class BinaryLogisticRegression:
             theta0 = np.zeros(n_features + 1)
 
             def loss_fn(theta):
-                w = torch.from_numpy(theta[:n_features]).float()
-                b = torch.from_numpy(theta[n_features:]).float()
+                w = torch.from_numpy(theta[:n_features]).float().to(self.device)
+                b = torch.from_numpy(theta[n_features:]).float().to(self.device)
                 w.requires_grad = True
                 b.requires_grad = True
 
