@@ -167,6 +167,7 @@ class BinaryLogisticRegression:
         self.pi_weight = pi_weight
 
     def loss(self, x, y, weights=None):
+        print(x.get_device(), self.weights.get_device(), self.bias.get_device())
         logits = torch.matmul(x, self.weights) + self.bias
 
         if weights is None:
