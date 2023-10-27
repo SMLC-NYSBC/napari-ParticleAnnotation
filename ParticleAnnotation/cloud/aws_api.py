@@ -108,7 +108,6 @@ async def get_raw_files(f_name: str):
     try:
         image = load_image(dir_ + "data/images/" + f_name, aws=True)
         image = downsample(image, 1 / 8)
-        image = image.astype(np.int8)
         image = numpy_array_to_bytes_io(image)
 
         return StreamingResponse(image)
@@ -116,7 +115,7 @@ async def get_raw_files(f_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/initialize_model/")
+@app.get("/initialize_model_aws/")
 async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: int):
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class

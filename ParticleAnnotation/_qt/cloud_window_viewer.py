@@ -434,7 +434,7 @@ class AnnotationWidgetv2(Container):
                 image.max(),
             )
             self._reset_view()
-            print(f"Try Loaded: {self.load_data.value}")
+            show_info(f"Try Loaded: {self.load_data.value}")
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
             self.napari_viewer.add_image(
@@ -474,13 +474,13 @@ class AnnotationWidgetv2(Container):
 
     def _initialize_model(self):
         params = {
-            "m_name": self.model_name,
+            "m_name": self.model_name if not None else self.model_name.value,
             "f_name": self.load_data.value,
             "n_part": self.num_particles_al.value,
         }
-        print(params)
+
         try:
-            response = requests.post(url + "initialize_model", params=params)
+            response = requests.post(url + "initialize_model_aws", params=params)
 
             if response.status_code == 200:
                 p_label = response.json()
@@ -496,7 +496,7 @@ class AnnotationWidgetv2(Container):
                 )
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
-        pass
+
 
     def _refresh(self):
         pass
