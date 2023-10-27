@@ -40,7 +40,7 @@ def check_dir():
         mkdir("api/data/models/")
 
 
-@app.get("/list_files/", response_model=List[str])
+@app.get("/list_files", response_model=List[str])
 async def list_files():
     check_dir()
 
@@ -54,7 +54,7 @@ async def list_files():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/list_models/", response_model=List[str])
+@app.get("/list_models", response_model=List[str])
 async def list_models():
     check_dir()
 
@@ -68,7 +68,7 @@ async def list_models():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/new_model/")
+@app.get("/new_model", response_model=str)
 async def new_model():
     # Initialize new model with weight and bias at 0.0
     model = BinaryLogisticRegression(n_features=128, l2=1.0, pi=0.01, pi_weight=1000)
@@ -89,7 +89,7 @@ async def new_model():
     return model_name
 
 
-@app.post("/upload_file/")
+@app.post("/upload_file")
 async def upload_file(file: UploadFile = File(...)):
     check_dir()
 
@@ -103,7 +103,7 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/get_raw_files/")
+@app.get("/get_raw_files")
 async def get_raw_files(f_name: str):
     try:
         image = load_image(dir_ + "data/images/" + f_name, aws=True)
@@ -115,7 +115,7 @@ async def get_raw_files(f_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/initialize_model_aws/")
+@app.get("/initialize_model_aws", response_model=list)
 async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class
@@ -184,10 +184,10 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     torch.save(model, dir_ + "data/models/" + m_name)
     torch.save(model.state_dict(), dir_ + "data/models/" + state_name)
 
-    return particle_to_label
+    return particle_to_label.tolist()
 
 
-app.get("/refresh_model/")
+app.get("/refresh_model", response_model=list)
 async def refresh_model(m_name: str, points: np.ndarray, n_part: int):
     """
     Re-trained the selected model based on checkpoint and temp data.
