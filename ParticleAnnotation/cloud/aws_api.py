@@ -1,5 +1,5 @@
 from os import listdir, mkdir
-from os.path import isdir
+from os.path import isdir, isfile
 from typing import List, Union
 
 import numpy as np
@@ -74,7 +74,7 @@ async def new_model():
     model = BinaryLogisticRegression(n_features=128, l2=1.0, pi=0.01, pi_weight=1000)
     # Save model withe unique ID name
     list_model = listdir(dir_ + "data/models/")
-    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
+    model_ids = [int(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
 
     if len(model_ids) > 0:
         model_ids = model_ids[max(model_ids)] + 1
@@ -150,13 +150,15 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     # Compute image feature map
     x, _, particle_to_label = initialize_model(image, n_part)
 
+    np.save(dir_ + '/data/temp/consensus.npy', particle_to_label)
+
     # Initialize AL model
     y = label_points_to_mask([], shape, 10)
     count = torch.where(~torch.isnan(y), torch.ones_like(y), torch.zeros_like(y))
 
     # Check if model exist and pick it's checkpoint
     list_model = listdir(dir_ + "data/models/")
-    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
+    model_ids = [int(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
     m_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
 
     # Build model
@@ -183,22 +185,35 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     return particle_to_label.tolist()
 
 
-app.get("/refresh_model", response_model=list)
-async def refresh_model(m_name: str, points: np.ndarray, n_part: int):
+@app.post("/add_pick_to_consensus")
+async def add_pick_to_consensus(corrected_particle: list):
+    """
+    Add particles to the consensus list
+
+    Args:
+        corrected_particle: List of corrected particles and their labels
+    """
+    if isfile(dir_ + "data/temp/temp_consensus.npy"):
+        temp_consensus = np.load(dir_ + "data/temp/temp_consensus.npy").aslist()
+    else:
+        temp_consensus = []
+
+    temp_consensus.append(corrected_particle)
+    np.save(dir_ + "data/temp/temp_consensus.npy", temp_consensus)
+
+
+@app.get("/refresh_model", response_model=list)
+async def refresh_model(m_name: str, points: list, n_part: int):
     """
     Re-trained the selected model based on checkpoint and temp data.
 
-    TODO: Serialization of numpy data. I think we cannot sent arrays as they are not
-        serializable!!! Solution to binarize it, or sent tuple of list or tuple of tuple!
-        Can we use same function for sending images!?
-
     Notes:
         The initialize model is loaded from the AWS drive and restored with the
-        checkpoint state_dict and temp data stored in api/data/temp/.
+        checkpoint and temp data stored in api/data/temp/.
 
     Args:
         m_name (str, None): Name of the model to initialize.
-        points (np.ndarray):
+        points (list): List of points.
         n_part (int): Number of particles to generate for AL.
 
     Returns:

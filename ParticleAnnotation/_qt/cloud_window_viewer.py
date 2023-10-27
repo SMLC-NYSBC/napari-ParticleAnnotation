@@ -247,6 +247,8 @@ class AnnotationWidgetv2(Container):
 
         spacer2 = Label(value="---------- Step 2: Iterative  Training ----------")
         self.num_particles_al = LineEdit(name="Num. of Particles", value="1")
+        self.add_btn = PushButton(name="Add label")
+        self.add_btn.clicked.connect(self.add_to_consensus)
         self.refresh = PushButton(name="Retrain")
         self.refresh.clicked.connect(self._refresh)
         self.reset_view = PushButton(name="Reset View")
@@ -298,7 +300,7 @@ class AnnotationWidgetv2(Container):
             4,
             VBox(
                 widgets=(
-                    HBox(widgets=(self.num_particles_al, self.refresh)),
+                    HBox(widgets=(self.num_particles_al, self.add_btn, self.refresh)),
                     self.reset_view,
                 )
             ),
@@ -499,6 +501,41 @@ class AnnotationWidgetv2(Container):
                     f"Error: {response.status_code} \n"
                     f"Message:{response.text}"
                 )
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
+
+    def add_to_consensus(self):
+        label_no = int(self.num_particles_al.value)
+        corrected_particle = np.asarray(self.napari_viewer.layers["Particles_Labels"].data)
+        corrected_particle = corrected_particle[-label_no:]
+        corrected_label = np.asarray(self.napari_viewer.layers["Particles_Labels"].label)
+        corrected_label = corrected_label[-label_no:]
+
+        if corrected_particle.shape[1] == 2:
+            data = np.array(
+                (np.array(corrected_label).astype(np.int16), corrected_particle[:, 0], corrected_particle[:, 1])
+            ).T
+        else:
+            data = np.array(
+                (
+                    np.array(corrected_label).astype(np.int16),
+                    corrected_particle[:, 0],
+                    corrected_particle[:, 1],
+                    corrected_particle[:, 2],
+                )
+            ).T
+
+        params = {
+            "corrected_particle": data,
+        }
+
+        try:
+            response = requests.post(url + "add_pick_to_consensus", params=params)
+
+            if response.status_code == 200:
+                show_info(f"Successfully added point to consensus")
+            else:
+                show_info(f"Error adding point to consensus")
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
 
