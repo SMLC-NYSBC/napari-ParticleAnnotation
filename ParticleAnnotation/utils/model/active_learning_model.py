@@ -158,8 +158,9 @@ def initialize_model(mrc, n_part=10):
 
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
-        self.weights = torch.zeros(n_features)
-        self.bias = torch.zeros(1)
+        self.device = get_device()
+        self.weights = torch.zeros(n_features).to(self.device)
+        self.bias = torch.zeros(1).to(self.device)
         self.l2 = l2
         self.pi = pi
         self.pi_logit = np.log(pi) - np.log1p(-pi)

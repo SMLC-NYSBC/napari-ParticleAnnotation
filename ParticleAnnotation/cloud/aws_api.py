@@ -133,6 +133,8 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     Returns:
         np.array: Output generated initial points to label for the AL
     """
+    device_ = get_device()
+
     # Initialize temp_dir
     if isdir(dir_ + "data/temp/"):
         shutil.rmtree(dir_ + "data/temp/")
@@ -166,10 +168,11 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
             n_features=x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
         )
 
+    model.to(device_)
     model.fit(
-        x,
-        y.ravel(),
-        weights=count.ravel(),
+        torch.from_numpy(x).to(device_),
+        y.ravel().to(device_),
+        weights=count.ravel().to(device_),
         pre_train=AL_weights,
     )
 
