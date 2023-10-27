@@ -132,9 +132,10 @@ def initialize_model(mrc, n_part=10):
         model.fill()
         model.eval()
         classifier.eval()
+        mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
 
         with torch.no_grad():
-            filter_values = model(torch.from_numpy(mrc).float().unsqueeze(0)).squeeze(0)
+            filter_values = model(mrc).squeeze(0)
             classified = torch.sigmoid(classifier(filter_values))
 
         x = filter_values.permute(1, 2, 0)

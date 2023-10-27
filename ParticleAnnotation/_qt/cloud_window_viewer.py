@@ -484,7 +484,7 @@ class AnnotationWidgetv2(Container):
         }
 
         try:
-            response = requests.post(url + "initialize_model_aws", params=params)
+            response = requests.get(url + "initialize_model_aws", params=params)
 
             if response.status_code == 200:
                 p_label = response.json()
