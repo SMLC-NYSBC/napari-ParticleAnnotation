@@ -473,10 +473,14 @@ class AnnotationWidgetv2(Container):
             show_info(f"Connection Error to {url}. Check if server is running.")
 
     def _initialize_model(self):
+        self._load_model()
+        if self.model_name is None:
+            self._create_new_model()
+
         params = {
-            "m_name": self.model_name if not None else self.model_name.value,
+            "m_name": self.model_name,
             "f_name": self.load_data.value,
-            "n_part": self.num_particles_al.value,
+            "n_part": int(self.num_particles_al.value),
         }
 
         try:
@@ -496,7 +500,6 @@ class AnnotationWidgetv2(Container):
                 )
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
-
 
     def _refresh(self):
         pass

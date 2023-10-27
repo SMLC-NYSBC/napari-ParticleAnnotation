@@ -116,7 +116,7 @@ async def get_raw_files(f_name: str):
 
 
 @app.get("/initialize_model_aws/")
-async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: int):
+async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class
 
@@ -188,7 +188,7 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
 
 
 app.get("/refresh_model/")
-async def refresh_model(m_name: Union[str, None], points: np.ndarray, n_part: int):
+async def refresh_model(m_name: str, points: np.ndarray, n_part: int):
     """
     Re-trained the selected model based on checkpoint and temp data.
 
@@ -202,6 +202,7 @@ async def refresh_model(m_name: Union[str, None], points: np.ndarray, n_part: in
 
     Args:
         m_name (str, None): Name of the model to initialize.
+        points (np.ndarray):
         n_part (int): Number of particles to generate for AL.
 
     Returns:
