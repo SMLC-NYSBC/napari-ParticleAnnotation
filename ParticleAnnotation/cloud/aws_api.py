@@ -121,12 +121,18 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class
 
+    Notes:
+        The initialize model is taken as a new model or pre-trained one. The model is
+        being kept on the AWS drive and actively save/load whenever new
+        training/predictions is being performed.
+
     Args:
-        m_name (str, None):
-        f_name (str):
+        m_name (str, None): Name of the model to initialize.
+        f_name (str): Image file name model is currently working on.
+        n_part (int): Number of particles to generate for AL.
 
     Returns:
-        torch.save: Save model and stat_dict
+        np.array: Output generated initial points to label for the AL
     """
     # Initialize temp_dir
     if isdir(dir_ + "data/temp/"):
@@ -172,7 +178,34 @@ async def initialize_model_aws(m_name: Union[str, None], f_name: str, n_part: in
         pre_train=AL_weights,
     )
 
+    np.save(dir_ + '/data/temp/x.npy', x)
+    np.save(dir_ + '/data/temp/y.npy', y)
+    np.save(dir_ + '/data/temp/count.npy', count)
+
     torch.save(model, dir_ + "data/models/" + m_name)
     torch.save(model.state_dict(), dir_ + "data/models/" + state_name)
 
     return particle_to_label
+
+
+app.get("/refresh_model/")
+async def refresh_model(m_name: Union[str, None], points: np.ndarray, n_part: int):
+    """
+    Re-trained the selected model based on checkpoint and temp data.
+
+    TODO: Serialization of numpy data. I think we cannot sent arrays as they are not
+        serializable!!! Solution to binarize it, or sent tuple of list or tuple of tuple!
+        Can we use same function for sending images!?
+
+    Notes:
+        The initialize model is loaded from the AWS drive and restored with the
+        checkpoint state_dict and temp data stored in api/data/temp/.
+
+    Args:
+        m_name (str, None): Name of the model to initialize.
+        n_part (int): Number of particles to generate for AL.
+
+    Returns:
+        np.array: Output next generated points to label for the AL
+    """
+    pass

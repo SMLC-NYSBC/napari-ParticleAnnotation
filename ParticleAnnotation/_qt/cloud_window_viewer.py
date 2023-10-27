@@ -23,6 +23,7 @@ from qtpy.QtWidgets import QFileDialog
 
 from napari.layers import Points
 import napari
+from scipy.spatial import KDTree
 
 from ParticleAnnotation.cloud.aws_api import url
 
@@ -221,10 +222,13 @@ class AnnotationWidgetv2(Container):
         super().__init__(layout="vertical")
         self.napari_viewer = napari_viewer
 
+        """Global variables"""
         self.file_list = []
         self.model_name, self.model_type = None, None
+        self.color_map_specified = {0.0: "#D81B60", 1.0: "#1E88E5", 2.0: "#FFC107"}
+        self.activate_click = False
 
-        # Initialize model
+        """"Widget elements"""
         spacer1 = Label(value="-- Step 1: Initialize  Topaz  Active  learning --")
         self.load_ALM = ComboBox(name="Select Model", choices=self._update_model_list())
         self.load_ALM_btt = PushButton(name="Load")
@@ -262,6 +266,7 @@ class AnnotationWidgetv2(Container):
         )
         self.slide_pred.changed.connect(self._filter_particle)
 
+        """Widget layer orders"""
         # Space 1
         self.insert(1, spacer1)
         self.insert(
@@ -307,7 +312,15 @@ class AnnotationWidgetv2(Container):
         self.insert(7, spacer4)
         self.insert(8, VBox(widgets=(self.slide_pred,)))
 
-        # Widget initialization
+        """Widget initialization"""
+        # Key binding
+        try:
+            self.napari_viewer.bind_key("z", self.ZEvent)
+            self.napari_viewer.bind_key("x", self.XEvent)
+            self.napari_viewer.bind_key("c", self.CEvent)
+        except ValueError:
+            pass
+
         if self.track_mouse_position not in self.napari_viewer.mouse_move_callbacks:
             self.napari_viewer.mouse_move_callbacks.append(self.track_mouse_position)
 
@@ -470,6 +483,10 @@ class AnnotationWidgetv2(Container):
             response = requests.post(url + "initialize_model", params=params)
 
             if response.status_code == 200:
+                p_label = response.json()
+                self.create_point_layer(p_label[:, 1:], p_label[:, 0])
+                self.activate_click = True
+
                 show_info(f"Model successfully initialized: {response.json()}")
             else:
                 show_info(
@@ -503,7 +520,7 @@ class AnnotationWidgetv2(Container):
         if self.activate_click:
             try:
                 # if self.activate_click:
-                points_layer = viewer.layers["Initial_Labels"].data
+                points_layer = viewer.layers["Particles_Labels"].data
 
                 # Calculate the distance between the mouse position and all points
                 distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
@@ -513,9 +530,100 @@ class AnnotationWidgetv2(Container):
                 if self.selected_particle_id != closest_point_index:
                     self.selected_particle_id = closest_point_index
 
-                    viewer.layers["Initial_Labels"].selected_data = set()
-                    viewer.layers["Initial_Labels"].selected_data.add(
+                    viewer.layers["Particles_Labels"].selected_data = set()
+                    viewer.layers["Particles_Labels"].selected_data.add(
                         closest_point_index
                     )
             except:
                 pass
+
+    def ZEvent(self, viewer):
+        if self.activate_click:
+            # if self.activate_click:
+            points_layer = viewer.layers["Particles_Labels"].data
+
+            # Calculate the distance between the mouse position and all points
+            kdtree = KDTree(points_layer)
+            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
+
+            if distance > 12:
+                self.update_point_layer_2(self.mouse_position, 0, "add")
+            else:
+                self.update_point_layer_2(closest_point_index, 0, "update")
+
+    def XEvent(self, viewer):
+        if self.activate_click:
+            # if self.activate_click:
+            points_layer = viewer.layers["Particles_Labels"].data
+
+            # Calculate the distance between the mouse position and all points
+            kdtree = KDTree(points_layer)
+            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
+
+            if distance > 12:
+                self.update_point_layer_2(self.mouse_position, 1, "add")
+            else:
+                self.update_point_layer_2(closest_point_index, 1, "update")
+
+    def CEvent(self, viewer):
+        if self.activate_click:
+            # if self.activate_click:
+            points_layer = viewer.layers["Particles_Labels"].data
+
+            # Calculate the distance between the mouse position and all points
+            kdtree = KDTree(points_layer)
+            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
+
+            self.update_point_layer_2(closest_point_index, 0, "remove")
+
+    def update_point_layer_2(self, index, label, func):
+        try:
+            p_layer = self.napari_viewer.layers["Particles_Labels"]
+
+            if func == "add":
+                point_layer = p_layer.data
+                labels = p_layer.properties["label"]
+
+                points_layer = np.insert(point_layer, 0, self.mouse_position, axis=0)
+                labels = np.insert(labels, 0, [label], axis=0)
+
+                self.create_point_layer(points_layer, labels)
+            elif func == "remove":
+                point_layer = p_layer.data
+                labels = p_layer.properties["label"]
+
+                points_layer = np.delete(point_layer, index, axis=0)
+                labels = np.delete(labels, index, axis=0)
+
+                self.create_point_layer(points_layer, labels)
+            elif func == "update":
+                point_layer = p_layer.data
+                labels = p_layer.properties["label"]
+                if labels[index] != label:
+                    labels[index] = label
+                    self.create_point_layer(point_layer, labels)
+            else:
+                pass
+            p_layer.edge_color_cycle = self.color_map_specified
+            self._reset_view()
+        except:
+            pass
+
+    def create_point_layer(self, point, labels):
+        try:
+            self.napari_viewer.layers.remove("Particles_Labels")
+        except:
+            pass
+
+        self.napari_viewer.add_points(
+            point,
+            name="Particles_Labels",
+            face_color="#00000000",
+            properties={"label": labels.astype(np.int16)},
+            edge_color="label",
+            edge_color_cycle=self.color_map_specified,
+            edge_width=0.1,
+            symbol="square",
+            size=40,
+        )
+        self.napari_viewer.layers["Particles_Labels"].mode = "select"
