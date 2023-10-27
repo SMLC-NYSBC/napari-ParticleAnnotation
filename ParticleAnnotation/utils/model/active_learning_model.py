@@ -202,7 +202,9 @@ class BinaryLogisticRegression:
     def fit(self, x, y, weights=None, pre_train=None):
         if pre_train is not None:
             self.weights = pre_train[0]
+            self.weights.to(self.device)
             self.bias = pre_train[1]
+            self.bias.to(self.device)
         else:
             n_features = x.shape[1]
             theta0 = np.zeros(n_features + 1)
