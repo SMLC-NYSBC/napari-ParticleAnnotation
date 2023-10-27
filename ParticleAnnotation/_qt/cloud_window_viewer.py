@@ -487,7 +487,8 @@ class AnnotationWidgetv2(Container):
             response = requests.get(url + "initialize_model_aws", params=params)
 
             if response.status_code == 200:
-                p_label = response.json()
+                p_label = np.asarray(response.json())
+
                 self.create_point_layer(p_label[:, 1:], p_label[:, 0])
                 self.activate_click = True
 

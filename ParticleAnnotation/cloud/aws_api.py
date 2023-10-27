@@ -146,11 +146,7 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     image, _ = normalize(image, method="gmm", use_cuda=False)
 
     # Compute image feature map
-    x, _, p_label = initialize_model(image, n_part)
-
-    # Create point label
-    label = np.repeat(2, n_part).reshape((-1, 1))
-    particle_to_label = np.vstack((label, p_label))
+    x, _, particle_to_label = initialize_model(image, n_part)
 
     # Initialize AL model
     y = label_points_to_mask([], shape, 10)
