@@ -229,7 +229,7 @@ class BinaryLogisticRegression:
                 loss = model.loss(x, y, weights=weights)
                 loss.backward()
 
-                grad = torch.concat([w.grad, b.grad]).detach().numpy()
+                grad = torch.concat([w.grad, b.grad]).cpu().detach().numpy()
                 loss = loss.item()
 
                 return loss, grad
