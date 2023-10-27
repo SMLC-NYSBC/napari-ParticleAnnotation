@@ -157,12 +157,11 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     # Check if model exist and pick it's checkpoint
     list_model = listdir(dir_ + "data/models/")
     model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
-    m_name, state_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
+    m_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
 
     # Build model
     if AL_weights is not None:
         model = torch.load(dir_ + "data/models/" + m_name)
-        model.load_state_dict(torch.load(dir_ + "data/models/" + state_name))
     else:
         model = BinaryLogisticRegression(
             n_features=x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
@@ -180,7 +179,6 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     np.save(dir_ + '/data/temp/count.npy', count)
 
     torch.save(model, dir_ + "data/models/" + m_name)
-    torch.save(model.state_dict(), dir_ + "data/models/" + state_name)
 
     return particle_to_label.tolist()
 
