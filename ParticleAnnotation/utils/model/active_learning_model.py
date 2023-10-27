@@ -170,7 +170,7 @@ class BinaryLogisticRegression:
         logits = torch.matmul(x, self.weights) + self.bias
 
         if weights is None:
-            weights = torch.ones_like(y)
+            weights = torch.ones_like(y).to(self.device)
 
         # binary cross entropy for labeled y's
         is_labeled = ~torch.isnan(y)
@@ -202,10 +202,14 @@ class BinaryLogisticRegression:
     def fit(self, x, y, weights=None, pre_train=None):
         if pre_train is not None:
             self.weights = pre_train[0]
-            self.weights.to(self.device)
+            self.weights = self.weights.to(self.device)
             self.bias = pre_train[1]
-            self.bias.to(self.device)
+            self.bias = self.bias.to(self.device)
         else:
+            x, y = x.to(self.device), y.to(self.device)
+            if weights is not None:
+                weights = weights.to(self.device)
+
             n_features = x.shape[1]
             theta0 = np.zeros(n_features + 1)
 

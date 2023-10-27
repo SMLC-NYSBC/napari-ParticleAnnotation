@@ -169,9 +169,9 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
         )
 
     model.fit(
-        torch.from_numpy(x).to(device_),
+        torch.from_numpy(x),
         y.ravel().to(device_),
-        weights=count.ravel().to(device_),
+        weights=count.ravel(),
         pre_train=AL_weights,
     )
 
