@@ -142,7 +142,8 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
             and isfile(dir_ + "/data/temp/y.npy")
             and isfile(dir_ + "/data/temp/count.npy")
         ):
-            temp_m_name = json.load("/data/temp/m_name.json")["m_name"]
+            with open(dir_ + "/data/temp/m_name.json", 'r') as openfile:
+                temp_m_name = json.load(openfile)["m_name"]
 
             if m_name == temp_m_name:
                 particle_to_label = np.load(dir_ + "/data/temp/store_to_labels.npy")
