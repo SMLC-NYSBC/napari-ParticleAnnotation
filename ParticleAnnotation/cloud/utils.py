@@ -19,7 +19,7 @@ def bytes_io_to_numpy_array(bytes_file) -> np.ndarray:
 
 
 def get_model_name_and_weights(m_name, dir_):
-    list_model = listdir("../../models")
+    list_model = listdir(dir_ + "data/models")
     model_ids = [str(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
     m_model_id = m_name[len(m_name) - 7: -4]
 
@@ -29,7 +29,7 @@ def get_model_name_and_weights(m_name, dir_):
         m_name = f"topaz_al_model_{new_id:03}.pth"
         AL_weights = None
     else:
-        weights = torch.load("../../models/" + m_name)
+        weights = torch.load(dir_ + "data/models/" + m_name)
         AL_weights = [weights.weights, weights.bias]
 
     return m_name, AL_weights

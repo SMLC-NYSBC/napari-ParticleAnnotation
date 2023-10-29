@@ -83,9 +83,7 @@ async def new_model():
         model_ids = 0
 
     model_name = f"topaz_al_model_{model_ids:03}.pth"
-    state_name = f"state_{model_ids:03}.pth"
     torch.save(model, dir_ + "data/models/" + model_name)
-    torch.save(model, dir_ + "data/models/" + state_name)
 
     return model_name
 
