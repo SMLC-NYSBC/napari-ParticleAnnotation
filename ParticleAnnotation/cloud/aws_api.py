@@ -2,7 +2,7 @@ import json
 from os import listdir, mkdir
 from os.path import isdir, isfile
 from typing import List
-from pydantic import BaseModel
+from ParticleAnnotation.cloud.datatypes import Consensus, String, InitialValues
 
 import numpy as np
 import torch
@@ -104,7 +104,9 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @app.get("/get_raw_files")
-async def get_raw_files(f_name: str):
+async def get_raw_files(f_name: String):
+    f_name = f_name.name_
+
     try:
         image = load_image(dir_ + "data/images/" + f_name, aws=True)
         image = downsample(image, 1 / 8)
@@ -116,7 +118,7 @@ async def get_raw_files(f_name: str):
 
 
 @app.get("/initialize_model_aws", response_model=List[List[float]])
-async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
+async def initialize_model_aws(values: InitialValues):
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class
 
@@ -133,6 +135,9 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     Returns:
         np.array: Output generated initial points to label for the AL
     """
+    m_name = values.m_name
+    f_name = values.f_name
+    n_part = values.n_part
     device_ = get_device()
 
     # Initialize temp_dir
@@ -199,10 +204,6 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     torch.save(model, dir_ + "data/models/" + m_name)
 
     return particle_to_label.tolist()
-
-
-class Consensus(BaseModel):
-    corrected_particle: List[List[float]]
 
 
 @app.post("/add_pick_to_consensus")

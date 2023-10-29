@@ -424,7 +424,7 @@ class AnnotationWidgetv2(Container):
         try:
             response = requests.get(
                 url + "get_raw_files",
-                params={"f_name": self.load_data.value},
+                json={"f_name": self.load_data.value},
                 timeout=None,
             )
 
@@ -488,7 +488,7 @@ class AnnotationWidgetv2(Container):
         }
 
         try:
-            response = requests.get(url + "initialize_model_aws", params=params)
+            response = requests.get(url + "initialize_model_aws", json=params)
 
             if response.status_code == 200:
                 p_label = np.asarray(response.json())
