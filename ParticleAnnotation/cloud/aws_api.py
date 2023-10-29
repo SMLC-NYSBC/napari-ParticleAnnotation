@@ -2,6 +2,7 @@ import json
 from os import listdir, mkdir
 from os.path import isdir, isfile
 from typing import List
+from pydantic import BaseModel
 
 import numpy as np
 import torch
@@ -200,14 +201,19 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     return particle_to_label.tolist()
 
 
+class Consensus(BaseModel):
+    corrected_particle: List[List[float]]
+
+
 @app.post("/add_pick_to_consensus")
-async def add_pick_to_consensus(corrected_particle: List[List[float]]):
+async def add_pick_to_consensus(consensus: Consensus):
     """
     Add particles to the consensus list
 
     Args:
-        corrected_particle: List of corrected particles and their labels
+        consensus: List of corrected particles and their labels
     """
+    corrected_particle = consensus.corrected_particle
     if isfile(dir_ + "data/temp/consensus.npy"):
         temp_consensus = np.load(dir_ + "data/temp/consensus.npy").tolist()
     else:
