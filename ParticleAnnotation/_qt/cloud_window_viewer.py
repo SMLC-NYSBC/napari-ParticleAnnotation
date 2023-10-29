@@ -533,8 +533,9 @@ class AnnotationWidgetv2(Container):
         )
         corrected_particle = corrected_particle[-label_no:]
         corrected_label = np.asarray(
-            self.napari_viewer.layers["Particles_Labels"].label
+            self.napari_viewer.layers["Particles_Labels"].properties["label"]
         )
+
         corrected_label = corrected_label[-label_no:]
 
         if corrected_particle.shape[1] == 2:
@@ -555,8 +556,9 @@ class AnnotationWidgetv2(Container):
                 )
             ).T
 
+        show_info(f"Sending {data} point to consensus")
         params = {
-            "corrected_particle": data,
+            "corrected_particle": data.tolist(),
         }
 
         try:

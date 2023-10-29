@@ -174,9 +174,7 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     count = torch.where(~torch.isnan(y), torch.ones_like(y), torch.zeros_like(y))
 
     # Check if model exist and pick it's checkpoint
-    list_model = listdir(dir_ + "data/models/")
-    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
-    m_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
+    m_name, AL_weights = get_model_name_and_weights(m_name, dir_)
 
     # Build model
     if AL_weights is not None:

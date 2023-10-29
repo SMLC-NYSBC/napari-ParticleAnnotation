@@ -1,4 +1,6 @@
 import io
+from os import listdir
+
 import torch
 import numpy as np
 
@@ -16,19 +18,19 @@ def bytes_io_to_numpy_array(bytes_file) -> np.ndarray:
     return np.load(bytes_file, allow_pickle=True)
 
 
-def get_model_name_and_weights(m_name, model_ids, dir_):
-    def generate_new_model_name(ids):
-        if ids:
-            return max(ids) + 1
-        return 0
+def get_model_name_and_weights(m_name, dir_):
+    list_model = listdir("../../models")
+    model_ids = [str(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
+    m_model_id = m_name[len(m_name) - 7: -4]
 
-    if m_name[len(m_name) - 7 : -4] not in model_ids:
-        model_id = generate_new_model_name(model_ids)
-        m_name = f"topaz_al_model_{model_id:03}.pth"
+    if m_model_id not in model_ids:
+        new_id = [int(i) for i in model_ids]
+        new_id = new_id[max(new_id)]
+        m_name = f"topaz_al_model_{new_id:03}.pth"
         AL_weights = None
     else:
-        weights = torch.load(dir_ + "data/models/" + m_name)
-        AL_weights = [weights.weight, weights.bias]
+        weights = torch.load("../../models/" + m_name)
+        AL_weights = [weights.weights, weights.bias]
 
     return m_name, AL_weights
 
