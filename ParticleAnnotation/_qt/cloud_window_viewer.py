@@ -575,6 +575,8 @@ class AnnotationWidgetv2(Container):
         pass
 
     def _reset_view(self):
+        self.load_ALM.choices = self._update_model_list()
+        self.load_data.choices = self._update_data_list()
         self.napari_viewer.reset_view()
 
     def _predict(self):

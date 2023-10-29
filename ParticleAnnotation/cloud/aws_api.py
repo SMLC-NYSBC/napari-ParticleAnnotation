@@ -192,7 +192,8 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     np.save(dir_ + "/data/temp/x.npy", x)
     np.save(dir_ + "/data/temp/y.npy", y)
     np.save(dir_ + "/data/temp/count.npy", count)
-    json.dump({"m_name": m_name}, "/data/temp/m_name.json")
+    with open(dir_ + "/data/temp/m_name.json", "w") as outfile:
+        json.dump({"m_name": m_name}, outfile)
     torch.save(model, dir_ + "data/models/" + m_name)
 
     return particle_to_label.tolist()
