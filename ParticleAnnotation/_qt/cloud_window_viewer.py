@@ -247,6 +247,8 @@ class AnnotationWidgetv2(Container):
 
         spacer2 = Label(value="---------- Step 2: Iterative  Training ----------")
         self.num_particles_al = LineEdit(name="Num. of Particles", value="1")
+        self.get_label = PushButton(name="Get label")
+        self.get_label.clicked.connect(self.get_current_label)
         self.add_btn = PushButton(name="Add label")
         self.add_btn.clicked.connect(self.add_to_consensus)
         self.refresh = PushButton(name="Retrain")
@@ -300,7 +302,7 @@ class AnnotationWidgetv2(Container):
             4,
             VBox(
                 widgets=(
-                    HBox(widgets=(self.num_particles_al, self.add_btn, self.refresh)),
+                    HBox(widgets=(self.num_particles_al, self.get_label, self.add_btn, self.refresh)),
                     self.reset_view,
                 )
             ),
@@ -504,16 +506,44 @@ class AnnotationWidgetv2(Container):
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
 
+    def get_current_label(self):
+        param = {"m_name": self.load_ALM.value}
+
+        try:
+            response = requests.get(url + "retrieve_particle_to_label", params=param)
+
+            if response.status_code == 200:
+                p_label = np.asarray(response.json())
+                self.create_point_layer(p_label[:, 1:], p_label[:, 0])
+                self.activate_click = True
+                show_info(f"Successfully loaded particles: {response.json()}")
+            else:(
+                show_info(
+                    "Failed to load particles: \n"
+                    f"Error: {response.status_code} \n"
+                    f"Message:{response.text}"
+                ))
+        except:
+            show_info(f"Connection Error to {url}. Check if server is running.")
+
     def add_to_consensus(self):
         label_no = int(self.num_particles_al.value)
-        corrected_particle = np.asarray(self.napari_viewer.layers["Particles_Labels"].data)
+        corrected_particle = np.asarray(
+            self.napari_viewer.layers["Particles_Labels"].data
+        )
         corrected_particle = corrected_particle[-label_no:]
-        corrected_label = np.asarray(self.napari_viewer.layers["Particles_Labels"].label)
+        corrected_label = np.asarray(
+            self.napari_viewer.layers["Particles_Labels"].label
+        )
         corrected_label = corrected_label[-label_no:]
 
         if corrected_particle.shape[1] == 2:
             data = np.array(
-                (np.array(corrected_label).astype(np.int16), corrected_particle[:, 0], corrected_particle[:, 1])
+                (
+                    np.array(corrected_label).astype(np.int16),
+                    corrected_particle[:, 0],
+                    corrected_particle[:, 1],
+                )
             ).T
         else:
             data = np.array(

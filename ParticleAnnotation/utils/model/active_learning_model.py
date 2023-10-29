@@ -193,7 +193,6 @@ class BinaryLogisticRegression:
         return loss
 
     def predict(self, x):
-
         return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):

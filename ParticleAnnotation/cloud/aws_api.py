@@ -1,6 +1,7 @@
+import json
 from os import listdir, mkdir
 from os.path import isdir, isfile
-from typing import List, Union
+from typing import List
 
 import numpy as np
 import torch
@@ -20,7 +21,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     initialize_model,
     label_points_to_mask,
 )
-from ParticleAnnotation.utils.model.utils import get_device, find_peaks
+from ParticleAnnotation.utils.model.utils import get_device
 
 app = FastAPI()
 url = "http://3.230.8.116:8000/"
@@ -74,7 +75,7 @@ async def new_model():
     model = BinaryLogisticRegression(n_features=128, l2=1.0, pi=0.01, pi_weight=1000)
     # Save model withe unique ID name
     list_model = listdir(dir_ + "data/models/")
-    model_ids = [int(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
+    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
 
     if len(model_ids) > 0:
         model_ids = model_ids[max(model_ids)] + 1
@@ -137,7 +138,21 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
 
     # Initialize temp_dir
     if isdir(dir_ + "data/temp/"):
-        shutil.rmtree(dir_ + "data/temp/")
+        if (
+            isfile(dir_ + "/data/temp/store_to_labels.npy")
+            and isfile(dir_ + "/data/temp/x.npy")
+            and isfile(dir_ + "/data/temp/y.npy")
+            and isfile(dir_ + "/data/temp/count.npy")
+        ):
+            temp_m_name = json.load("/data/temp/m_name.json")["m_name"]
+
+            if m_name == temp_m_name:
+                particle_to_label = np.load(dir_ + "/data/temp/store_to_labels.npy")
+                return particle_to_label.tolist()
+            else:
+                shutil.rmtree(dir_ + "data/temp/")
+        else:
+            shutil.rmtree(dir_ + "data/temp/")
     mkdir(dir_ + "data/temp/")
 
     # Load image and pre-process
@@ -150,7 +165,9 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     # Compute image feature map
     x, _, particle_to_label = initialize_model(image, n_part)
 
-    np.save(dir_ + '/data/temp/consensus.npy', particle_to_label)
+    np.save(dir_ + "/data/temp/store_to_labels.npy", particle_to_label)
+    np.save(dir_ + "/data/temp/consensus.npy", [])
+    np.save(dir_ + "/data/temp/labeled_particles.npy", [])
 
     # Initialize AL model
     y = label_points_to_mask([], shape, 10)
@@ -158,7 +175,7 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
 
     # Check if model exist and pick it's checkpoint
     list_model = listdir(dir_ + "data/models/")
-    model_ids = [int(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
+    model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
     m_name, AL_weights = get_model_name_and_weights(m_name, model_ids, dir_)
 
     # Build model
@@ -176,10 +193,10 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
         pre_train=AL_weights,
     )
 
-    np.save(dir_ + '/data/temp/x.npy', x)
-    np.save(dir_ + '/data/temp/y.npy', y)
-    np.save(dir_ + '/data/temp/count.npy', count)
-
+    np.save(dir_ + "/data/temp/x.npy", x)
+    np.save(dir_ + "/data/temp/y.npy", y)
+    np.save(dir_ + "/data/temp/count.npy", count)
+    json.dump({"m_name": m_name}, "/data/temp/m_name.json")
     torch.save(model, dir_ + "data/models/" + m_name)
 
     return particle_to_label.tolist()
@@ -193,13 +210,13 @@ async def add_pick_to_consensus(corrected_particle: list):
     Args:
         corrected_particle: List of corrected particles and their labels
     """
-    if isfile(dir_ + "data/temp/temp_consensus.npy"):
-        temp_consensus = np.load(dir_ + "data/temp/temp_consensus.npy").aslist()
+    if isfile(dir_ + "data/temp/consensus.npy"):
+        temp_consensus = np.load(dir_ + "data/temp/consensus.npy").tolist()
     else:
         temp_consensus = []
 
     temp_consensus.append(corrected_particle)
-    np.save(dir_ + "data/temp/temp_consensus.npy", temp_consensus)
+    np.save(dir_ + "data/temp/consensus.npy", temp_consensus)
 
 
 @app.get("/refresh_model", response_model=list)
@@ -219,4 +236,48 @@ async def refresh_model(m_name: str, points: list, n_part: int):
     Returns:
         np.array: Output next generated points to label for the AL
     """
+    """Build consensus"""
+    # Add particle to consensus
+
+    # Build consensus
+
+    """Add to the list of labeled particles"""
+    # Marge consensus with labeled particles
+
+    """Re-trained the model"""
+    # Load model
+
+    # Update model
+
+    # Retrieve particles
+
+    """Save all checkpoints"""
+    np.save(dir_ + "/data/temp/store_to_labels.npy", particle_to_label)
+    np.save(dir_ + "/data/temp/consensus.npy", consensus)
+    np.save(dir_ + "/data/temp/labeled_particles.npy", labeled_particles)
+
+    np.save(dir_ + "/data/temp/x.npy", x)
+    np.save(dir_ + "/data/temp/y.npy", y)
+    np.save(dir_ + "/data/temp/count.npy", count)
+    json.dump({"m_name": m_name}, "/data/temp/m_name.json")
+    torch.save(model, dir_ + "data/models/" + m_name)
+
+    return particle_to_label.tolist()
     pass
+
+
+@app.get("/retrieve_particle_to_label", response_model=list)
+async def retrieve_particle_to_label(m_name: str):
+    if (
+        isfile(dir_ + "/data/temp/store_to_labels.npy")
+        and isfile(dir_ + "/data/temp/x.npy")
+        and isfile(dir_ + "/data/temp/y.npy")
+        and isfile(dir_ + "/data/temp/count.npy")
+    ):
+        temp_m_name = json.load("/data/temp/m_name.json")["m_name"]
+
+        if m_name == temp_m_name:
+            particle_to_label = np.load(dir_ + "/data/temp/store_to_labels.npy")
+            return particle_to_label.tolist()
+        else:
+            return []
