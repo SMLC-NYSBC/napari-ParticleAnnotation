@@ -562,7 +562,7 @@ class AnnotationWidgetv2(Container):
         }
 
         try:
-            response = requests.post(url + "add_pick_to_consensus", params=params)
+            response = requests.post(url + "add_pick_to_consensus", json=params)
 
             if response.status_code == 200:
                 show_info(f"Successfully added point to consensus")

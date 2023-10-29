@@ -114,7 +114,7 @@ async def get_raw_files(f_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/initialize_model_aws", response_model=list)
+@app.get("/initialize_model_aws", response_model=List[List[float]])
 async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
     """
     Initialize model from new or pre-trained BinaryLogisticRegression class
@@ -201,7 +201,7 @@ async def initialize_model_aws(m_name: str, f_name: str, n_part: int):
 
 
 @app.post("/add_pick_to_consensus")
-async def add_pick_to_consensus(corrected_particle: list):
+async def add_pick_to_consensus(corrected_particle: List[List[float]]):
     """
     Add particles to the consensus list
 
@@ -218,7 +218,7 @@ async def add_pick_to_consensus(corrected_particle: list):
 
 
 @app.get("/refresh_model", response_model=list)
-async def refresh_model(m_name: str, points: list, n_part: int):
+async def refresh_model(m_name: str, points: List[List[float]], n_part: int):
     """
     Re-trained the selected model based on checkpoint and temp data.
 
@@ -264,7 +264,7 @@ async def refresh_model(m_name: str, points: list, n_part: int):
     pass
 
 
-@app.get("/retrieve_particle_to_label", response_model=list)
+@app.get("/retrieve_particle_to_label", response_model=List[List[float]])
 async def retrieve_particle_to_label(m_name: str):
     if (
         isfile(dir_ + "/data/temp/store_to_labels.npy")
