@@ -104,9 +104,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @app.get("/get_raw_files")
-async def get_raw_files(f_name: String):
-    f_name = f_name.name_
-
+async def get_raw_files(f_name: str):
     try:
         image = load_image(dir_ + "data/images/" + f_name, aws=True)
         image = downsample(image, 1 / 8)

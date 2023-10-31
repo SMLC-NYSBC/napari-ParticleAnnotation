@@ -424,7 +424,7 @@ class AnnotationWidgetv2(Container):
         try:
             response = requests.get(
                 url + "get_raw_files",
-                json={"f_name": self.load_data.value},
+                params={"f_name": self.load_data.value},
                 timeout=None,
             )
 
