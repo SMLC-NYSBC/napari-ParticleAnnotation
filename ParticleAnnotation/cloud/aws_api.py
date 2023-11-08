@@ -2,6 +2,9 @@ import json
 from os import listdir, mkdir
 from os.path import isdir, isfile
 from typing import List
+
+from scipy.ndimage import maximum_filter
+
 from ParticleAnnotation.cloud.datatypes import Consensus, String, InitialValues
 
 import numpy as np
@@ -99,6 +102,25 @@ async def upload_file(file: UploadFile = File(...)):
         with open(file_location, "wb+") as file_object:
             shutil.copyfileobj(file.file, file_object)
         return JSONResponse(status_code=200, content={"filename": file.filename})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/upload_file_prediction")
+async def upload_file_prediction(file: UploadFile = File(...)):
+    check_dir()
+
+    try:
+        dir_image = dir_ + "data/temp/"
+        file_location = f"{dir_image}/temp_prediction.tif"
+        with open(file_location, "wb+") as file_object:
+            shutil.copyfileobj(file.file, file_object)
+
+        image = load_image(dir_ + "data/temp/temp_prediction.tif", aws=True)
+        image = downsample(image, 1 / 8)
+        image = numpy_array_to_bytes_io(image)
+
+        return StreamingResponse(image)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -284,3 +306,38 @@ async def retrieve_particle_to_label(m_name: str):
             return particle_to_label.tolist()
         else:
             return []
+
+
+@app.get("/predict_topaz_al", response_model=list)
+async def predict_topaz_al(model: str):
+    check_dir()
+    device_ = get_device()
+
+    image = load_image(dir_ + "data/temp/temp_prediction.tif", aws=True)
+    image = downsample(image, 1 / 8)
+    image, _ = normalize(image, method="gmm", use_cuda=False)
+    shape_ = image.shape
+
+    weights = torch.load(dir_ + "data/models/" + model)
+    AL_weights = [weights.weights, weights.bias]
+    model = torch.load(dir_ + "data/models/" + model)
+
+    x, _, _ = initialize_model(image, 1)
+
+    model.fit(
+        pre_train=AL_weights,
+    )
+    with torch.no_grad():
+        logits = model(x).reshape(*shape_)
+    logits = logits.numpy()
+
+    max_filter = maximum_filter(logits, size=25)
+    peaks = logits - max_filter
+    peaks = np.where(peaks == 0)
+    peaks = np.stack(peaks, axis=-1)
+    if peaks.shape[1] == 3:
+        peak_logits = logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
+    else:
+        peak_logits = logits[peaks[:, 0], peaks[:, 1]]
+
+    return peak_logits.tolist()

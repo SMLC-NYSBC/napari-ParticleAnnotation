@@ -20,7 +20,11 @@ contributions:
 
     - id: ParticleAnnotation.viewer_cloud
       python_name: ParticleAnnotation._qt.cloud_window_viewer:MultipleViewerWidget
-      title: Cloud training/prediction
+      title: Cloud training
+
+    - id: ParticleAnnotation.viewer_predict
+      python_name: ParticleAnnotation._qt.predict:AnnotationWidgetv2
+      title: Cloud prediction
 
   readers:
     - command: ParticleAnnotation.import_data
@@ -40,4 +44,7 @@ contributions:
       display_name: Local [CPU/GPU]
 
     - command: ParticleAnnotation.viewer_cloud
-      display_name: AWS Cloud [GPU - G5.xlarge]
+      display_name: AWS Cloud [GPU]
+
+    - command: ParticleAnnotation.viewer_predict
+      display_name: Predict Cloud [GPU]

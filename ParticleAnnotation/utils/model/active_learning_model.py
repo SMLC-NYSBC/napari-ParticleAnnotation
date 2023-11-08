@@ -103,7 +103,8 @@ def initialize_model(mrc, n_part=10):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
-        model = load_model("resnet8_u32")
+        # model = load_model("resnet8_u32")
+        model = torch.load('model/_epoch10.sav')
         classifier = model.classifier.to(device_)
         model = model.features.to(device_)
         model.fill()
@@ -111,20 +112,27 @@ def initialize_model(mrc, n_part=10):
         classifier.eval()
 
         mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
-        _, d, h, w = mrc.shape
 
-        filter_values = torch.zeros((64, d, h, w)).to(device_)  # C D H W
-        classified = np.zeros((64, d, h, w))  # C D H W
+        with torch.no_grad():
+            filter_values = model(mrc).squeeze(0)
+            classified = torch.sigmoid(classifier(filter_values))
 
-        from tqdm import tqdm
+        x = filter_values.permute(1, 2, 3, 0)
 
-        for i in tqdm(range(mrc.shape[1])):
-            with torch.no_grad():
-                j = model(mrc[:, i, ...]).squeeze(0)
-                filter_values[:, i, :] = j
-                classified[:, i, :] = torch.sigmoid(classifier(j))
+        # _, d, h, w = mrc.shape
 
-        x = filter_values.permute(1, 2, 3, 0)  # D, H, W, C
+        # filter_values = torch.zeros((128, d, h, w)).to(device_)  # C D H W
+        # classified = np.zeros((128, d, h, w))  # C D H W
+
+        # from tqdm import tqdm
+        #
+        # for i in tqdm(range(mrc.shape[1])):
+        #     with torch.no_grad():
+        #         j = model(mrc[:, i, ...]).squeeze(0)
+        #         filter_values[:, i, :] = j
+        #         classified[:, i, :] = torch.sigmoid(classifier(j)).cpu().detach().numpy()
+        #
+        # x = filter_values.permute(1, 2, 3, 0)  # D, H, W, C
     else:
         model = load_model("resnet16")
         classifier = model.classifier.to(device_)
@@ -141,7 +149,8 @@ def initialize_model(mrc, n_part=10):
         x = filter_values.permute(1, 2, 0)
 
     x = x.detach().cpu().numpy()
-    classified = classified.detach().cpu().numpy()
+    if isinstance(classifier, torch.Tensor):
+        classified = classified.detach().cpu().numpy()
 
     x = x.reshape(-1, x.shape[-1])  # L, C
     y = torch.zeros(len(x)) + np.nan

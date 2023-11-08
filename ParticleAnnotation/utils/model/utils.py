@@ -110,10 +110,6 @@ def get_device() -> torch.device:
         device = torch.device("cuda:0")
         df.to(device)
     except AssertionError:
-        try:
-            device = torch.device("mps")
-            df.to(device)
-        except AssertionError:
-            device = torch.device("cpu")
-            df.to(device)
+        device = torch.device("cpu")
+        df.to(device)
     return device

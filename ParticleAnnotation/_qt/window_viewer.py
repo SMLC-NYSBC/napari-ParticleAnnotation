@@ -38,7 +38,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
 )
 
 from ParticleAnnotation.utils.load_data import downsample
-from ParticleAnnotation.utils.model.utils import rank_candidate_locations
+from ParticleAnnotation.utils.model.utils import rank_candidate_locations, get_device
 from ParticleAnnotation._qt.viewer_utils import (
     ViewerModel,
     QtViewerWrap,
@@ -347,6 +347,9 @@ class AnnotationWidgetv2(Container):
         self.insert(9, spacer4)
         self.insert(10, label)
 
+        device_ = get_device()
+        show_info(f"Active learning model runs on: {device_}")
+
     def _load_model(self):
         """Logic to load pre-train active learning model"""
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
@@ -365,8 +368,13 @@ class AnnotationWidgetv2(Container):
         self.init = True
 
         # Image data
-        active_layer_name = self.napari_viewer.layers.selection.active.name
-        self.image_layer_name = active_layer_name
+        try:
+            active_layer_name = self.napari_viewer.layers.selection.active.name
+            self.image_layer_name = active_layer_name
+        except:
+            show_info("Please load and select image!")
+            return
+
         img = self.napari_viewer.layers[active_layer_name]
 
         """Down_sample dataset"""
@@ -384,6 +392,7 @@ class AnnotationWidgetv2(Container):
 
         # Initialize dataset
         self.x, _, p_label = initialize_model(img.data)
+        self.x = torch.from_numpy(self.x)
 
         """ Initialize model and pick initial particles """
         self.create_point_layer(p_label[:, 1:], p_label[:, 0])
@@ -458,33 +467,6 @@ class AnnotationWidgetv2(Container):
 
     def _predict(self):
         self.activate_click = False
-
-        # # Retrain before prediction if no model was loaded!
-        # points_layer = self.napari_viewer.layers["Initial_Labels"].data
-        # label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
-        #
-        # if np.any(label == 2):
-        #     show_info(f"Please Correct all uncertain particles!")
-        # else:
-        #     data = np.asarray(points_layer.data)
-        #     if data.shape[1] == 2:
-        #         data = np.array(
-        #             (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
-        #         ).T
-        #     else:
-        #         data = np.array(
-        #             (
-        #                 np.array(label).astype(np.int16),
-        #                 data[:, 0],
-        #                 data[:, 1],
-        #                 data[:, 2],
-        #             )
-        #         ).T
-
-        # self.y = label_points_to_mask(data, self.shape, self.box_size.value)
-        # self.count = (~torch.isnan(self.y)).float()
-        #
-        # self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
         if not self.init:
             active_layer_name = self.napari_viewer.layers.selection.active.name
