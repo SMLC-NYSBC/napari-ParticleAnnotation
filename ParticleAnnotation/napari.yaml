@@ -26,6 +26,10 @@ contributions:
       python_name: ParticleAnnotation._qt.predict:AnnotationWidgetv2
       title: Cloud prediction
 
+    - id: ParticleAnnotation.viewer_upload
+      python_name: ParticleAnnotation._qt.upload:WidgetUpload
+      title: Cloud upload data
+
   readers:
     - command: ParticleAnnotation.import_data
       accepts_directories: False
@@ -48,3 +52,6 @@ contributions:
 
     - command: ParticleAnnotation.viewer_predict
       display_name: Predict Cloud [GPU]
+
+    - command: ParticleAnnotation.viewer_upload
+      display_name: Upload data to AWS

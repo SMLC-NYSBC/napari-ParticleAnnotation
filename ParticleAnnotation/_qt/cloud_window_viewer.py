@@ -239,8 +239,6 @@ class AnnotationWidgetv2(Container):
         self.load_data = ComboBox(name="Load Data", choices=self._update_data_list())
         self.load_data_btt = PushButton(name="Load")
         self.load_data_btt.clicked.connect(self._load_file)
-        self.send_data = PushButton(name="Send Data")
-        self.send_data.clicked.connect(self._send_image_to_aws)
 
         self.init_data = PushButton(name="Initialize dataset")
         self.init_data.clicked.connect(self._initialize_model)
@@ -290,7 +288,6 @@ class AnnotationWidgetv2(Container):
                             self.load_data_btt,
                         )
                     ),
-                    self.send_data,
                     self.init_data,
                 )
             ),
@@ -445,36 +442,6 @@ class AnnotationWidgetv2(Container):
                 data=np.random.random(size=(512, 512)), name="Connection_Error"
             )
 
-    def _send_image_to_aws(self):
-        """
-        Send image file to AWS EC2 instance.
-
-        Return:
-            napari.show_info: User info prompt to indicate output.
-        """
-        # Package image file in correct format
-        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
-        root, extension = splitext(self.filename)
-
-        format_ = extension[1:] if extension else None
-        name_ = self.filename.split("/")[-1]
-
-        files = {"file": (name_, open(f"{self.filename}", "rb"), f"image/{format_}")}
-
-        # Call API for response
-        try:
-            response = requests.post(url + "upload_file", files=files)
-
-            if response.status_code == 200:
-                show_info(f"File uploaded successfully: {response.json()}")
-            else:
-                show_info(
-                    "Failed to upload file: \n"
-                    f"Error: {response.status_code} \n"
-                    f"Message:{response.text}"
-                )
-        except:
-            show_info(f"Connection Error to {url}. Check if server is running.")
 
     def _initialize_model(self):
         self._load_model()
