@@ -383,7 +383,7 @@ class AnnotationWidgetv2(Container):
 
         self.shape = self.img_process.shape
         # _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
-        img.data, _ = normalize(self.img_process, method="gmm", use_cuda=False)
+        img.data, _ = normalize(self.img_process.copy(), method="gmm", use_cuda=False)
 
         self.napari_viewer.layers[active_layer_name].contrast_limits = (
             img.data.min(),

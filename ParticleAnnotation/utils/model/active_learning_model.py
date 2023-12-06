@@ -5,6 +5,8 @@ from topaz.model.factory import load_model
 import torch
 
 from ParticleAnnotation.utils.model.utils import find_peaks, get_device
+import io
+import requests
 
 
 def fill_label_region(y, ci, cj, label, size: int, cz=None):
@@ -103,7 +105,14 @@ def initialize_model(mrc, n_part=10):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
-        model = torch.load("model/_epoch10.sav")
+        model = torch.load(
+            io.BytesIO(
+                requests.get(
+                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+                    timeout=(5, None),
+                ).content
+            )
+        )
         classifier = model.classifier.to(device_)
         model = model.features.to(device_)
         model.fill()
