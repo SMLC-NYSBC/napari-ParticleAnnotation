@@ -168,7 +168,7 @@ async def initialize_model_aws(values: InitialValues):
             and isfile(dir_ + "/data/temp/y.npy")
             and isfile(dir_ + "/data/temp/count.npy")
         ):
-            with open(dir_ + "/data/temp/m_name.json", 'r') as openfile:
+            with open(dir_ + "/data/temp/m_name.json", "r") as openfile:
                 temp_m_name = json.load(openfile)["m_name"]
 
             if m_name == temp_m_name:

@@ -43,9 +43,21 @@ class AnnotationWidgetv2(Container):
         self.reset_view.clicked.connect(self._reset_view)
 
         """Widget layer orders"""
-        self.insert(1, VBox(widgets=(spacer1, self.load_ALM,
-                                     spacer2, self.send_data, self.predict,
-                                     spacer3, self.slide_pred, self.reset_view)))
+        self.insert(
+            1,
+            VBox(
+                widgets=(
+                    spacer1,
+                    self.load_ALM,
+                    spacer2,
+                    self.send_data,
+                    self.predict,
+                    spacer3,
+                    self.slide_pred,
+                    self.reset_view,
+                )
+            ),
+        )
 
     def _update_model_list(self) -> tuple:
         """
@@ -88,11 +100,11 @@ class AnnotationWidgetv2(Container):
         active_layer_name = self.napari_viewer.layers.selection.active.name
         self.image_layer_name = active_layer_name
         img = self.napari_viewer.layers[active_layer_name]
-        imwrite('temp_prediction.tif', img)
+        imwrite("temp_prediction.tif", img)
         format_ = "tif"
         name_ = "temp_prediction"
 
-        files = {"file": (name_, open('temp_prediction.tif', "rb"), f"image/{format_}")}
+        files = {"file": (name_, open("temp_prediction.tif", "rb"), f"image/{format_}")}
 
         # Call API for response
         try:

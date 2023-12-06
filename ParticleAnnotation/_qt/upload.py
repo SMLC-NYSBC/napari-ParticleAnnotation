@@ -58,4 +58,3 @@ class WidgetUpload(Container):
                 )
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
-

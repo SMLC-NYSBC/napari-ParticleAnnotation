@@ -7,7 +7,7 @@ from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
 client = TestClient(app)
 
 if isdir("api/"):
-    rmtree('api/')
+    rmtree("api/")
 
 
 def test_check_dir():
@@ -27,11 +27,17 @@ def test_new_model():
     assert response.status_code == 200
     assert isinstance(response.json(), str)
     assert isdir("api/data/models/")
-    assert isfile("api/data/models/"+response.json())
+    assert isfile("api/data/models/" + response.json())
 
 
 def test_upload_file():
-    file = {"file": ("2d_test_data.mrc", open("../data/2d_test_data.mrc", "rb"), "image/mrc")}
+    file = {
+        "file": (
+            "2d_test_data.mrc",
+            open("../data/2d_test_data.mrc", "rb"),
+            "image/mrc",
+        )
+    }
 
     response = client.post("/upload_file", files=file)
     assert response.status_code == 200

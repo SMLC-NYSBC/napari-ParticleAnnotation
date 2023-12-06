@@ -20,8 +20,8 @@ def bytes_io_to_numpy_array(bytes_file) -> np.ndarray:
 
 def get_model_name_and_weights(m_name, dir_):
     list_model = listdir(dir_ + "data/models")
-    model_ids = [str(f[len(f) - 7: -4]) for f in list_model if f.endswith("pth")]
-    m_model_id = m_name[len(m_name) - 7: -4]
+    model_ids = [str(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
+    m_model_id = m_name[len(m_name) - 7 : -4]
 
     if m_model_id not in model_ids:
         new_id = [int(i) for i in model_ids]

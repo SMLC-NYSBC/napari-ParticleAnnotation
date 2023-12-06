@@ -299,7 +299,14 @@ class AnnotationWidgetv2(Container):
             4,
             VBox(
                 widgets=(
-                    HBox(widgets=(self.num_particles_al, self.get_label, self.add_btn, self.refresh)),
+                    HBox(
+                        widgets=(
+                            self.num_particles_al,
+                            self.get_label,
+                            self.add_btn,
+                            self.refresh,
+                        )
+                    ),
                     self.reset_view,
                 )
             ),
@@ -442,7 +449,6 @@ class AnnotationWidgetv2(Container):
                 data=np.random.random(size=(512, 512)), name="Connection_Error"
             )
 
-
     def _initialize_model(self):
         self._load_model()
         if self.model_name is None:
@@ -484,12 +490,14 @@ class AnnotationWidgetv2(Container):
                 self.create_point_layer(p_label[:, 1:], p_label[:, 0])
                 self.activate_click = True
                 show_info(f"Successfully loaded particles: {response.json()}")
-            else:(
-                show_info(
-                    "Failed to load particles: \n"
-                    f"Error: {response.status_code} \n"
-                    f"Message:{response.text}"
-                ))
+            else:
+                (
+                    show_info(
+                        "Failed to load particles: \n"
+                        f"Error: {response.status_code} \n"
+                        f"Message:{response.text}"
+                    )
+                )
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
 

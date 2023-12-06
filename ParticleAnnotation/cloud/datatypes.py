@@ -15,4 +15,3 @@ class InitialValues(BaseModel):
     m_name: str
     f_name: str
     n_part: int
-

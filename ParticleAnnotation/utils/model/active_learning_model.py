@@ -103,8 +103,7 @@ def initialize_model(mrc, n_part=10):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
-        # model = load_model("resnet8_u32")
-        model = torch.load('model/_epoch10.sav')
+        model = torch.load("model/_epoch10.sav")
         classifier = model.classifier.to(device_)
         model = model.features.to(device_)
         model.fill()
@@ -118,21 +117,6 @@ def initialize_model(mrc, n_part=10):
             classified = torch.sigmoid(classifier(filter_values))
 
         x = filter_values.permute(1, 2, 3, 0)
-
-        # _, d, h, w = mrc.shape
-
-        # filter_values = torch.zeros((128, d, h, w)).to(device_)  # C D H W
-        # classified = np.zeros((128, d, h, w))  # C D H W
-
-        # from tqdm import tqdm
-        #
-        # for i in tqdm(range(mrc.shape[1])):
-        #     with torch.no_grad():
-        #         j = model(mrc[:, i, ...]).squeeze(0)
-        #         filter_values[:, i, :] = j
-        #         classified[:, i, :] = torch.sigmoid(classifier(j)).cpu().detach().numpy()
-        #
-        # x = filter_values.permute(1, 2, 3, 0)  # D, H, W, C
     else:
         model = load_model("resnet16")
         classifier = model.classifier.to(device_)
