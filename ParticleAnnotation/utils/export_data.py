@@ -1,9 +1,5 @@
-from typing import Union, Sequence, List, Callable, Optional
-
+from typing import Union, Sequence
 import numpy as np
-
-from ParticleAnnotation.utils.load_data import load_image, load_xyz
-from napari.types import LayerData
 
 PathOrPaths = Union[str, Sequence[str]]
 

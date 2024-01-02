@@ -1,12 +1,71 @@
 import torch.nn.functional as F
+from scipy.ndimage import maximum_filter
 from scipy.optimize import minimize
 import numpy as np
 from topaz.model.factory import load_model
 import torch
+from tqdm import tqdm
 
-from ParticleAnnotation.utils.model.utils import find_peaks, get_device
+from ParticleAnnotation.utils.model.utils import (
+    find_peaks,
+    get_device,
+    divide_grid,
+    correct_coord,
+)
 import io
 import requests
+
+
+def predict_3d_with_AL(img, model, weights, offset):
+    peaks, peaks_logits = [], []
+    device_ = get_device()
+
+    grid = divide_grid(img, offset)
+    init_model = torch.load(
+            io.BytesIO(
+                requests.get(
+                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+                    timeout=(5, None),
+                ).content
+            )
+        )
+    init_model = init_model.features.to(device_)
+    init_model.fill()
+    init_model.eval()
+
+    if weights is not None:
+        model.fit(pre_train=weights)
+
+    for i in tqdm(grid):
+        # Stream patch
+        patch = img[i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset]
+        shape_ = patch.shape
+
+        # Predict
+        with torch.no_grad():
+            patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
+            patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
+
+            logits = model(patch).reshape(*shape_)
+
+        if device_ == "cpu":
+            logits = logits.detach().numpy()
+        else:
+            logits = logits.cpu().detach().numpy()
+
+        # Extract peaks
+        max_filter = maximum_filter(logits, size=25)
+        peaks_df = logits - max_filter
+        peaks_df = np.where(peaks_df == 0)
+        peaks_df = np.stack(peaks_df, axis=-1)
+
+        # Save patch peaks and its logits
+        peaks_logits_df = logits[peaks_df[:, 0], peaks_df[:, 1], peaks_df[:, 2]]
+        peaks_df = correct_coord(peaks_df, i, True)
+        peaks.append(peaks_df)
+        peaks_logits.append(peaks_logits_df)
+
+    return np.vstack(peaks), np.vstack(peaks_logits)
 
 
 def fill_label_region(y, ci, cj, label, size: int, cz=None):
@@ -101,7 +160,7 @@ def label_points_to_mask(points, shape, size):
     return y
 
 
-def initialize_model(mrc, n_part=10):
+def initialize_model(mrc, n_part=10, only_feature=False):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
@@ -142,6 +201,10 @@ def initialize_model(mrc, n_part=10):
         x = filter_values.permute(1, 2, 0)
 
     x = x.detach().cpu().numpy()
+
+    if only_feature:
+        return x
+
     if isinstance(classifier, torch.Tensor):
         classified = classified.detach().cpu().numpy()
 
@@ -195,12 +258,17 @@ class BinaryLogisticRegression:
         return loss
 
     def predict(self, x):
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x).to(self.device)
+        else:
+            x = x.to(self.device)
+
         return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):
         return self.predict(x)
 
-    def fit(self, x, y, weights=None, pre_train=None):
+    def fit(self, x=None, y=None, weights=None, pre_train=None):
         if pre_train is not None:
             self.weights = pre_train[0]
             self.weights = self.weights.to(self.device)

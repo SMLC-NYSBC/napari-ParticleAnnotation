@@ -7,6 +7,73 @@ from scipy.ndimage import maximum_filter, convolve
 size = (37, 37)
 
 
+def divide_grid(array, size):
+    # Get the shape of the array
+    z, y, x = array.shape
+
+    # Calculate the number of divisions along each axis
+    nx, ny, nz = x // size, y // size, z // size
+
+    nx = nx + 1 if x != size else nx
+    ny = ny + 1 if y != size else ny
+    nz = nz + 1 if z != size else nz
+
+    # Initialize a list to hold the coordinates
+    coordinates = []
+
+    # Loop through each division and store the coordinates
+    for i in range(nz):
+        for j in range(ny):
+            for k in range(nx):
+                left_corner = (i * size, j * size, k * size)
+                coordinates.append(left_corner)
+
+    return coordinates
+
+
+def correct_coord(data, patch_corner, normalize):
+    if normalize:
+        data[:, 0] = data[:, 0] + patch_corner[0]
+        data[:, 1] = data[:, 1] + patch_corner[1]
+        data[:, 2] = data[:, 2] + patch_corner[2]
+    else:
+        data[:, 0] = data[:, 0] - patch_corner[0]
+        data[:, 1] = data[:, 1] - patch_corner[1]
+        data[:, 2] = data[:, 2] - patch_corner[2]
+
+    return data
+
+
+def get_random_patch(img, size_: int):
+    z, y, x = img.shape
+
+    if img.shape[0] <= size_:
+        z_start = 0
+        z_end = z
+    else:
+        z_start = np.random.randint(0, z - size_ + 1)
+        z_end = z_start + size_
+
+    if img.shape[1] <= size_:
+        y_start = 0
+        y_end = y
+    else:
+        y_start = np.random.randint(0, y - size_ + 1)
+        y_end = y_start + size_
+
+    if img.shape[2] <= size_:
+        x_start = 0
+        x_end = x
+    else:
+        x_start = np.random.randint(0, x - size_ + 1)
+        x_end = x_start + size_
+
+    # Extract the patch from the array
+    patch = img[z_start:z_end, y_start:y_end, x_start:x_end]
+
+    return patch, (z_start, y_start, x_start)
+
+
 def sobel_filter(img):
     # Define Sobel operator kernels.
     kernel_x = np.array(
@@ -47,6 +114,9 @@ def polar_to_cartesian(rho, theta):
 
 
 def find_peaks(score, size=size[0] / 3, with_score=False):
+    if isinstance(score, torch.Tensor):
+        score = score.detach().cpu().numpy()
+
     max_filter = maximum_filter(score, size=size)
     peaks = score - max_filter
     peaks = np.where(peaks == 0)

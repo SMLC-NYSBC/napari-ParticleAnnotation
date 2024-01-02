@@ -35,10 +35,16 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     initialize_model,
     label_points_to_mask,
+    predict_3d_with_AL,
 )
 
 from ParticleAnnotation.utils.load_data import downsample
-from ParticleAnnotation.utils.model.utils import rank_candidate_locations, get_device
+from ParticleAnnotation.utils.model.utils import (
+    rank_candidate_locations,
+    get_device,
+    get_random_patch,
+    correct_coord,
+)
 from ParticleAnnotation._qt.viewer_utils import (
     ViewerModel,
     QtViewerWrap,
@@ -250,6 +256,8 @@ class AnnotationWidgetv2(Container):
             self.napari_viewer.bind_key("z", self.ZEvent)
             self.napari_viewer.bind_key("x", self.XEvent)
             self.napari_viewer.bind_key("c", self.CEvent)
+            self.napari_viewer.bind_key("s", self.SEvent)
+            self.napari_viewer.bind_key("d", self.DEvent)
         except ValueError:
             pass
 
@@ -273,8 +281,9 @@ class AnnotationWidgetv2(Container):
         self.save_ALM.clicked.connect(self._save_model)
 
         spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
-        self.sampling_layer = LineEdit(name="Pixel_size", value="1.0")
-        self.box_size = LineEdit(name="Box size", value="5")
+        self.sampling_layer = LineEdit(name="Pixel", value="1.0")
+        self.box_size = LineEdit(name="Box", value="5")
+        self.patch_size = LineEdit(name="Patch", value="128")
 
         self.init_data = PushButton(name="Initialize dataset")
         self.init_data.clicked.connect(self._initialize_dataset)
@@ -289,6 +298,8 @@ class AnnotationWidgetv2(Container):
         self.load.clicked.connect(self._load_model)
 
         spacer2 = Label(value="------ Step 2: Initialize Active learning model -------")
+        self.patch = PushButton(name="Change Patch")
+        self.patch.clicked.connect(self._change_patch)
         self.refresh = PushButton(name="Retrain")
         self.refresh.clicked.connect(self._refresh)
         self.predict = PushButton(name="Predict")
@@ -322,15 +333,16 @@ class AnnotationWidgetv2(Container):
 
         layer_init = VBox(
             widgets=(
-                self.sampling_layer,
-                self.box_size,
+                HBox(widgets=(self.sampling_layer, self.box_size, self.patch_size,)),
                 self.init_data,
                 self.recenter_positive,
-                self.save,
-                self.load,
+                HBox(widgets=(self.save, self.load,))
             )
         )
-        layer_AL = HBox(widgets=(self.refresh, self.predict))
+        layer_AL = VBox(widgets=(
+            HBox(widgets=(self.patch, self.refresh)),
+            self.predict
+        ))
         layer_slider = HBox(widgets=(self.slide_pred,))
         layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
         layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
@@ -382,16 +394,25 @@ class AnnotationWidgetv2(Container):
         self.img_process = downsample(img.data, factor=factor)
 
         self.shape = self.img_process.shape
-        # _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
-        img.data, _ = normalize(self.img_process.copy(), method="gmm", use_cuda=False)
+        self.img_process, _ = normalize(
+            self.img_process.copy(), method="affine", use_cuda=False
+        )
+        img.data = self.img_process
 
         self.napari_viewer.layers[active_layer_name].contrast_limits = (
-            img.data.min(),
-            img.data.max(),
+            self.img_process.min(),
+            self.img_process.max(),
         )
 
         # Initialize dataset
-        self.x, _, p_label = initialize_model(img.data)
+        if self.img_process.ndim == 3:
+            patch, self.patch_corner = get_random_patch(self.img_process, int(self.patch_size.value))
+            self.shape = patch.shape
+            self.x, _, p_label = initialize_model(patch)
+            p_label[:, 1:] = correct_coord(p_label[:, 1:], self.patch_corner, True)
+        else:
+            self.x, _, p_label = initialize_model(self.img_process)
+            self.patch_corner = None
         self.x = torch.from_numpy(self.x)
 
         """ Initialize model and pick initial particles """
@@ -418,6 +439,66 @@ class AnnotationWidgetv2(Container):
         self._reset_view()
         show_info(f"Task finished: Initialize Dataset!")
 
+    def _change_patch(self):
+        if self.patch_corner is not None:
+            # Re-Train model
+
+            self.activate_click = True
+
+            points_layer = self.napari_viewer.layers["Initial_Labels"].data
+            points_layer = correct_coord(points_layer, self.patch_corner, False)
+
+            label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+
+            if np.any(label == 2):
+                show_info(f"Please Correct all uncertain particles!")
+            else:
+                data = np.asarray(points_layer)
+                if data.shape[1] == 2:
+                    data = np.array(
+                        (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
+                    ).T
+                else:
+                    data = np.array(
+                        (
+                            np.array(label).astype(np.int16),
+                            data[:, 0],
+                            data[:, 1],
+                            data[:, 2],
+                        )
+                    ).T
+
+                self.y = label_points_to_mask(data, self.shape, self.box_size.value)
+                self.count = (~torch.isnan(self.y)).float()
+                self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+                weights = [self.model.weights, self.model.bias]
+
+                show_info(f"Task finished: Retrain model!")
+
+                # Feed new patch
+                patch, self.patch_corner = get_random_patch(self.img_process, int(self.patch_size.value))
+                self.shape = patch.shape
+
+                self.x, _, p_label = initialize_model(patch)
+                p_label[:, 1:] = correct_coord(p_label[:, 1:], self.patch_corner, True)
+                self.x = torch.from_numpy(self.x)
+
+                self.y = label_points_to_mask(p_label, self.shape, self.box_size.value)
+                self.count = (~torch.isnan(self.y)).float()
+                self.model.fit(
+                    self.x,
+                    self.y.ravel(),
+                    weights=self.count.ravel(),
+                    pre_train=weights,
+                )
+
+                self.create_point_layer(p_label[:, 1:], p_label[:, 0])
+                self._reset_view()
+
+                self.component_selector.value = 0
+
+                show_info(f"Task finished: Drawn new patch!")
+
     def _refresh(self):
         """
         Re-train model, and add 10 most uncertain points to the list
@@ -425,6 +506,9 @@ class AnnotationWidgetv2(Container):
         self.activate_click = True
 
         points_layer = self.napari_viewer.layers["Initial_Labels"].data
+        if self.patch_corner is not None:
+            points_layer = correct_coord(points_layer, self.patch_corner, False)
+
         label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
 
         if np.any(label == 2):
@@ -459,6 +543,8 @@ class AnnotationWidgetv2(Container):
             label_unknown[:] = 2
 
             data = np.vstack((data[:, 1:], points.astype(np.float64)))
+            if self.patch_corner is not None:
+                data = correct_coord(data, self.patch_corner, True)
 
             labels = np.hstack((label, label_unknown))
             self.create_point_layer(data, labels)
@@ -469,6 +555,8 @@ class AnnotationWidgetv2(Container):
         self.activate_click = False
 
         if not self.init:
+            self.init = True
+
             active_layer_name = self.napari_viewer.layers.selection.active.name
             self.image_layer_name = active_layer_name
             img = self.napari_viewer.layers[active_layer_name]
@@ -478,45 +566,56 @@ class AnnotationWidgetv2(Container):
             self.img_process = downsample(img.data, factor=factor)
 
             self.shape = self.img_process.shape
-            # _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
-            img.data, _ = normalize(self.img_process, method="gmm", use_cuda=False)
+            self.img_process, _ = normalize(
+                self.img_process, method="gmm", use_cuda=False
+            )
+            img.data = self.img_process
 
             self.napari_viewer.layers[active_layer_name].contrast_limits = (
-                img.data.min(),
-                img.data.max(),
+                self.img_process.min(),
+                self.img_process.max(),
             )
 
             # Initialize dataset
-            self.x, _, p_label = initialize_model(img.data)
+            if self.img_process.ndim == 2:
+                self.x, _, p_label = initialize_model(self.img_process)
 
-            self.y = label_points_to_mask([], self.shape, self.box_size.value)
-            self.count = torch.where(
-                ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
-            )
-
-            self.model = BinaryLogisticRegression(
-                n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
-            )
-
-            if self.AL_weights is not None:
-                self.model.fit(
-                    self.x,
-                    self.y.ravel(),
-                    weights=self.count.ravel(),
-                    pre_train=self.AL_weights,
+                self.y = label_points_to_mask([], self.shape, self.box_size.value)
+                self.count = torch.where(
+                    ~torch.isnan(self.y),
+                    torch.ones_like(self.y),
+                    torch.zeros_like(self.y),
                 )
-        with torch.no_grad():
-            logits = self.model(self.x).reshape(*self.shape)
-        logits = logits.numpy()
 
-        max_filter = maximum_filter(logits, size=25)
-        peaks = logits - max_filter
-        peaks = np.where(peaks == 0)
-        peaks = np.stack(peaks, axis=-1)
-        if peaks.shape[1] == 3:
-            peak_logits = logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
+                self.model = BinaryLogisticRegression(
+                    n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+                )
+
+                if self.AL_weights is not None:
+                    self.model.fit(
+                        self.x,
+                        self.y.ravel(),
+                        weights=self.count.ravel(),
+                        pre_train=self.AL_weights,
+                    )
+
+        if self.img_process.ndim == 2:
+            with torch.no_grad():
+                logits = self.model(self.x).reshape(*self.shape)
+            logits = logits.numpy()
+
+            max_filter = maximum_filter(logits, size=25)
+            peaks = logits - max_filter
+            peaks = np.where(peaks == 0)
+            peaks = np.stack(peaks, axis=-1)
+            if peaks.shape[1] == 3:
+                peak_logits = logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
+            else:
+                peak_logits = logits[peaks[:, 0], peaks[:, 1]]
         else:
-            peak_logits = logits[peaks[:, 0], peaks[:, 1]]
+            peaks, peak_logits = predict_3d_with_AL(
+                self.img_process, self.model, self.AL_weights, int(self.patch_size.value)
+            )
 
         self.napari_viewer.add_points(
             peaks,
@@ -581,8 +680,7 @@ class AnnotationWidgetv2(Container):
         self.img_process = downsample(img.data, factor=factor)
 
         self.shape = self.img_process.shape
-        # _min, _max = np.quantile(self.img_process.ravel(), [0.1, 0.9])
-        img.data, _ = normalize(self.img_process, method="gmm", use_cuda=False)
+        img.data, _ = normalize(self.img_process, method="affine", use_cuda=False)
 
         self.napari_viewer.layers[active_layer_name].contrast_limits = (
             img.data.min(),
@@ -629,6 +727,22 @@ class AnnotationWidgetv2(Container):
             distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
             self.update_point_layer_2(closest_point_index, 0, "remove")
+
+    def SEvent(self, viewer):
+        if self.activate_click:
+            if self.component_selector.value > 0:
+                self._reset_view()
+                self.component_selector.value = self.component_selector.value - 1
+
+    def DEvent(self, viewer):
+        try:
+            points_layer = len(viewer.layers["Initial_Labels"].data)
+
+            if self.component_selector.value < points_layer:
+                self._reset_view()
+                self.component_selector.value = self.component_selector.value + 1
+        except KeyError:
+            pass
 
     def track_mouse_position(self, viewer, event):
         self.mouse_position = event.position
@@ -702,7 +816,6 @@ class AnnotationWidgetv2(Container):
             else:
                 pass
             p_layer.edge_color_cycle = self.color_map_specified
-            self._reset_view()
         except:
             pass
 

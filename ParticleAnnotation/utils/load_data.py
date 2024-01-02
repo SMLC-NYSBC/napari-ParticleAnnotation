@@ -13,10 +13,9 @@ def downsample(img: np.ndarray, factor=8):
     if factor == 1:
         return img
 
-    if len(img.shape) == 3:
-        img = ndimage.gaussian_filter(img, sigma=1 / factor - 0.5)
+    if img.ndim == 3:
         img = F.interpolate(
-            torch.Tensor(img).unsqueeze(0).unsqueeze(0),
+            torch.Tensor(img.copy()).unsqueeze(0).unsqueeze(0),
             scale_factor=factor,
             mode="trilinear",
         ).numpy()[0, 0, ...]
@@ -106,6 +105,7 @@ def load_xyz(path):
     paths = [path] if isinstance(path, str) else path
     layer_data = []
     xyz = None
+    labels = None
 
     for _path in paths:
         # Load Numpy
@@ -115,6 +115,9 @@ def load_xyz(path):
         # Load CSV
         if _path.endswith(".csv"):
             xyz = np.genfromtxt(_path, delimiter=",", dtype=float)
+            if xyz.shape[1] == 4:
+                labels = xyz[:, 0]
+                xyz = xyz[:, 1:]
 
         # Load Star
         if _path.endswith(".star"):
@@ -123,7 +126,10 @@ def load_xyz(path):
         if isinstance(xyz[0, 0], str):
             xyz = xyz[1:, :]
 
-        layer_data.append((xyz, {}, "points"))
+        if labels is None:
+            layer_data.append((xyz, {}, "points"))
+        else:
+            layer_data.append((xyz, {"label": labels}, "points"))
     return layer_data
 
 
