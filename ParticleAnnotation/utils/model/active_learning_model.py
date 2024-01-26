@@ -65,7 +65,7 @@ def predict_3d_with_AL(img, model, weights, offset):
         peaks.append(peaks_df)
         peaks_logits.append(peaks_logits_df)
 
-    return np.vstack(peaks), np.vstack(peaks_logits)
+    return np.vstack(peaks), np.concatenate(peaks_logits)
 
 
 def fill_label_region(y, ci, cj, label, size: int, cz=None):
