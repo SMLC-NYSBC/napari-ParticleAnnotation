@@ -38,7 +38,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     predict_3d_with_AL,
 )
 
-from ParticleAnnotation.utils.load_data import downsample
+from ParticleAnnotation.utils.load_data import downsample, load_template
 from ParticleAnnotation.utils.model.utils import (
     rank_candidate_locations,
     get_device,
@@ -388,8 +388,10 @@ class AnnotationWidgetv2(Container):
             return
 
         img = self.napari_viewer.layers[active_layer_name]
+        print(f"Image shape is - {img.data.shape}")
 
         """Down_sample dataset"""
+        self.img_process = img.data
         factor = float(self.sampling_layer.value) / 8
         self.img_process = downsample(img.data, factor=factor)
 
@@ -406,10 +408,22 @@ class AnnotationWidgetv2(Container):
 
         # Initialize dataset
         if self.img_process.ndim == 3:
+            # Initialize template here
+            tm_scores = load_template(self.image_layer_name)
+            print(f"Shape of tm_scores is - {tm_scores.shape}")
+            # downsample tm_scores
+            tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
+            tm_scores, _ = normalize(
+                tm_scores.copy(), method="affine", use_cuda=False
+            )
+            self.tm_scores = tm_scores
+            print(f"Shape of tm_scores is - {self.tm_scores.shape}")
+
             patch, self.patch_corner = get_random_patch(self.img_process, int(self.patch_size.value))
             self.shape = patch.shape
-            self.x, _, p_label = initialize_model(patch)
-            p_label[:, 1:] = correct_coord(p_label[:, 1:], self.patch_corner, True)
+            self.x, _, p_label = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
+            # self.x, _, p_label = initialize_model(patch)
+            p_label[:, 1:]     = correct_coord(p_label[:, 1:], self.patch_corner, True)
         else:
             self.x, _, p_label = initialize_model(self.img_process)
             self.patch_corner = None
@@ -422,10 +436,12 @@ class AnnotationWidgetv2(Container):
         """Initialize new model or load pre-trained"""
         # update y and count
         self.y = label_points_to_mask([], self.shape, self.box_size.value)
+        print(f"Shape of y is - {self.y.shape}")
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
-
+        print(f"Shape of count is - {self.count.shape}")
+        print(f"n_features is - {self.x.shape[1]}")
         self.model = BinaryLogisticRegression(
             n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
         )
@@ -479,7 +495,7 @@ class AnnotationWidgetv2(Container):
                 patch, self.patch_corner = get_random_patch(self.img_process, int(self.patch_size.value))
                 self.shape = patch.shape
 
-                self.x, _, p_label = initialize_model(patch)
+                self.x, _, p_label = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
                 p_label[:, 1:] = correct_coord(p_label[:, 1:], self.patch_corner, True)
                 self.x = torch.from_numpy(self.x)
 
@@ -576,9 +592,19 @@ class AnnotationWidgetv2(Container):
                 self.img_process.max(),
             )
 
+            # Load TM scores if not loaded already 
+            tm_scores = load_template(self.image_layer_name)
+            # downsample tm_scores
+            factor = float(factor) / 8
+            tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
+            tm_scores, _ = normalize(
+                tm_scores.copy(), method="affine", use_cuda=False
+            )
+            self.tm_scores = tm_scores
+
             # Initialize dataset
             if self.img_process.ndim == 2:
-                self.x, _, p_label = initialize_model(self.img_process)
+                self.x, _, p_label = initialize_model(self.img_process,img_name=self.image_layer_name)
 
                 self.y = label_points_to_mask([], self.shape, self.box_size.value)
                 self.count = torch.where(
@@ -613,9 +639,12 @@ class AnnotationWidgetv2(Container):
             else:
                 peak_logits = logits[peaks[:, 0], peaks[:, 1]]
         else:
+            print(f"Shape of image is - {self.img_process.shape}")
             peaks, peak_logits = predict_3d_with_AL(
-                self.img_process, self.model, self.AL_weights, int(self.patch_size.value)
-            )
+                self.img_process, self.model, self.AL_weights, int(self.patch_size.value), tm_scores=self.tm_scores)
+            
+            # peaks, peak_logits = predict_3d_with_AL(
+            #     self.img_process, self.model, self.AL_weights, int(self.patch_size.value))
 
         self.napari_viewer.add_points(
             peaks,

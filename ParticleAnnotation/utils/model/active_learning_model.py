@@ -5,6 +5,9 @@ import numpy as np
 from topaz.model.factory import load_model
 import torch
 from tqdm import tqdm
+import re
+from ParticleAnnotation.utils.load_data import downsample
+from topaz.stats import normalize
 
 from ParticleAnnotation.utils.model.utils import (
     find_peaks,
@@ -15,23 +18,23 @@ from ParticleAnnotation.utils.model.utils import (
 import io
 import requests
 
-
-def predict_3d_with_AL(img, model, weights, offset):
+def predict_3d_with_AL(img, model, weights, offset, tm_scores = None):
     peaks, peaks_logits = [], []
     device_ = get_device()
 
     grid = divide_grid(img, offset)
-    init_model = torch.load(
-            io.BytesIO(
-                requests.get(
-                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
-                    timeout=(5, None),
-                ).content
+    if tm_scores is None:
+        init_model = torch.load(
+                io.BytesIO(
+                    requests.get(
+                        "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+                        timeout=(5, None),
+                    ).content
+                )
             )
-        )
-    init_model = init_model.features.to(device_)
-    init_model.fill()
-    init_model.eval()
+        init_model = init_model.features.to(device_)
+        init_model.fill()
+        init_model.eval()
 
     if weights is not None:
         model.fit(pre_train=weights)
@@ -44,8 +47,17 @@ def predict_3d_with_AL(img, model, weights, offset):
         # Predict
         with torch.no_grad():
             patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
-            patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
-
+            if tm_scores is None:
+                patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
+            else:
+                z_start, y_start, x_start = i[0], i[1], i[2]
+                patch = tm_scores[z_start:z_start+offset, y_start:y_start+offset, x_start:x_start+offset]
+                patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
+                patch = patch.permute(1, 2, 3, 0)
+                patch = patch.reshape(-1, patch.shape[-1])
+            print(f'Model weights shape is - {model.weights.shape}')
+            print(f'Model bias shape is - {model.bias.shape}')
+            print(f'Patch shape is - {patch.shape}')
             logits = model(patch).reshape(*shape_)
 
         if device_ == "cpu":
@@ -160,31 +172,50 @@ def label_points_to_mask(points, shape, size):
     return y
 
 
-def initialize_model(mrc, n_part=10, only_feature=False):
+def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch = None):
     device_ = get_device()
+    print(f"Shape of mrc is - {mrc.shape}")
 
     if len(mrc.shape) == 3:
-        model = torch.load(
-            io.BytesIO(
-                requests.get(
-                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
-                    timeout=(5, None),
-                ).content
+        try: 
+            filter_values = tm_scores
+            if patch!=None:
+                z_start, y_start, x_start = patch[0]
+                size_         = patch[1]
+                print(f"z_start is - {z_start}, y_start is - {y_start}, x_start is - {x_start}, size is - {size_}")
+                x             = filter_values[z_start:z_start+size_[0], y_start:y_start+size_[1], x_start:x_start+size_[2]]
+            x                 = torch.from_numpy(x).float().unsqueeze(0).to(device_)
+            classified        = x
+            x                 = x.permute(1, 2, 3, 0)
+            print(f"Shape of filter values is - {x.shape}")
+            print(f"Shape of classified is - {classified.shape}")
+            print("Chosen to use TM scores as features")
+        except:
+            model = torch.load(
+                io.BytesIO(
+                    requests.get(
+                        "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+                        timeout=(5, None),
+                    ).content
+                )
             )
-        )
-        classifier = model.classifier.to(device_)
-        model = model.features.to(device_)
-        model.fill()
-        model.eval()
-        classifier.eval()
+            classifier = model.classifier.to(device_)
+            model = model.features.to(device_)
+            model.fill()
+            model.eval()
+            classifier.eval()
+            # see classifier
+            print(f"Shape of mrc is - {mrc.shape}")
+            mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
 
-        mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
+            with torch.no_grad():
+                filter_values = model(mrc).squeeze(0)
+                classified = torch.sigmoid(classifier(filter_values))
 
-        with torch.no_grad():
-            filter_values = model(mrc).squeeze(0)
-            classified = torch.sigmoid(classifier(filter_values))
-
-        x = filter_values.permute(1, 2, 3, 0)
+            x = filter_values.permute(1, 2, 3, 0)
+            print(f"Shape of filter values is - {x.shape}")
+            print(f"Shape of classified is - {classified.shape}")
+            print("Chosen to use the Topaz features")
     else:
         model = load_model("resnet16")
         classifier = model.classifier.to(device_)
@@ -205,7 +236,7 @@ def initialize_model(mrc, n_part=10, only_feature=False):
     if only_feature:
         return x
 
-    if isinstance(classifier, torch.Tensor):
+    if isinstance(classified, torch.Tensor):
         classified = classified.detach().cpu().numpy()
 
     x = x.reshape(-1, x.shape[-1])  # L, C
@@ -218,8 +249,10 @@ def initialize_model(mrc, n_part=10, only_feature=False):
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     p_xy = xy_negative
 
+    print(f"Shape of x is - {x.shape}")
+    print(f"Shape of y is - {y.shape}")
+    print(f"Shape of p_xy is - {p_xy.shape}")
     return x, y, p_xy
-
 
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:

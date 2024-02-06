@@ -46,6 +46,7 @@ def correct_coord(data, patch_corner, normalize):
 
 def get_random_patch(img, size_: int):
     z, y, x = img.shape
+    print(f"image shape is - {img.shape}")
 
     if img.shape[0] <= size_:
         z_start = 0
@@ -176,10 +177,11 @@ def get_device() -> torch.device:
         torch.device: Device type.
     """
     df = torch.rand((1, 1))
-    try:
-        device = torch.device("cuda:0")
-        df.to(device)
-    except AssertionError:
-        device = torch.device("cpu")
-        df.to(device)
+    device = torch.device("cpu")
+    # try:
+    #     device = torch.device("cuda:0")
+    #     df.to(device)
+    # except AssertionError:
+    #     device = torch.device("cpu")
+    #     df.to(device)
     return device
