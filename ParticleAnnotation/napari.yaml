@@ -1,5 +1,5 @@
 name: ParticleAnnotation
-display_name: Topaz Active Learning
+display_name: Topaz Active Learning 
 contributions:
   commands:
     # Read/Write files
