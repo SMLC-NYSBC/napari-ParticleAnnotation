@@ -42,7 +42,7 @@ def downsample(img: np.ndarray, factor=8):
         return np.fft.irfft2(fft, s=shape).astype(img.dtype)
     return img.astype(img.dtype)
 
-def load_template(path):
+def load_template(path, temp_name):
     """
     Load the template scores from disk.
 
@@ -54,12 +54,18 @@ def load_template(path):
 
     """
     device_ = get_device()
+    temp_name     = temp_name.upper()
     template_name = re.search(r'ts(\d{1,3})',path).group(0)
 
     root = f'/h2/njain/data/tomonet_template_matched'
     print(f"Found template name as - {template_name}")
-    template_score = torch.load(f"{root}/{template_name}/scores_7A4M.pt", map_location = device_).numpy()
-    print("Loaded template scores")
+    try:
+        template_score = torch.load(f"{root}/{template_name}/scores_{temp_name}.pt", map_location = device_).numpy()
+        print("Loaded template scores")
+    except:
+        print(f"Could not find template {temp_name} in {template_name}, Defaulting to Apof")
+        template_score = torch.load(f"{root}/{template_name}/scores_7A4M.pt", map_location = device_).numpy()
+    
     return template_score
 
 def load_image(path, aws=False):

@@ -43,7 +43,6 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores = None):
         # Stream patch
         patch = img[i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset]
         shape_ = patch.shape
-
         # Predict
         with torch.no_grad():
             patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
@@ -55,9 +54,6 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores = None):
                 patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
                 patch = patch.permute(1, 2, 3, 0)
                 patch = patch.reshape(-1, patch.shape[-1])
-            print(f'Model weights shape is - {model.weights.shape}')
-            print(f'Model bias shape is - {model.bias.shape}')
-            print(f'Patch shape is - {patch.shape}')
             logits = model(patch).reshape(*shape_)
 
         if device_ == "cpu":
@@ -76,6 +72,8 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores = None):
         peaks_df = correct_coord(peaks_df, i, True)
         peaks.append(peaks_df)
         peaks_logits.append(peaks_logits_df)
+
+    print("Done with AL training")
 
     return np.vstack(peaks), np.concatenate(peaks_logits)
 
@@ -187,8 +185,6 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
             x                 = torch.from_numpy(x).float().unsqueeze(0).to(device_)
             classified        = x
             x                 = x.permute(1, 2, 3, 0)
-            print(f"Shape of filter values is - {x.shape}")
-            print(f"Shape of classified is - {classified.shape}")
             print("Chosen to use TM scores as features")
         except:
             model = torch.load(
@@ -244,14 +240,13 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
 
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
-    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]  # Bottom 10
 
+    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...] 
+    xy_positive = xy[[np.array(score).argsort()[-n_part*100:][::-1]], :][0, ...] #choose top 1000
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
-    p_xy = xy_negative
-
-    print(f"Shape of x is - {x.shape}")
-    print(f"Shape of y is - {y.shape}")
-    print(f"Shape of p_xy is - {p_xy.shape}")
+    xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))
+    p_xy = (xy_negative, xy_positive)
+    
     return x, y, p_xy
 
 class BinaryLogisticRegression:
@@ -272,6 +267,7 @@ class BinaryLogisticRegression:
 
         # binary cross entropy for labeled y's
         is_labeled = ~torch.isnan(y)
+        print(f"Shape of is_labeled is - {is_labeled.shape}")
         weights = weights[is_labeled]
         n = torch.sum(weights)
         loss_binary = F.binary_cross_entropy_with_logits(

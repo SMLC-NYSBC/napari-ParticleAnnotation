@@ -53,7 +53,6 @@ from ParticleAnnotation._qt.viewer_utils import (
     OwnPartial,
 )
 
-
 class MultipleViewerWidget(QSplitter):
     def __init__(self, viewer: napari.Viewer) -> None:
         super().__init__()
@@ -121,9 +120,8 @@ class MultipleViewerWidget(QSplitter):
         self.viewer_model1.camera.center = points
         self.viewer_model1.dims.set_point(0, points[0])
 
-        self.viewer_model2.camera.center = (points[0], points[1], points[2])
-
-        self.viewer_model2.dims.set_point(-1, points[2])
+        self.viewer_model2.camera.center = points
+        self.viewer_model2.dims.set_point(0, points[0])
 
     def _layer_selection_changed(self, event):
         """
@@ -146,16 +144,16 @@ class MultipleViewerWidget(QSplitter):
 
     def _order_update(self):
         order = list(self.viewer.dims.order)
-        if len(order) <= 2:
-            self.viewer_model1.dims.order = order
-            self.viewer_model2.dims.order = order
-            return
+        # if len(order) <= 2:
+        self.viewer_model1.dims.order = order
+        self.viewer_model2.dims.order = order
+        return
 
         # order[-3:] = order[-2], order[-3], order[-1]
         # self.viewer_model1.dims.order = order
-        order = list(self.viewer.dims.order)
-        order[-3:] = order[-1], order[-2], order[-3]
-        self.viewer_model2.dims.order = order
+        # order = list(self.viewer.dims.order)
+        # order[-3:] = order[-1], order[-2], order[-3]
+        # self.viewer_model2.dims.order = order
 
     def _layer_added(self, event):
         """add layer to additional viewers and connect all required events"""
@@ -250,6 +248,8 @@ class AnnotationWidgetv2(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init = False
         self.AL_weights = None
+        self.chosen_particles = []
+        self.curr_layer = "Chosen Particles"
 
         # Key binding
         try:
@@ -281,16 +281,26 @@ class AnnotationWidgetv2(Container):
         self.save_ALM.clicked.connect(self._save_model)
 
         spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
-        self.sampling_layer = LineEdit(name="Pixel", value="1.0")
+        self.sampling_layer = LineEdit(name="Pixel", value="8.0")
         self.box_size = LineEdit(name="Box", value="5")
         self.patch_size = LineEdit(name="Patch", value="128")
+
+        self.temp_id = LineEdit(name="pdb ID", value="7A4M")
 
         self.init_data = PushButton(name="Initialize dataset")
         self.init_data.clicked.connect(self._initialize_dataset)
 
+        self.choose_init = PushButton(name="Choose Initial picks")
+        self.choose_init.clicked.connect(self._choose_initial_picks)
+
         self.recenter_positive = Checkbox(
             name="Recenter new positive labels", value=False
         )
+
+        self.show_tm_scores = Checkbox(
+            name="Show TM scores", value=False
+        )
+        self.show_tm_scores.changed.connect(self._show_tm_scores)
 
         self.save = PushButton(name="Save Model")
         self.save.clicked.connect(self._save_model)
@@ -333,9 +343,9 @@ class AnnotationWidgetv2(Container):
 
         layer_init = VBox(
             widgets=(
-                HBox(widgets=(self.sampling_layer, self.box_size, self.patch_size,)),
-                self.init_data,
-                self.recenter_positive,
+                HBox(widgets=(self.sampling_layer, self.box_size, self.patch_size,self.temp_id,)),
+                HBox(widgets = (self.choose_init, self.init_data)),
+                HBox(widgets = (self.recenter_positive,self.show_tm_scores)),
                 HBox(widgets=(self.save, self.load,))
             )
         )
@@ -376,13 +386,36 @@ class AnnotationWidgetv2(Container):
         if self.model is not None:
             torch.save([self.model.weights, self.model.bias], filename)
 
+    def _choose_initial_picks(self):
+
+        self.image_layer_name = self.napari_viewer.layers.selection.active.name
+        self.curr_layer = "Chosen Particles"
+        self.create_point_layer(np.array([]), np.array([]), name = "Chosen Particles")
+        self.activate_click = True
+
     def _initialize_dataset(self):
         self.init = True
 
+        try:
+            self.chosen_particles = self.napari_viewer.layers["Chosen Particles"].data
+            labels = self.napari_viewer.layers["Chosen Particles"].properties["label"]
+            # choose only particles with label 1
+            self.chosen_particles = self.chosen_particles[labels == 1]
+            print(f"Chosen particles are - {self.chosen_particles}")
+            assert len(self.chosen_particles) > 0
+            self.napari_viewer.layers.remove("Chosen Particles")
+        except:
+            show_info(f"Please choose few particles to initialize the model!")
+            return
+        self.activate_click = True
+        self.curr_layer = "Initial_Labels"
+
         # Image data
         try:
-            active_layer_name = self.napari_viewer.layers.selection.active.name
-            self.image_layer_name = active_layer_name
+            assert self.image_layer_name != ""
+            active_layer_name = self.image_layer_name
+            # active_layer_name = self.napari_viewer.layers.selection.active.name
+            # self.image_layer_name = active_layer_name
         except:
             show_info("Please load and select image!")
             return
@@ -409,7 +442,7 @@ class AnnotationWidgetv2(Container):
         # Initialize dataset
         if self.img_process.ndim == 3:
             # Initialize template here
-            tm_scores = load_template(self.image_layer_name)
+            tm_scores = load_template(self.image_layer_name, self.temp_id.value)
             print(f"Shape of tm_scores is - {tm_scores.shape}")
             # downsample tm_scores
             tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
@@ -417,26 +450,35 @@ class AnnotationWidgetv2(Container):
                 tm_scores.copy(), method="affine", use_cuda=False
             )
             self.tm_scores = tm_scores
+            # self.create_image_layer(self.tm_scores)
             print(f"Shape of tm_scores is - {self.tm_scores.shape}")
-
-            patch, self.patch_corner = get_random_patch(self.img_process, int(self.patch_size.value))
+            patch, self.patch_corner, self.chosen_particles = get_random_patch(self.img_process, int(self.patch_size.value), None)
             self.shape = patch.shape
-            self.x, _, p_label = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
+            self.x, _, (p_label_neg, p_label_pos) = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
             # self.x, _, p_label = initialize_model(patch)
-            p_label[:, 1:]     = correct_coord(p_label[:, 1:], self.patch_corner, True)
+            p_label_neg[:, 1:]     = correct_coord(p_label_neg[:, 1:], self.patch_corner, True)
+            p_label_pos[:, 1:]     = correct_coord(p_label_pos[:, 1:], self.patch_corner, True)
         else:
-            self.x, _, p_label = initialize_model(self.img_process)
+            self.x, _, (p_label_neg, p_label_pos) = initialize_model(self.img_process)
             self.patch_corner = None
         self.x = torch.from_numpy(self.x)
 
         """ Initialize model and pick initial particles """
-        self.create_point_layer(p_label[:, 1:], p_label[:, 0])
+        
+        self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
         self.activate_click = True
+
+        # self.create_pred_layer(p_label_pos[:, 1:], p_label_pos[:, 0])
+        self.create_point_layer(p_label_pos[:, 1:], p_label_pos[:, 0], name = "Predicted Labels")
+        
+        try:
+            self.napari_viewer.selection.active = self.napari_viewer.layers["Initial_Labels"]
+        except:
+            pass
 
         """Initialize new model or load pre-trained"""
         # update y and count
         self.y = label_points_to_mask([], self.shape, self.box_size.value)
-        print(f"Shape of y is - {self.y.shape}")
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
@@ -452,13 +494,14 @@ class AnnotationWidgetv2(Container):
             weights=self.count.ravel(),
             pre_train=self.AL_weights,
         )
+
         self._reset_view()
         show_info(f"Task finished: Initialize Dataset!")
 
     def _change_patch(self):
+        self.curr_layer = "Initial_Labels"
         if self.patch_corner is not None:
             # Re-Train model
-
             self.activate_click = True
 
             points_layer = self.napari_viewer.layers["Initial_Labels"].data
@@ -492,14 +535,15 @@ class AnnotationWidgetv2(Container):
                 show_info(f"Task finished: Retrain model!")
 
                 # Feed new patch
-                patch, self.patch_corner = get_random_patch(self.img_process, int(self.patch_size.value))
+                patch, self.patch_corner, self.chosen_particles = get_random_patch(self.img_process, int(self.patch_size.value), self.chosen_particles)
                 self.shape = patch.shape
 
-                self.x, _, p_label = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
-                p_label[:, 1:] = correct_coord(p_label[:, 1:], self.patch_corner, True)
+                self.x, _, (p_label_neg, p_label_pos) = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
+                p_label_neg[:, 1:] = correct_coord(p_label_neg[:, 1:], self.patch_corner, True)
+                p_label_pos[:, 1:] = correct_coord(p_label_pos[:, 1:], self.patch_corner, True)
                 self.x = torch.from_numpy(self.x)
 
-                self.y = label_points_to_mask(p_label, self.shape, self.box_size.value)
+                self.y = label_points_to_mask(p_label_neg, self.shape, self.box_size.value)
                 self.count = (~torch.isnan(self.y)).float()
                 self.model.fit(
                     self.x,
@@ -507,8 +551,18 @@ class AnnotationWidgetv2(Container):
                     weights=self.count.ravel(),
                     pre_train=weights,
                 )
+                if (self.show_tm_scores.value):
+                    self.create_image_layer(self.tm_scores)
+                self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
 
-                self.create_point_layer(p_label[:, 1:], p_label[:, 0])
+                self.create_pred_layer(p_label_pos[:, 1:], p_label_pos[:, 0])
+                # remove this layer from Annotation widget and viewer 1
+                
+                try:
+                    self.napari_viewer.selection.active = self.napari_viewer.layers["Initial_Labels"]
+                except:
+                    pass
+
                 self._reset_view()
 
                 self.component_selector.value = 0
@@ -568,6 +622,7 @@ class AnnotationWidgetv2(Container):
             show_info(f"Task finished: Retrain model!")
 
     def _predict(self):
+        self.curr_layer = "Initial_Labels"
         self.activate_click = False
 
         if not self.init:
@@ -593,7 +648,7 @@ class AnnotationWidgetv2(Container):
             )
 
             # Load TM scores if not loaded already 
-            tm_scores = load_template(self.image_layer_name)
+            tm_scores = load_template(self.image_layer_name, self.temp_id.value)
             # downsample tm_scores
             factor = float(factor) / 8
             tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
@@ -642,10 +697,10 @@ class AnnotationWidgetv2(Container):
             print(f"Shape of image is - {self.img_process.shape}")
             peaks, peak_logits = predict_3d_with_AL(
                 self.img_process, self.model, self.AL_weights, int(self.patch_size.value), tm_scores=self.tm_scores)
-            
             # peaks, peak_logits = predict_3d_with_AL(
             #     self.img_process, self.model, self.AL_weights, int(self.patch_size.value))
 
+        print(f"Shape of peaks is - {peaks.shape}")
         self.napari_viewer.add_points(
             peaks,
             name=f"{self.image_layer_name}_Prediction",
@@ -657,7 +712,12 @@ class AnnotationWidgetv2(Container):
             symbol="disc",
             size=5,
         )
+        if (self.show_tm_scores.value):
+            self.create_image_layer(self.tm_scores)
+            # set prediction layer as active layer
+            self.napari_viewer.selection.active = self.napari_viewer.layers[f"{self.image_layer_name}_Prediction"]
         self._reset_view()
+        
         try:
             self.napari_viewer.layers["Initial_Labels"].visible = False
         except:
@@ -719,37 +779,48 @@ class AnnotationWidgetv2(Container):
         img.data = nd.gaussian_filter(img.data, 2)
 
     def ZEvent(self, viewer):
+        name = self.curr_layer
         if self.activate_click:
-            # if self.activate_click:
-            points_layer = viewer.layers["Initial_Labels"].data
-
-            # Calculate the distance between the mouse position and all points
-            kdtree = KDTree(points_layer)
-            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
-
-            if distance > 12:
+            # if self.activate_click
+            points_layer = viewer.layers[name].data
+            if (points_layer.shape[0] == 0):
                 self.update_point_layer_2(self.mouse_position, 0, "add")
             else:
-                self.update_point_layer_2(closest_point_index, 0, "update")
+            # print(points_layer)
+                # Calculate the distance between the mouse position and all points
+                kdtree = KDTree(points_layer)
+                distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
+
+                if distance > 12:
+                    self.update_point_layer_2(self.mouse_position, 0, "add")
+                else:
+                    self.update_point_layer_2(closest_point_index, 0, "update")
 
     def XEvent(self, viewer):
+        name = self.curr_layer
+        print(f"Name is - {name}")
         if self.activate_click:
             # if self.activate_click:
-            points_layer = viewer.layers["Initial_Labels"].data
-
-            # Calculate the distance between the mouse position and all points
-            kdtree = KDTree(points_layer)
-            distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
-
-            if distance > 12:
+            points_layer = viewer.layers[name].data
+            print(points_layer)
+            if (points_layer.shape[0] == 0):
+                print("Adding point")
                 self.update_point_layer_2(self.mouse_position, 1, "add")
             else:
-                self.update_point_layer_2(closest_point_index, 1, "update")
+                # Calculate the distance between the mouse position and all points
+                kdtree = KDTree(points_layer)
+                distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
+
+                if distance > 12:
+                    self.update_point_layer_2(self.mouse_position, 1, "add")
+                else:
+                    self.update_point_layer_2(closest_point_index, 1, "update")
 
     def CEvent(self, viewer):
+        name = self.curr_layer
         if self.activate_click:
             # if self.activate_click:
-            points_layer = viewer.layers["Initial_Labels"].data
+            points_layer = viewer.layers[name].data
 
             # Calculate the distance between the mouse position and all points
             kdtree = KDTree(points_layer)
@@ -764,8 +835,9 @@ class AnnotationWidgetv2(Container):
                 self.component_selector.value = self.component_selector.value - 1
 
     def DEvent(self, viewer):
+        name = self.curr_layer
         try:
-            points_layer = len(viewer.layers["Initial_Labels"].data)
+            points_layer = len(viewer.layers[name].data)
 
             if self.component_selector.value < points_layer:
                 self._reset_view()
@@ -797,15 +869,15 @@ class AnnotationWidgetv2(Container):
             except:
                 pass
 
-    def create_point_layer(self, point, label):
+    def create_pred_layer(self, point, label, name = "Predictions"):
         try:
-            self.napari_viewer.layers.remove("Initial_Labels")
+            self.napari_viewer.viewer_model2.layers.remove(name)
         except:
             pass
-
-        self.napari_viewer.add_points(
+    
+        self.napari_viewer.viewer_model2.add_points(
             point,
-            name="Initial_Labels",
+            name=name,
             face_color="#00000000",
             properties={"label": label.astype(np.int16)},
             edge_color="label",
@@ -814,39 +886,97 @@ class AnnotationWidgetv2(Container):
             symbol="square",
             size=40,
         )
-        self.napari_viewer.layers["Initial_Labels"].mode = "select"
+
+    def create_point_layer(self, point, label, name = "Initial_Labels"):
+        try:
+            self.napari_viewer.layers.remove(name)
+        except:
+            pass
+        print(f"Point is - {point}")
+        print(f"Point shape is - {point.shape}")
+        if point.shape[0] > 0:
+            self.napari_viewer.add_points(
+                point,
+                name=name,
+                face_color="#00000000",
+                properties={"label": label.astype(np.int16)},
+                edge_color="label",
+                edge_color_cycle=self.color_map_specified,
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
+            self.napari_viewer.layers[name].mode = "select"
+        else:
+            self.napari_viewer.add_points(
+                point,
+                name=name,
+                face_color="#00000000",
+                edge_color_cycle=self.color_map_specified,
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
+            self.napari_viewer.layers[name].mode = "select"
+
+    def create_image_layer(self, tm_scores):
+        try:
+            self.napari_viewer.layers.remove("TM_Scores")
+        except:
+            pass
+
+        print("Creating image layer for tm_scores")
+        self.napari_viewer.add_image(
+            tm_scores,
+            name="TM_Scores",
+            colormap = "viridis",
+            opacity = 0.5
+        )
+
+        self.napari_viewer.layers["TM_Scores"].contrast_limits = (
+            tm_scores.min(),
+            tm_scores.max(),
+        )
+        
+        # set layer as not visible
+        self.napari_viewer.layers["TM_Scores"].visible = False
 
     def update_point_layer_2(self, index, label, func):
-        try:
-            p_layer = self.napari_viewer.layers["Initial_Labels"]
+        name = self.curr_layer
+        p_layer = self.napari_viewer.layers[name]
 
-            if func == "add":
-                point_layer = p_layer.data
+        if func == "add":
+            print("Adding point")
+            point_layer = p_layer.data
+            if point_layer.shape[0] == 0:
+                labels = np.array([label])
+                points_layer = np.array([self.mouse_position])
+            else:
                 labels = p_layer.properties["label"]
-
                 points_layer = np.insert(point_layer, 0, self.mouse_position, axis=0)
                 labels = np.insert(labels, 0, [label], axis=0)
 
-                self.create_point_layer(points_layer, labels)
-            elif func == "remove":
-                point_layer = p_layer.data
-                labels = p_layer.properties["label"]
+            self.create_point_layer(points_layer, labels, name)
 
-                points_layer = np.delete(point_layer, index, axis=0)
-                labels = np.delete(labels, index, axis=0)
+        elif func == "remove":
+            point_layer = p_layer.data
+            labels = p_layer.properties["label"]
 
-                self.create_point_layer(points_layer, labels)
-            elif func == "update":
-                point_layer = p_layer.data
-                labels = p_layer.properties["label"]
-                if labels[index] != label:
-                    labels[index] = label
-                    self.create_point_layer(point_layer, labels)
-            else:
-                pass
-            p_layer.edge_color_cycle = self.color_map_specified
-        except:
-            pass
+            points_layer = np.delete(point_layer, index, axis=0)
+            labels = np.delete(labels, index, axis=0)
+
+            self.create_point_layer(points_layer, labels, name)
+        elif func == "update":
+            point_layer = p_layer.data
+            labels = p_layer.properties["label"]
+            if labels[index] != label:
+                labels[index] = label
+                self.create_point_layer(point_layer, labels, name)
+        # else:
+        #     pass
+        p_layer.edge_color_cycle = self.color_map_specified
+        # except:
+        #     pass
 
     def _update_roi_info(self):
         if not self.activate_click:
@@ -898,6 +1028,18 @@ class AnnotationWidgetv2(Container):
         for i in range(dims):
             if not (lower_bound[i] <= current_point[i] <= upper_bound[i]):
                 self.napari_viewer.dims.set_point(start_dims + i, point[i])
+
+    def _show_tm_scores(self):
+        if self.show_tm_scores.value:
+            try:
+                self.napari_viewer.layers["TM_Scores"].visible = True
+            except:
+                pass
+        else:
+            try:
+                self.napari_viewer.layers["TM_Scores"].visible = False
+            except:
+                pass
 
     def _reset_view(self):
         self.napari_viewer.reset_view()
