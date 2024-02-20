@@ -36,6 +36,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     initialize_model,
     label_points_to_mask,
     predict_3d_with_AL,
+    update_true_labels,
 )
 
 from ParticleAnnotation.utils.load_data import downsample, load_template
@@ -50,6 +51,7 @@ from ParticleAnnotation._qt.viewer_utils import (
     QtViewerWrap,
     get_property_names,
     copy_layer,
+    copy_layer_viewer2,
     OwnPartial,
 )
 
@@ -75,6 +77,7 @@ class MultipleViewerWidget(QSplitter):
 
         self.viewer.camera.events.connect(self._sync_view)
 
+        # Create new viewers
         viewer_splitter = QSplitter()
         viewer_splitter.setOrientation(Qt.Vertical)
         viewer_splitter.addWidget(self.qt_viewer1)
@@ -100,10 +103,13 @@ class MultipleViewerWidget(QSplitter):
         self.viewer_model2.reset_view()
 
     def _sync_view(self):
+        # synce cammera zoom from base viewer
         self.viewer_model2.camera.zoom = self.viewer.camera.zoom
-
-        layer_index = self.viewer_model1.layers.index(self.points_layer)
-        self.viewer_model1.layers.move(layer_index, -1)
+        try:
+            layer_index = self.viewer_model1.layers.index(self.points_layer)
+            self.viewer_model1.layers.move(layer_index, -1)
+        except:
+            pass
 
     def _get_mouse_coordinates(self, viewer, event):
         # Get mouse position
@@ -120,6 +126,7 @@ class MultipleViewerWidget(QSplitter):
         self.viewer_model1.camera.center = points
         self.viewer_model1.dims.set_point(0, points[0])
 
+        self.viewer_model2.camera.zoom = 2
         self.viewer_model2.camera.center = points
         self.viewer_model2.dims.set_point(0, points[0])
 
@@ -135,12 +142,15 @@ class MultipleViewerWidget(QSplitter):
             self.viewer_model2.layers.selection.active = None
             return
 
-        self.viewer_model1.layers.selection.active = self.viewer_model1.layers[
-            event.value.name
-        ]
-        self.viewer_model2.layers.selection.active = self.viewer_model2.layers[
-            event.value.name
-        ]
+        if event.value.name in self.viewer_model1.layers:
+            self.viewer_model1.layers.selection.active = self.viewer_model1.layers[
+                event.value.name
+            ]
+
+        if event.value.name in self.viewer_model2.layers:
+            self.viewer_model2.layers.selection.active = self.viewer_model2.layers[
+                event.value.name
+            ]
 
     def _order_update(self):
         order = list(self.viewer.dims.order)
@@ -157,8 +167,17 @@ class MultipleViewerWidget(QSplitter):
 
     def _layer_added(self, event):
         """add layer to additional viewers and connect all required events"""
-        self.viewer_model1.layers.insert(event.index, copy_layer(event.value, "View_1"))
-        self.viewer_model2.layers.insert(event.index, copy_layer(event.value, "View_2"))
+        try:
+            self.viewer_model1.layers.insert(event.index, copy_layer(event.value, "View_1"))
+        except:
+            pass
+        try:
+            self.viewer_model2.layers.insert(
+                event.index, copy_layer_viewer2(event.value, "View_2")
+            )
+        except:
+            pass
+
         for name in get_property_names(event.value):
             getattr(event.value.events, name).connect(
                 OwnPartial(self._property_sync, name)
@@ -166,13 +185,14 @@ class MultipleViewerWidget(QSplitter):
 
         if isinstance(event.value, Points):
             event.value.events.set_data.connect(self._set_data_refresh)
-            self.viewer_model1.layers[event.value.name].events.set_data.connect(
-                self._set_data_refresh
-            )
-            self.viewer_model2.layers[event.value.name].events.set_data.connect(
-                self._set_data_refresh
-            )
-
+            if event.value.name in self.viewer_model1.layers:
+                self.viewer_model1.layers[event.value.name].events.set_data.connect(
+                    self._set_data_refresh
+                )
+            # if event.value.name ==
+            # self.viewer_model2.layers[event.value.name].events.set_data.connect(
+            #     self._set_data_refresh
+            # )
         event.value.events.name.connect(self._sync_name)
 
         self._order_update()
@@ -187,8 +207,10 @@ class MultipleViewerWidget(QSplitter):
 
     def _layer_removed(self, event):
         """remove layer in all viewers"""
-        self.viewer_model1.layers.pop(event.index)
-        self.viewer_model2.layers.pop(event.index)
+        if event.value.name in self.viewer_model1.layers:
+            self.viewer_model1.layers.pop(event.index)
+        if event.value.name in self.viewer_model2.layers:
+            self.viewer_model2.layers.pop(event.index)
 
     def _set_data_refresh(self, event):
         """
@@ -197,14 +219,15 @@ class MultipleViewerWidget(QSplitter):
         if self._block:
             return
         for model in [self.viewer, self.viewer_model1, self.viewer_model2]:
-            layer = model.layers[event.source.name]
-            if layer is event.source:
-                continue
-            try:
-                self._block = True
-                layer.refresh()
-            finally:
-                self._block = False
+            if event.source.name in model.layers:
+                layer = model.layers[event.source.name]
+                if layer is event.source:
+                    continue
+                try:
+                    self._block = True
+                    layer.refresh()
+                finally:
+                    self._block = False
 
     def _sync_name(self, event):
         """sync name of layers"""
@@ -218,19 +241,21 @@ class MultipleViewerWidget(QSplitter):
             return
         try:
             self._block = True
-            setattr(
-                self.viewer_model1.layers[event.source.name],
-                name,
-                getattr(event.source, name),
-            )
-            setattr(
-                self.viewer_model2.layers[event.source.name],
-                name,
-                getattr(event.source, name),
-            )
+            if event.source.name in self.viewer_model1.layers:
+                setattr(
+                    self.viewer_model1.layers[event.source.name],
+                    name,
+                    getattr(event.source, name),
+                )
+            # check if layer exists in viewer2
+            if event.source.name in self.viewer_model2.layers:
+                setattr(
+                    self.viewer_model2.layers[event.source.name],
+                    name,
+                    getattr(event.source, name),
+                )
         finally:
             self._block = False
-
 
 class AnnotationWidgetv2(Container):
     def __init__(self, napari_viewer: Viewer):
@@ -250,6 +275,7 @@ class AnnotationWidgetv2(Container):
         self.AL_weights = None
         self.chosen_particles = []
         self.curr_layer = "Chosen Particles"
+        self.true_labels = np.array([])
 
         # Key binding
         try:
@@ -382,7 +408,6 @@ class AnnotationWidgetv2(Container):
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File", directory="Active_learn_model.pth"
         )
-        print(filename)
         if self.model is not None:
             torch.save([self.model.weights, self.model.bias], filename)
 
@@ -401,7 +426,6 @@ class AnnotationWidgetv2(Container):
             labels = self.napari_viewer.layers["Chosen Particles"].properties["label"]
             # choose only particles with label 1
             self.chosen_particles = self.chosen_particles[labels == 1]
-            print(f"Chosen particles are - {self.chosen_particles}")
             assert len(self.chosen_particles) > 0
             self.napari_viewer.layers.remove("Chosen Particles")
         except:
@@ -421,7 +445,6 @@ class AnnotationWidgetv2(Container):
             return
 
         img = self.napari_viewer.layers[active_layer_name]
-        print(f"Image shape is - {img.data.shape}")
 
         """Down_sample dataset"""
         self.img_process = img.data
@@ -443,16 +466,14 @@ class AnnotationWidgetv2(Container):
         if self.img_process.ndim == 3:
             # Initialize template here
             tm_scores = load_template(self.image_layer_name, self.temp_id.value)
-            print(f"Shape of tm_scores is - {tm_scores.shape}")
             # downsample tm_scores
             tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
             tm_scores, _ = normalize(
                 tm_scores.copy(), method="affine", use_cuda=False
             )
             self.tm_scores = tm_scores
-            # self.create_image_layer(self.tm_scores)
-            print(f"Shape of tm_scores is - {self.tm_scores.shape}")
-            patch, self.patch_corner, self.chosen_particles = get_random_patch(self.img_process, int(self.patch_size.value), None)
+            self.create_image_layer(self.tm_scores)
+            patch, self.patch_corner, self.chosen_particles = get_random_patch(self.img_process, int(self.patch_size.value), self.chosen_particles)
             self.shape = patch.shape
             self.x, _, (p_label_neg, p_label_pos) = initialize_model(patch,tm_scores=self.tm_scores, patch = [self.patch_corner,self.shape])
             # self.x, _, p_label = initialize_model(patch)
@@ -464,12 +485,20 @@ class AnnotationWidgetv2(Container):
         self.x = torch.from_numpy(self.x)
 
         """ Initialize model and pick initial particles """
-        
+        self.napari_viewer.add_points(
+            p_label_pos[:, 1:],
+            name=f"Predicted_Labels",
+            properties={"confidence": p_label_pos[:, 0]},
+            edge_color="black",
+            face_color="confidence",
+            face_colormap="viridis",
+            edge_width=0.1,
+            symbol="disc",
+            size=5,
+        )
+
         self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
         self.activate_click = True
-
-        # self.create_pred_layer(p_label_pos[:, 1:], p_label_pos[:, 0])
-        self.create_point_layer(p_label_pos[:, 1:], p_label_pos[:, 0], name = "Predicted Labels")
         
         try:
             self.napari_viewer.selection.active = self.napari_viewer.layers["Initial_Labels"]
@@ -482,8 +511,6 @@ class AnnotationWidgetv2(Container):
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
-        print(f"Shape of count is - {self.count.shape}")
-        print(f"n_features is - {self.x.shape[1]}")
         self.model = BinaryLogisticRegression(
             n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
         )
@@ -505,9 +532,18 @@ class AnnotationWidgetv2(Container):
             self.activate_click = True
 
             points_layer = self.napari_viewer.layers["Initial_Labels"].data
+            label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+            self.true_labels = update_true_labels(self.true_labels, points_layer, label)
+
             points_layer = correct_coord(points_layer, self.patch_corner, False)
 
-            label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+            # correct coord of all existing true_labels
+            if self.true_labels.size:
+                x = self.true_labels[:,1:].copy()
+                prev_labels = correct_coord(x, self.patch_corner, False)
+                prev_labels = np.array(
+                    (self.true_labels[:,0], prev_labels[:, 0], prev_labels[:, 1], prev_labels[:, 2])
+                ).T
 
             if np.any(label == 2):
                 show_info(f"Please Correct all uncertain particles!")
@@ -526,6 +562,20 @@ class AnnotationWidgetv2(Container):
                             data[:, 2],
                         )
                     ).T
+                # add true_labels from the global variable to the data; remove if any is negative
+                try:
+                    if prev_labels.size:
+                        for data_ in prev_labels:
+                            # if all values in data_ are positive
+                            if np.all(data_ > 0):
+                                data = np.vstack((data, data_)) 
+                                self.count += 1
+                            else:
+                                if np.any(np.all(data_ == data, axis=1)):
+                                    # remove
+                                    data = data[~np.all(data == data_, axis=1)]
+                except:
+                    pass
 
                 self.y = label_points_to_mask(data, self.shape, self.box_size.value)
                 self.count = (~torch.isnan(self.y)).float()
@@ -544,6 +594,7 @@ class AnnotationWidgetv2(Container):
                 self.x = torch.from_numpy(self.x)
 
                 self.y = label_points_to_mask(p_label_neg, self.shape, self.box_size.value)
+
                 self.count = (~torch.isnan(self.y)).float()
                 self.model.fit(
                     self.x,
@@ -551,12 +602,27 @@ class AnnotationWidgetv2(Container):
                     weights=self.count.ravel(),
                     pre_train=weights,
                 )
-                if (self.show_tm_scores.value):
-                    self.create_image_layer(self.tm_scores)
-                self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
 
-                self.create_pred_layer(p_label_pos[:, 1:], p_label_pos[:, 0])
-                # remove this layer from Annotation widget and viewer 1
+                # attempt to remove the old layer
+                try:
+                    self.napari_viewer.layers.remove("Predicted_Labels")
+                except:
+                    pass
+
+                self.napari_viewer.add_points(
+                    p_label_pos[:, 1:],
+                    name="Predicted_Labels",
+                    properties={"confidence": p_label_pos[:, 0]},
+                    edge_color="black",
+                    face_color="confidence",
+                    face_colormap="viridis",
+                    edge_width=0.1,
+                    symbol="disc",
+                    size=5,
+                )
+
+                self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
+                self.activate_click = True
                 
                 try:
                     self.napari_viewer.selection.active = self.napari_viewer.layers["Initial_Labels"]
@@ -576,10 +642,24 @@ class AnnotationWidgetv2(Container):
         self.activate_click = True
 
         points_layer = self.napari_viewer.layers["Initial_Labels"].data
+        label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+        self.true_labels = update_true_labels(self.true_labels, points_layer, label)
+
+        points_layer = correct_coord(points_layer, self.patch_corner, False)
+
+        # correct coord of all existing true_labels
+        if self.true_labels.size:
+            # print(self.true_labels)
+            x = self.true_labels[:,1:].copy()
+            prev_labels = correct_coord(x, self.patch_corner, False)
+            prev_labels = np.array(
+                (self.true_labels[:,0], prev_labels[:, 0], prev_labels[:, 1], prev_labels[:, 2])
+            ).T
+
         if self.patch_corner is not None:
             points_layer = correct_coord(points_layer, self.patch_corner, False)
-
-        label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+            if self.true_labels.size:
+                prev_labels = correct_coord(self.true_labels, self.patch_corner, False)
 
         if np.any(label == 2):
             show_info(f"Please Correct all uncertain particles!")
@@ -598,8 +678,24 @@ class AnnotationWidgetv2(Container):
                         data[:, 2],
                     )
                 ).T
+        
+            # add true_labels from the global variable to the data; remove if any is negative
+            try:
+                if prev_labels.size:
+                    for data_ in prev_labels:
+                        # if all values in data_ are positive
+                        if np.all(data_ > 0):
+                            data = np.vstack((data, data_)) 
+                            self.count += 1
+                        else:
+                            if np.any(np.all(data_ == data, axis=1)):
+                                # remove
+                                data = data[~np.all(data == data_, axis=1)]
+            except:
+                pass
 
             self.y = label_points_to_mask(data, self.shape, self.box_size.value)
+        
             self.count = (~torch.isnan(self.y)).float()
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
@@ -617,6 +713,7 @@ class AnnotationWidgetv2(Container):
                 data = correct_coord(data, self.patch_corner, True)
 
             labels = np.hstack((label, label_unknown))
+            print("Shape of p_label_neg is - ", data.shape)
             self.create_point_layer(data, labels)
 
             show_info(f"Task finished: Retrain model!")
@@ -694,11 +791,17 @@ class AnnotationWidgetv2(Container):
             else:
                 peak_logits = logits[peaks[:, 0], peaks[:, 1]]
         else:
-            print(f"Shape of image is - {self.img_process.shape}")
             peaks, peak_logits = predict_3d_with_AL(
                 self.img_process, self.model, self.AL_weights, int(self.patch_size.value), tm_scores=self.tm_scores)
-            # peaks, peak_logits = predict_3d_with_AL(
-            #     self.img_process, self.model, self.AL_weights, int(self.patch_size.value))
+
+            print(peaks)
+            print(peak_logits)
+
+            # add self.true_labels[:,1:] to the peaks
+            max_logits = np.max(peak_logits)
+            if self.true_labels.size:
+                peaks = np.vstack((peaks, self.true_labels[:,1:]))
+                peak_logits = np.hstack((peak_logits, max_logits*np.ones(self.true_labels.shape[0])))
 
         print(f"Shape of peaks is - {peaks.shape}")
         self.napari_viewer.add_points(
@@ -778,6 +881,8 @@ class AnnotationWidgetv2(Container):
 
         img.data = nd.gaussian_filter(img.data, 2)
 
+    
+
     def ZEvent(self, viewer):
         name = self.curr_layer
         if self.activate_click:
@@ -798,13 +903,10 @@ class AnnotationWidgetv2(Container):
 
     def XEvent(self, viewer):
         name = self.curr_layer
-        print(f"Name is - {name}")
         if self.activate_click:
             # if self.activate_click:
             points_layer = viewer.layers[name].data
-            print(points_layer)
             if (points_layer.shape[0] == 0):
-                print("Adding point")
                 self.update_point_layer_2(self.mouse_position, 1, "add")
             else:
                 # Calculate the distance between the mouse position and all points
@@ -892,8 +994,6 @@ class AnnotationWidgetv2(Container):
             self.napari_viewer.layers.remove(name)
         except:
             pass
-        print(f"Point is - {point}")
-        print(f"Point shape is - {point.shape}")
         if point.shape[0] > 0:
             self.napari_viewer.add_points(
                 point,
@@ -946,7 +1046,6 @@ class AnnotationWidgetv2(Container):
         p_layer = self.napari_viewer.layers[name]
 
         if func == "add":
-            print("Adding point")
             point_layer = p_layer.data
             if point_layer.shape[0] == 0:
                 labels = np.array([label])

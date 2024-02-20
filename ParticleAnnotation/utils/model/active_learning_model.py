@@ -155,7 +155,6 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
 
         y[i, j] = label
 
-
 def label_points_to_mask(points, shape, size):
     y = torch.zeros(*shape) + np.nan
 
@@ -169,10 +168,30 @@ def label_points_to_mask(points, shape, size):
                 fill_label_region(y, i, j, label, int(size))
     return y
 
+def update_true_labels(true_labels, points_layer, label):
+    data = np.asarray(points_layer)
+    if data.shape[1] == 2:
+        data = np.array(
+            (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
+        ).T
+    else:
+        data = np.array(
+            (
+                np.array(label).astype(np.int16),
+                data[:, 0],
+                data[:, 1],
+                data[:, 2],
+            )
+        ).T
+
+    for data_ in data:
+        if data_[0] == 1:
+            true_labels = np.vstack((true_labels, data_)) if true_labels.size else data_
+
+    return true_labels
 
 def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch = None):
     device_ = get_device()
-    print(f"Shape of mrc is - {mrc.shape}")
 
     if len(mrc.shape) == 3:
         try: 
@@ -180,7 +199,6 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
             if patch!=None:
                 z_start, y_start, x_start = patch[0]
                 size_         = patch[1]
-                print(f"z_start is - {z_start}, y_start is - {y_start}, x_start is - {x_start}, size is - {size_}")
                 x             = filter_values[z_start:z_start+size_[0], y_start:y_start+size_[1], x_start:x_start+size_[2]]
             x                 = torch.from_numpy(x).float().unsqueeze(0).to(device_)
             classified        = x
@@ -201,7 +219,6 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
             model.eval()
             classifier.eval()
             # see classifier
-            print(f"Shape of mrc is - {mrc.shape}")
             mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
 
             with torch.no_grad():
@@ -209,8 +226,6 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
                 classified = torch.sigmoid(classifier(filter_values))
 
             x = filter_values.permute(1, 2, 3, 0)
-            print(f"Shape of filter values is - {x.shape}")
-            print(f"Shape of classified is - {classified.shape}")
             print("Chosen to use the Topaz features")
     else:
         model = load_model("resnet16")
@@ -242,7 +257,7 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
     xy, score = find_peaks(classified[0, :], with_score=True)
 
     xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...] 
-    xy_positive = xy[[np.array(score).argsort()[-n_part*100:][::-1]], :][0, ...] #choose top 1000
+    xy_positive = xy[[np.array(score).argsort()[-n_part*10:][::-1]], :][0, ...] #choose top 1000
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))
     p_xy = (xy_negative, xy_positive)
@@ -267,7 +282,6 @@ class BinaryLogisticRegression:
 
         # binary cross entropy for labeled y's
         is_labeled = ~torch.isnan(y)
-        print(f"Shape of is_labeled is - {is_labeled.shape}")
         weights = weights[is_labeled]
         n = torch.sum(weights)
         loss_binary = F.binary_cross_entropy_with_logits(
