@@ -610,7 +610,7 @@ class AnnotationWidgetv2(Container):
             self.y = label_points_to_mask(data, self.shape, self.box_size.value)
             self.count = (~torch.isnan(self.y)).float()
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
-            weights = [self.model.weights, self.model.bias]
+            # weights = [self.model.weights, self.model.bias]
 
             show_info(f"Task finished: Retrain model!")
 
@@ -629,6 +629,7 @@ class AnnotationWidgetv2(Container):
             )
             self.x = torch.from_numpy(self.x)
 
+            # ToDo Use here rank_candidate_locations() set proposals to [] and use this method to get entropy scores to pick top 10 entropy
             with torch.no_grad():
                 logits = self.model(torch.from_numpy(self.x)).reshape(*self.shape)
             logits = logits.cpu().detach().numpy()

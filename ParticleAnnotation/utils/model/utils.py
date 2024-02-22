@@ -211,6 +211,7 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
         log_p = F.logsigmoid(logits).numpy()
         log_np = F.logsigmoid(-logits).numpy()
     entropy = -np.exp(log_p) * log_p - np.exp(log_np) * log_np
+
     # use peak finding to void finding candidates too close together (good for skip)
     entropy = entropy.reshape(*shape)
     peaks = find_peaks(entropy)
