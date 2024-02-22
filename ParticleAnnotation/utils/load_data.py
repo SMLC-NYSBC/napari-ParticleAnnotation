@@ -7,9 +7,8 @@ import torch
 import torch.nn.functional as F
 from scipy import ndimage
 import re
-from ParticleAnnotation.utils.model.utils import (
-    get_device
-)
+from ParticleAnnotation.utils.model.utils import get_device
+
 
 def downsample(img: np.ndarray, factor=8):
     """Downsample 2d/3d array using fourier transform"""
@@ -42,6 +41,7 @@ def downsample(img: np.ndarray, factor=8):
         return np.fft.irfft2(fft, s=shape).astype(img.dtype)
     return img.astype(img.dtype)
 
+
 def load_template(path, temp_name):
     """
     Load the template scores from disk.
@@ -54,19 +54,26 @@ def load_template(path, temp_name):
 
     """
     device_ = get_device()
-    temp_name     = temp_name.upper()
-    template_name = re.search(r'ts(\d{1,3})',path).group(0)
+    temp_name = temp_name.upper()
+    template_name = re.search(r"ts(\d{1,3})", path).group(0)
 
-    root = f'/h2/njain/data/tomonet_template_matched'
+    root = f"/h2/njain/data/tomonet_template_matched"
     print(f"Found template name as - {template_name}")
     try:
-        template_score = torch.load(f"{root}/{template_name}/scores_{temp_name}.pt", map_location = device_).numpy()
+        template_score = torch.load(
+            f"{root}/{template_name}/scores_{temp_name}.pt", map_location=device_
+        ).numpy()
         print("Loaded template scores")
     except:
-        print(f"Could not find template {temp_name} in {template_name}, Defaulting to Apof")
-        template_score = torch.load(f"{root}/{template_name}/scores_7A4M.pt", map_location = device_).numpy()
-    
+        print(
+            f"Could not find template {temp_name} in {template_name}, Defaulting to Apof"
+        )
+        template_score = torch.load(
+            f"{root}/{template_name}/scores_7A4M.pt", map_location=device_
+        ).numpy()
+
     return template_score
+
 
 def load_image(path, aws=False):
     """
@@ -95,7 +102,7 @@ def load_image(path, aws=False):
 
         if aws:
             return data
-    
+
         # Append two layers if the data type is complex
         if np.issubdtype(data.dtype, np.complexfloating):
             layer_data.append((np.abs(data), {"name": "amplitude"}, "image"))
@@ -105,6 +112,7 @@ def load_image(path, aws=False):
 
     print(f"Loaded {_path} with {px} pixel size")
     return layer_data
+
 
 def load_data_aws(image):
     layer_data = []

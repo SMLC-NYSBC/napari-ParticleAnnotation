@@ -18,20 +18,21 @@ from ParticleAnnotation.utils.model.utils import (
 import io
 import requests
 
-def predict_3d_with_AL(img, model, weights, offset, tm_scores = None):
+
+def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
     peaks, peaks_logits = [], []
     device_ = get_device()
 
     grid = divide_grid(img, offset)
     if tm_scores is None:
         init_model = torch.load(
-                io.BytesIO(
-                    requests.get(
-                        "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
-                        timeout=(5, None),
-                    ).content
-                )
+            io.BytesIO(
+                requests.get(
+                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+                    timeout=(5, None),
+                ).content
             )
+        )
         init_model = init_model.features.to(device_)
         init_model.fill()
         init_model.eval()
@@ -50,7 +51,11 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores = None):
                 patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
             else:
                 z_start, y_start, x_start = i[0], i[1], i[2]
-                patch = tm_scores[z_start:z_start+offset, y_start:y_start+offset, x_start:x_start+offset]
+                patch = tm_scores[
+                    z_start : z_start + offset,
+                    y_start : y_start + offset,
+                    x_start : x_start + offset,
+                ]
                 patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
                 patch = patch.permute(1, 2, 3, 0)
                 patch = patch.reshape(-1, patch.shape[-1])
@@ -155,6 +160,7 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
 
         y[i, j] = label
 
+
 def label_points_to_mask(points, shape, size):
     y = torch.zeros(*shape) + np.nan
 
@@ -168,12 +174,11 @@ def label_points_to_mask(points, shape, size):
                 fill_label_region(y, i, j, label, int(size))
     return y
 
+
 def update_true_labels(true_labels, points_layer, label):
     data = np.asarray(points_layer)
     if data.shape[1] == 2:
-        data = np.array(
-            (np.array(label).astype(np.int16), data[:, 0], data[:, 1])
-        ).T
+        data = np.array((np.array(label).astype(np.int16), data[:, 0], data[:, 1])).T
     else:
         data = np.array(
             (
@@ -190,21 +195,27 @@ def update_true_labels(true_labels, points_layer, label):
 
     return true_labels
 
-def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch = None):
+
+def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=None):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
-        try: 
+        if tm_scores is not None and patch is not None:
             filter_values = tm_scores
-            if patch!=None:
-                z_start, y_start, x_start = patch[0]
-                size_         = patch[1]
-                x             = filter_values[z_start:z_start+size_[0], y_start:y_start+size_[1], x_start:x_start+size_[2]]
-            x                 = torch.from_numpy(x).float().unsqueeze(0).to(device_)
-            classified        = x
-            x                 = x.permute(1, 2, 3, 0)
+
+            z_start, y_start, x_start = patch[0]
+            size_ = patch[1]
+            x = filter_values[
+                z_start : z_start + size_[0],
+                y_start : y_start + size_[1],
+                x_start : x_start + size_[2],
+            ]
+
+            x = torch.from_numpy(x).float().unsqueeze(0)
+            classified = x
+            x = x.permute(1, 2, 3, 0)
             print("Chosen to use TM scores as features")
-        except:
+        else:
             model = torch.load(
                 io.BytesIO(
                     requests.get(
@@ -242,7 +253,8 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
 
         x = filter_values.permute(1, 2, 0)
 
-    x = x.detach().cpu().numpy()
+    if isinstance(x, torch.Tensor):
+        x = x.detach().cpu().numpy()
 
     if only_feature:
         return x
@@ -256,13 +268,16 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores = None, patch
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
 
-    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...] 
-    xy_positive = xy[[np.array(score).argsort()[-n_part*10:][::-1]], :][0, ...] #choose top 1000
+    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]
+    xy_positive = xy[[np.array(score).argsort()[-n_part * 10 :][::-1]], :][
+        0, ...
+    ]  # choose top 1000
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))
     p_xy = (xy_negative, xy_positive)
-    
+
     return x, y, p_xy
+
 
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:

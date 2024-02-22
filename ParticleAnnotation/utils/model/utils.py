@@ -14,9 +14,9 @@ def divide_grid(array, size):
     # Calculate the number of divisions along each axis
     nx, ny, nz = x // size, y // size, z // size
 
-    nx = nx + 1 if x%size != 0 else nx
-    ny = ny + 1 if y%size != 0 else ny
-    nz = nz + 1 if z%size != 0 else nz
+    nx = nx + 1 if x % size != 0 else nx
+    ny = ny + 1 if y % size != 0 else ny
+    nz = nz + 1 if z % size != 0 else nz
 
     # Initialize a list to hold the coordinates
     coordinates = []
@@ -43,9 +43,24 @@ def correct_coord(data, patch_corner, normalize):
 
     return data
 
-def calc_iou(box_1,box_2, size_):
-    box_11 = (box_1[0]-size_//2, box_1[1]-size_//2, box_1[2]-size_//2, box_1[0]+size_//2, box_1[1]+size_//2, box_1[2]+size_//2)
-    box_22 = (box_2[0]-size_//2, box_2[1]-size_//2, box_2[2]-size_//2, box_2[0]+size_//2, box_2[1]+size_//2, box_2[2]+size_//2)
+
+def calc_iou(box_1, box_2, size_):
+    box_11 = (
+        box_1[0] - size_ // 2,
+        box_1[1] - size_ // 2,
+        box_1[2] - size_ // 2,
+        box_1[0] + size_ // 2,
+        box_1[1] + size_ // 2,
+        box_1[2] + size_ // 2,
+    )
+    box_22 = (
+        box_2[0] - size_ // 2,
+        box_2[1] - size_ // 2,
+        box_2[2] - size_ // 2,
+        box_2[0] + size_ // 2,
+        box_2[1] + size_ // 2,
+        box_2[2] + size_ // 2,
+    )
     x1 = max(box_11[0], box_22[0])
     y1 = max(box_11[1], box_22[1])
     z1 = max(box_11[2], box_22[2])
@@ -59,6 +74,7 @@ def calc_iou(box_1,box_2, size_):
     iou = intersection / (box1_vol + box2_vol - intersection)
 
     return iou
+
 
 def get_random_patch(img, size_: int, chosen_particles=None):
     z, y, x = img.shape
@@ -88,7 +104,7 @@ def get_random_patch(img, size_: int, chosen_particles=None):
         if img.shape[2] > size_:
             x_start = max(0, min(center_x - size_ // 2, x - size_))
             x_start = int(x_start)
-        
+
         # [TO-DO] add non-max suppression here to choose the best centers
         idx = np.where((chosen_particles == center).all(axis=1))
         chosen_particles = np.delete(chosen_particles, idx, axis=0)
@@ -98,7 +114,7 @@ def get_random_patch(img, size_: int, chosen_particles=None):
         z_end = z
     else:
         z_end = z_start + size_
-    
+
     if img.shape[1] <= size_:
         y_start = 0
         y_end = y
@@ -107,14 +123,15 @@ def get_random_patch(img, size_: int, chosen_particles=None):
 
     if img.shape[2] <= size_:
         x_start = 0
-        x_end = x 
+        x_end = x
     else:
         x_end = x_start + size_
-    
+
     # Extract the patch from the array
     patch = img[z_start:z_end, y_start:y_end, x_start:x_end]
 
     return patch, (z_start, y_start, x_start), chosen_particles
+
 
 def sobel_filter(img):
     # Define Sobel operator kernels.
