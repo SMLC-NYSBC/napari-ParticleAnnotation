@@ -120,8 +120,9 @@ class MultipleViewerWidget(QSplitter):
         # Update the points layer in the target viewer with the mapped position
         if len(points) == 2:
             points = (0, points[0], points[1])
+        print("Mouse position is - ", self.points_layer.data)
         self.points_layer.data = [points]
-
+        
         # Update zoom
         self.viewer_model1.camera.zoom = 10
         self.viewer_model1.camera.center = points
@@ -481,7 +482,8 @@ class AnnotationWidgetv2(Container):
             tm_scores = load_template(self.image_layer_name, self.temp_id.value)
 
             # downsample tm_scores
-            tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
+            # tm_scores = downsample(tm_scores.squeeze(0), factor=factor)
+            tm_scores = downsample(tm_scores, factor=factor)
             tm_scores, _ = normalize(tm_scores.copy(), method="affine", use_cuda=False)
             self.tm_scores = tm_scores
             self.create_image_layer(self.tm_scores)
@@ -489,36 +491,64 @@ class AnnotationWidgetv2(Container):
                 self.img_process, int(self.patch_size.value), self.chosen_particles
             )
             self.shape = patch.shape
-            self.x, _, (p_label_neg, p_label_pos) = initialize_model(
-                patch, tm_scores=self.tm_scores, patch=[self.patch_corner, self.shape]
+            # self.x, _, (p_label_neg, p_label_pos) = initialize_model(
+            #     patch, tm_scores=self.tm_scores, patch=[self.patch_corner, self.shape]
+            # )
+            self.x = initialize_model(
+                patch,
+                tm_scores=self.tm_scores,
+                patch=[self.patch_corner, self.shape],
+                only_feature=True
             )
-            # self.x, _, p_label = initialize_model(patch)
 
-            p_label_neg[:, 1:] = correct_coord(
-                p_label_neg[:, 1:], self.patch_corner, True
-            )
-            p_label_pos[:, 1:] = correct_coord(
-                p_label_pos[:, 1:], self.patch_corner, True
-            )
+            # p_label_neg[:, 1:] = correct_coord(
+            #     p_label_neg[:, 1:], self.patch_corner, True
+            # )
+            # p_label_pos[:, 1:] = correct_coord(
+            #     p_label_pos[:, 1:], self.patch_corner, True
+            # )
         else:
             self.x, _, (p_label_neg, p_label_pos) = initialize_model(self.img_process)
             self.patch_corner = None
         self.x = torch.from_numpy(self.x)
+        
+        print("Shape of x is - ", self.x.shape)
 
-        """ Initialize model and pick initial particles """
-        self.napari_viewer.add_points(
-            p_label_pos[:, 1:],
-            name=f"Predicted_Labels",
-            properties={"confidence": p_label_pos[:, 0]},
-            edge_color="black",
-            face_color="confidence",
-            face_colormap="viridis",
-            edge_width=0.1,
-            symbol="disc",
-            size=5,
+        self.model = BinaryLogisticRegression(
+            n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
         )
 
-        self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
+        self.proposals = []
+        self.cur_proposal_index, self.proposals = rank_candidate_locations(
+                self.model, self.x, self.shape, self.proposals, id_=1
+            )
+
+        # Add point which model are least certain about
+        points = np.vstack(self.proposals[-10:])
+        labels = np.zeros((points.shape[0],))
+        labels[:] = 2
+
+        # pos_points = np.vstack(self.proposals[:10])
+
+        self.create_point_layer(points.astype(np.float64), labels)
+
+        """ Initialize model and pick initial particles """
+        # # add positives to the right column
+        # self.napari_viewer.add_points(
+        #     pos_points,
+        #     name=f"Predicted_Labels",
+        #     properties={"confidence": 1},
+        #     edge_color="black",
+        #     face_color="confidence",
+        #     face_colormap="viridis",
+        #     edge_width=0.1,
+        #     symbol="disc",
+        #     size=5,
+        # )
+
+        # print("Shape of pos_points is - ", pos_points.shape)
+
+        # self.create_point_layer(p_label_neg[:, 1:], p_label_neg[:, 0])
         self.activate_click = True
 
         try:
@@ -533,9 +563,6 @@ class AnnotationWidgetv2(Container):
         self.y = label_points_to_mask([], self.shape, self.box_size.value)
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
-        )
-        self.model = BinaryLogisticRegression(
-            n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
         )
 
         self.model.fit(
@@ -634,17 +661,20 @@ class AnnotationWidgetv2(Container):
                 logits = self.model(torch.from_numpy(self.x)).reshape(*self.shape)
             logits = logits.cpu().detach().numpy()
 
-            max_filter = maximum_filter(logits, size=self.box_size.value)
-            peaks = logits - max_filter
-            peaks = np.where(peaks == 0)
-            peaks = np.stack(peaks, axis=-1)
-            if peaks.shape[1] == 3:
-                peak_logits = logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
-            else:
-                peak_logits = logits[peaks[:, 0], peaks[:, 1]]
-            peaks_k = np.argsort(peak_logits)[:-10]
-            peaks = peaks[peaks_k, :]
-            peak_logits = peak_logits[peaks_k, :]
+            """Get Entropy"""
+            # rank_candidate_locations()
+            
+            # max_filter = maximum_filter(logits, size=self.box_size.value)
+            # peaks = logits - max_filter
+            # peaks = np.where(peaks == 0)
+            # peaks = np.stack(peaks, axis=-1)
+            # if peaks.shape[1] == 3:
+            #     peak_logits = logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
+            # else:
+            #     peak_logits = logits[peaks[:, 0], peaks[:, 1]]
+            # peaks_k = np.argsort(peak_logits)[:-10]
+            # peaks = peaks[peaks_k, :]
+            # peak_logits = peak_logits[peaks_k, :]
 
             # attempt to remove the old layer
             try:

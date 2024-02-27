@@ -195,7 +195,6 @@ def update_true_labels(true_labels, points_layer, label):
 
     return true_labels
 
-
 def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=None):
     device_ = get_device()
 
@@ -205,13 +204,16 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
 
             z_start, y_start, x_start = patch[0]
             size_ = patch[1]
-            x = filter_values[
+            print("Shape of filter values", filter_values.shape)
+            x = filter_values[:,
                 z_start : z_start + size_[0],
                 y_start : y_start + size_[1],
                 x_start : x_start + size_[2],
             ]
-
-            x = torch.from_numpy(x).float().unsqueeze(0)
+            # print(x.shape)
+            # x = torch.from_numpy(x).float().unsqueeze(0)
+            x = torch.from_numpy(x).float()
+            # add a classifier layer here for the tm-scores.
             classified = x
             x = x.permute(1, 2, 3, 0)
             print("Chosen to use TM scores as features")
@@ -256,20 +258,21 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
     if isinstance(x, torch.Tensor):
         x = x.detach().cpu().numpy()
 
+    x = x.reshape(-1, x.shape[-1])  # L, C
     if only_feature:
         return x
 
     if isinstance(classified, torch.Tensor):
         classified = classified.detach().cpu().numpy()
 
-    x = x.reshape(-1, x.shape[-1])  # L, C
     y = torch.zeros(len(x)) + np.nan
 
+    # print(classified.shape)
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
 
     xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]
-    xy_positive = xy[[np.array(score).argsort()[-n_part * 10 :][::-1]], :][
+    xy_positive = xy[[np.array(score).argsort()[-n_part :][::-1]], :][
         0, ...
     ]  # choose top 1000
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))

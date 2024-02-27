@@ -54,14 +54,18 @@ def load_template(path, temp_name):
 
     """
     device_ = get_device()
-    temp_name = temp_name.upper()
     template_name = re.search(r"ts(\d{1,3})", path).group(0)
+    temp_name = temp_name.upper()
 
     root = f"/h2/njain/data/tomonet_template_matched"
     print(f"Found template name as - {template_name}")
     try:
         template_score = torch.load(
-            f"{root}/{template_name}/scores_{temp_name}.pt", map_location=device_
+            f"{root}/{template_name}/scores_downsampled_{temp_name}.pt", map_location=device_
+        ).numpy()
+        # load ice scores
+        ice_score = torch.load(
+            f"{root}/{template_name}/scores_downsampled_ice.pt", map_location=device_
         ).numpy()
         print("Loaded template scores")
     except:
@@ -71,9 +75,14 @@ def load_template(path, temp_name):
         template_score = torch.load(
             f"{root}/{template_name}/scores_7A4M.pt", map_location=device_
         ).numpy()
+        ice_score = torch.load(
+            f"{root}/{template_name}/scores_ice.pt", map_location=device_
+        ).numpy()
+
+    # concatenate the scores template and ice
+    template_score = np.concatenate([template_score, ice_score], axis=0)
 
     return template_score
-
 
 def load_image(path, aws=False):
     """
@@ -108,6 +117,8 @@ def load_image(path, aws=False):
             layer_data.append((np.abs(data), {"name": "amplitude"}, "image"))
             layer_data.append((np.angle(data), {"name": "phase"}, "image"))
         else:
+            # [TO-DO] Remove this after testing
+            data = data[0:250, data.shape[1]//2-128:data.shape[1]//2+128, data.shape[2]//2-128:data.shape[2]//2+128]
             layer_data.append((data, {}, "image"))
 
     print(f"Loaded {_path} with {px} pixel size")
