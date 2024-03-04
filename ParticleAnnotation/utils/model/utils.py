@@ -78,7 +78,6 @@ def calc_iou(box_1, box_2, size_):
 
 def get_random_patch(img, size_: int, chosen_particles=None):
     z, y, x = img.shape
-    print(f"image shape is - {img.shape}")
     if chosen_particles is None or chosen_particles.shape[0] == 0:
         if img.shape[0] > size_:
             z_start = np.random.randint(0, z - size_ + 1)
@@ -90,7 +89,6 @@ def get_random_patch(img, size_: int, chosen_particles=None):
     else:
         center_idx = np.random.randint(0, chosen_particles.shape[0])
         center = chosen_particles[center_idx]
-        print(f"center is - {center}")
         center_z, center_y, center_x = center
 
         if img.shape[0] > size_:

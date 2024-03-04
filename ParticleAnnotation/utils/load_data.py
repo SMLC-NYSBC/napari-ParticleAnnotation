@@ -4,11 +4,13 @@ from collections import namedtuple
 import numpy as np
 import tifffile.tifffile as tiff
 import torch
+import starfile
 import torch.nn.functional as F
 from scipy import ndimage
 import re
-from ParticleAnnotation.utils.model.utils import get_device
-
+from ParticleAnnotation.utils.model.utils import (
+    get_device
+)
 
 def downsample(img: np.ndarray, factor=8):
     """Downsample 2d/3d array using fourier transform"""
@@ -41,6 +43,76 @@ def downsample(img: np.ndarray, factor=8):
         return np.fft.irfft2(fft, s=shape).astype(img.dtype)
     return img.astype(img.dtype)
 
+def load_coordinates(path):
+    """
+    Load coordinates from a file.      
+    """
+    if path.endswith(".csv"):
+        data = np.genfromtxt(path, delimiter=",", dtype=float)
+
+    elif path.endswith(".star"):
+        # Implement reading of .star file
+        data = starfile.read(path)
+        x = data["rlnCoordinateX"]
+        y = data["rlnCoordinateY"]
+        z = data["rlnCoordinateZ"]
+        data = np.column_stack((x, y, z))
+        return None, None
+    
+    elif path.endswith(".txt"):
+        data = np.genfromtxt(path, delimiter=",", dtype=float)
+
+    elif path.endswith(".npy"):
+        data = np.load(path)
+
+    elif path.endswith(".tbl"):
+        # Implement reading of .tbl file
+        data = np.genfromtxt(path, delimiter=",", dtype=float)
+        # this will have nans where there are strings
+        return None, None
+    
+    else:
+        print("Could not load coordinates from file")
+        return None, None
+
+    data = data[~np.isnan(data).any(axis=1)]
+    # if data is x,y,z just return
+    if data.shape[1] == 3:
+        labels = np.ones(data.shape[0])
+
+    if data.shape[1] == 4:
+        # labels would either be the first or the last column
+        if np.all(data[:, 3] == data[:, 3].astype(int)):
+            labels = data[:, 3].astype(int)
+            data = data[:, 0:3]
+        else:
+            if np.all(data[:, 0] == data[:, 0].astype(int)):
+                data = data[:, 1:4]
+                labels = data[:, 0].astype(int)
+            else:
+                labels = np.ones(data.shape[0])
+                data = data[:, 0:3]
+
+    # if data is index,x,y,z,label - this is how napari saves!
+    if data.shape[1] == 5:
+        labels = data[:, 4]
+        # check if the labels are integers
+        if np.all(labels == labels.astype(int)):
+            labels = labels.astype(int)
+        else:
+            labels = np.ones(data.shape[0])
+        data = data[:, 1:4]
+        
+    return data, labels
+    
+def save_coordinates(path, data):
+    """
+    Save coordinates to a file.      
+    """
+    # add header
+    header = ["axis_0","axis_1","axis_2"]
+    data = np.vstack([header, data])
+    np.savetxt(path, data, delimiter=",", fmt='%s')
 
 def load_template(path, temp_name):
     """
@@ -54,34 +126,27 @@ def load_template(path, temp_name):
 
     """
     device_ = get_device()
-    template_name = re.search(r"ts(\d{1,3})", path).group(0)
-    temp_name = temp_name.upper()
+    temp_name     = temp_name.upper()
+    template_name = re.search(r'ts(\d{1,3})',path).group(0)
 
-    root = f"/h2/njain/data/tomonet_template_matched"
+    root = f'/h2/njain/data/tomonet_template_matched'
     print(f"Found template name as - {template_name}")
     try:
         template_score = torch.load(
             f"{root}/{template_name}/scores_downsampled_{temp_name}.pt", map_location=device_
         ).numpy()
-        # load ice scores
-        ice_score = torch.load(
-            f"{root}/{template_name}/scores_downsampled_ice.pt", map_location=device_
-        ).numpy()
+        # flip the template score along the y-axis 
+        ice_score = torch.load(f"{root}/{template_name}/scores_downsampled_ice.pt", map_location=device_).numpy()
+        template_score = np.concatenate([template_score, ice_score], axis=0)
+        template_score = np.flip(template_score, axis=2)
         print("Loaded template scores")
     except:
-        print(
-            f"Could not find template {temp_name} in {template_name}, Defaulting to Apof"
-        )
-        template_score = torch.load(
-            f"{root}/{template_name}/scores_7A4M.pt", map_location=device_
-        ).numpy()
-        ice_score = torch.load(
-            f"{root}/{template_name}/scores_ice.pt", map_location=device_
-        ).numpy()
-
-    # concatenate the scores template and ice
-    template_score = np.concatenate([template_score, ice_score], axis=0)
-
+        print(f"Could not find template {temp_name} in {template_name}, Defaulting to Apof")
+        template_score = torch.load(f"{root}/{template_name}/scores_7A4M.pt", map_location = device_).numpy()
+        ice_score = torch.load(f"{root}/{template_name}/scores_downsampled_ice.pt", map_location=device_).numpy()
+        template_score = np.concatenate([template_score, ice_score], axis=0)
+        template_score = np.flip(template_score, axis=2)
+    
     return template_score
 
 def load_image(path, aws=False):
@@ -111,19 +176,17 @@ def load_image(path, aws=False):
 
         if aws:
             return data
-
+    
         # Append two layers if the data type is complex
         if np.issubdtype(data.dtype, np.complexfloating):
             layer_data.append((np.abs(data), {"name": "amplitude"}, "image"))
             layer_data.append((np.angle(data), {"name": "phase"}, "image"))
         else:
-            # [TO-DO] Remove this after testing
             data = data[0:250, data.shape[1]//2-128:data.shape[1]//2+128, data.shape[2]//2-128:data.shape[2]//2+128]
             layer_data.append((data, {}, "image"))
 
     print(f"Loaded {_path} with {px} pixel size")
     return layer_data
-
 
 def load_data_aws(image):
     layer_data = []

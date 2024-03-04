@@ -204,16 +204,12 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
 
             z_start, y_start, x_start = patch[0]
             size_ = patch[1]
-            print("Shape of filter values", filter_values.shape)
             x = filter_values[:,
                 z_start : z_start + size_[0],
                 y_start : y_start + size_[1],
                 x_start : x_start + size_[2],
             ]
-            # print(x.shape)
-            # x = torch.from_numpy(x).float().unsqueeze(0)
-            x = torch.from_numpy(x).float()
-            # add a classifier layer here for the tm-scores.
+            x = torch.from_numpy(x.copy()).float()
             classified = x
             x = x.permute(1, 2, 3, 0)
             print("Chosen to use TM scores as features")
@@ -266,8 +262,6 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
         classified = classified.detach().cpu().numpy()
 
     y = torch.zeros(len(x)) + np.nan
-
-    # print(classified.shape)
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
 
@@ -285,8 +279,11 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
         self.device = get_device()
-        self.weights = torch.zeros(n_features, device=self.device)
-        self.bias = torch.zeros(1, device=self.device)
+        # self.weights = torch.zeros(n_features, device=self.device)
+        # random initialization
+        self.weights = torch.randn(n_features, device=self.device)
+        # self.bias = torch.zeros(1, device=self.device)
+        self.bias = torch.randn(1, device=self.device)
         self.l2 = l2
         self.pi = pi
         self.pi_logit = np.log(pi) - np.log1p(-pi)
@@ -322,8 +319,7 @@ class BinaryLogisticRegression:
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).to(self.device)
         else:
-            x = x.to(self.device)
-
+            x = x.to(self.device)        
         return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):
