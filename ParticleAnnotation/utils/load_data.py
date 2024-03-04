@@ -127,23 +127,24 @@ def load_template(path, temp_name):
     """
     device_ = get_device()
     temp_name     = temp_name.upper()
-    template_name = re.search(r'ts(\d{1,3})',path).group(0)
+    tomo_name = re.search(r'ts(\d{1,3})',path).group(0)
 
-    root = f'/h2/njain/data/tomonet_template_matched'
-    print(f"Found template name as - {template_name}")
+    # [TO-DO] Remove downsampling after testing
+    root = f'/h2/njain/data/tomonet_template_matched/downsampled'
+    print(f"Found template name as - {tomo_name}")
     try:
         template_score = torch.load(
-            f"{root}/{template_name}/scores_downsampled_{temp_name}.pt", map_location=device_
+            f"{root}/{tomo_name}/scores_{temp_name}.pt", map_location=device_
         ).numpy()
         # flip the template score along the y-axis 
-        ice_score = torch.load(f"{root}/{template_name}/scores_downsampled_ice.pt", map_location=device_).numpy()
+        ice_score = torch.load(f"{root}/{tomo_name}/scores_ice.pt", map_location=device_).numpy()
         template_score = np.concatenate([template_score, ice_score], axis=0)
         template_score = np.flip(template_score, axis=2)
         print("Loaded template scores")
     except:
-        print(f"Could not find template {temp_name} in {template_name}, Defaulting to Apof")
-        template_score = torch.load(f"{root}/{template_name}/scores_7A4M.pt", map_location = device_).numpy()
-        ice_score = torch.load(f"{root}/{template_name}/scores_downsampled_ice.pt", map_location=device_).numpy()
+        print(f"Could not find template {temp_name} in {tomo_name}, Defaulting to Apof")
+        template_score = torch.load(f"{root}/{tomo_name}/scores_7A4M.pt", map_location = device_).numpy()
+        ice_score = torch.load(f"{root}/{tomo_name}/scores_ice.pt", map_location=device_).numpy()
         template_score = np.concatenate([template_score, ice_score], axis=0)
         template_score = np.flip(template_score, axis=2)
     
@@ -182,7 +183,7 @@ def load_image(path, aws=False):
             layer_data.append((np.abs(data), {"name": "amplitude"}, "image"))
             layer_data.append((np.angle(data), {"name": "phase"}, "image"))
         else:
-            data = data[0:250, data.shape[1]//2-128:data.shape[1]//2+128, data.shape[2]//2-128:data.shape[2]//2+128]
+            # data = data[0:250, data.shape[1]//2-128:data.shape[1]//2+128, data.shape[2]//2-128:data.shape[2]//2+128]
             layer_data.append((data, {}, "image"))
 
     print(f"Loaded {_path} with {px} pixel size")
