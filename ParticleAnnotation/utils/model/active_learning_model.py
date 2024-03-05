@@ -51,12 +51,12 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
                 patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
             else:
                 z_start, y_start, x_start = i[0], i[1], i[2]
-                patch = tm_scores[
+                patch = tm_scores[:,
                     z_start : z_start + offset,
                     y_start : y_start + offset,
                     x_start : x_start + offset,
                 ]
-                patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
+                patch = torch.from_numpy(patch).float().to(device_)
                 patch = patch.permute(1, 2, 3, 0)
                 patch = patch.reshape(-1, patch.shape[-1])
             logits = model(patch).reshape(*shape_)
