@@ -130,13 +130,15 @@ def load_template(path, temp_name):
     tomo_name = re.search(r'ts(\d{1,3})',path).group(0)
 
     # [TO-DO] Remove downsampling after testing
-    root = f'/h2/njain/data/tomonet_template_matched/downsampled'
+    # root = f'/h2/njain/data/tomonet_template_matched/downsampled'
+    root = f"/Users/navyajain/napari-ParticleAnnotation-1/test_images/"
     print(f"Found template name as - {tomo_name}")
     try:
         template_score = torch.load(
             f"{root}/{tomo_name}/scores_{temp_name}.pt", map_location=device_
         ).numpy()
         # flip the template score along the y-axis 
+        ice_files = [f for f in os.listdir(f"{root}/{tomo_name}") if f.endswith(".pt")]
         ice_score = torch.load(f"{root}/{tomo_name}/scores_ice.pt", map_location=device_).numpy()
         template_score = np.concatenate([template_score, ice_score], axis=0)
         template_score = np.flip(template_score, axis=2)
