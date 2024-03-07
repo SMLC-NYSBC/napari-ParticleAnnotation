@@ -1,5 +1,6 @@
 import struct
 from collections import namedtuple
+import os
 
 import numpy as np
 import tifffile.tifffile as tiff
@@ -8,6 +9,7 @@ import starfile
 import torch.nn.functional as F
 import re
 from ParticleAnnotation.utils.model.utils import get_device
+from qtpy.QtWidgets import QFileDialog
 
 
 def downsample(img: np.ndarray, factor=8):
@@ -132,27 +134,31 @@ def load_template(path, temp_name):
 
     # [TO-DO] Remove downsampling after testing
     # root = f'/h2/njain/data/tomonet_template_matched/downsampled'
-    root = f"/Users/navyajain/napari-ParticleAnnotation-1/test_images/"
+    root = QFileDialog.getExistingDirectory(None, "Select a Directory with Scores")
+    # root = f"/Users/navyajain/napari-ParticleAnnotation-1/test_images/"
     print(f"Found template name as - {tomo_name}")
     try:
         template_score = torch.load(
-            f"{root}/{tomo_name}/scores_{temp_name}.pt", map_location=device_
+            f"{root}/scores_{temp_name}.pt", map_location=device_
         ).numpy()
         # flip the template score along the y-axis
-        ice_files = [f for f in os.listdir(f"{root}/{tomo_name}") if f.endswith(".pt")]
-        ice_score = torch.load(
-            f"{root}/{tomo_name}/scores_ice.pt", map_location=device_
-        ).numpy()
-        template_score = np.concatenate([template_score, ice_score], axis=0)
+        ice_files = [f for f in os.listdir(f"{root}") if f.endswith(".pt")]
+        ice_score = [torch.load(
+            f"{root}/{i}", map_location=device_
+        ).numpy() for i in ice_files]
+
+        template_score = np.concatenate([template_score[None, :],
+                                         np.concatenate([ice_score], axis=0)],
+                                        axis=0)
         template_score = np.flip(template_score, axis=2)
         print("Loaded template scores")
     except:
         print(f"Could not find template {temp_name} in {tomo_name}, Defaulting to Apof")
         template_score = torch.load(
-            f"{root}/{tomo_name}/scores_7A4M.pt", map_location=device_
+            f"{root}/scores_7A4M.pt", map_location=device_
         ).numpy()
         ice_score = torch.load(
-            f"{root}/{tomo_name}/scores_ice.pt", map_location=device_
+            f"{root}/scores_ice.pt", map_location=device_
         ).numpy()
         template_score = np.concatenate([template_score, ice_score], axis=0)
         template_score = np.flip(template_score, axis=2)

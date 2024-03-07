@@ -315,7 +315,7 @@ class AnnotationWidgetv2(Container):
         self.save_ALM = PushButton(name="Save model")
         self.save_ALM.clicked.connect(self._save_model)
 
-        spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
+        # spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
         self.sampling_layer = LineEdit(name="Pixel", value="8.0")
         self.box_size = LineEdit(name="Box", value="5")
         self.patch_size = LineEdit(name="Patch", value="128")
@@ -346,7 +346,7 @@ class AnnotationWidgetv2(Container):
         self.import_ = PushButton(name="Import Coordinates")
         self.import_.clicked.connect(self._import_coordinates)
 
-        spacer2 = Label(value="------ Step 2: Initialize Active learning model -------")
+        # spacer2 = Label(value="------ Step 2: Initialize Active learning model -------")
         self.patch = PushButton(name="Change Patch")
         self.patch.clicked.connect(self._change_patch)
         self.refresh = PushButton(name="Retrain")
@@ -354,7 +354,7 @@ class AnnotationWidgetv2(Container):
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
-        spacer3 = Label(value="------------ Step 3: Visualize labels tool ------------")
+        # spacer3 = Label(value="------------ Step 3: Visualize labels tool ------------")
         self.slide_pred = FloatSlider(
             name="Filter Particle",
             min=0,
@@ -376,7 +376,7 @@ class AnnotationWidgetv2(Container):
         self.reset_view = PushButton(name="Reset View")
         self.reset_view.clicked.connect(self._reset_view)
 
-        spacer4 = Label(value="------------ Step 4: Manual labels tool ------------")
+        # spacer4 = Label(value="------------ Step 4: Manual labels tool ------------")
         self.manual_label = PushButton(name="Gaussian pre-process")
         self.manual_label.clicked.connect(self.initialize_labeling)
 
@@ -414,16 +414,16 @@ class AnnotationWidgetv2(Container):
             )
         )
         # self.insert(0, layout_model)
-        self.insert(1, spacer1)
-        self.insert(2, layer_init)
-        self.insert(3, spacer2)
-        self.insert(4, layer_AL)
-        self.insert(5, spacer3)
-        self.insert(6, layer_slider)
-        self.insert(7, layer_visual1)
-        self.insert(8, layer_visual2)
-        self.insert(9, spacer4)
-        self.insert(10, label)
+        # self.insert(1, spacer1)
+        self.insert(1, layer_init)
+        # self.insert(3, spacer2)
+        self.insert(2, layer_AL)
+        # self.insert(5, spacer3)
+        self.insert(3, layer_slider)
+        self.insert(4, layer_visual1)
+        self.insert(5, layer_visual2)
+        # self.insert(9, spacer4)
+        self.insert(6, label)
 
         device_ = get_device()
         show_info(f"Active learning model runs on: {device_}")
@@ -493,7 +493,6 @@ class AnnotationWidgetv2(Container):
         except:
             show_info("Please load and select image!")
             return
-
         img = self.napari_viewer.layers[active_layer_name]
 
         """Down_sample dataset"""
