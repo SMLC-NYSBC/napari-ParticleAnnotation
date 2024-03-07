@@ -51,7 +51,8 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
                 patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
             else:
                 z_start, y_start, x_start = i[0], i[1], i[2]
-                patch = tm_scores[:,
+                patch = tm_scores[
+                    :,
                     z_start : z_start + offset,
                     y_start : y_start + offset,
                     x_start : x_start + offset,
@@ -195,6 +196,7 @@ def update_true_labels(true_labels, points_layer, label):
 
     return true_labels
 
+
 def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=None):
     device_ = get_device()
 
@@ -204,7 +206,8 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
 
             z_start, y_start, x_start = patch[0]
             size_ = patch[1]
-            x = filter_values[:,
+            x = filter_values[
+                :,
                 z_start : z_start + size_[0],
                 y_start : y_start + size_[1],
                 x_start : x_start + size_[2],
@@ -266,7 +269,7 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
     xy, score = find_peaks(classified[0, :], with_score=True)
 
     xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]
-    xy_positive = xy[[np.array(score).argsort()[-n_part :][::-1]], :][
+    xy_positive = xy[[np.array(score).argsort()[-n_part:][::-1]], :][
         0, ...
     ]  # choose top 1000
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
@@ -319,7 +322,7 @@ class BinaryLogisticRegression:
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x).to(self.device)
         else:
-            x = x.to(self.device)        
+            x = x.to(self.device)
         return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):

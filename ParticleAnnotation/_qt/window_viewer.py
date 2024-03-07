@@ -39,7 +39,12 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     update_true_labels,
 )
 
-from ParticleAnnotation.utils.load_data import downsample, load_template, load_coordinates, save_coordinates
+from ParticleAnnotation.utils.load_data import (
+    downsample,
+    load_template,
+    load_coordinates,
+    save_coordinates,
+)
 from ParticleAnnotation.utils.model.utils import (
     rank_candidate_locations,
     get_device,
@@ -121,7 +126,7 @@ class MultipleViewerWidget(QSplitter):
         if len(points) == 2:
             points = (0, points[0], points[1])
         self.points_layer.data = [points]
-        
+
         # Update zoom
         self.viewer_model1.camera.zoom = 10
         self.viewer_model1.camera.center = points
@@ -401,11 +406,11 @@ class AnnotationWidgetv2(Container):
         layer_slider = HBox(widgets=(self.slide_pred,))
         layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
         layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
-        
+
         label = VBox(
             widgets=(
-            HBox(widgets=(self.export, self.import_)),
-            HBox(widgets=(self.manual_label,)),
+                HBox(widgets=(self.export, self.import_)),
+                HBox(widgets=(self.manual_label,)),
             )
         )
         # self.insert(0, layout_model)
@@ -526,7 +531,7 @@ class AnnotationWidgetv2(Container):
                 patch,
                 tm_scores=self.tm_scores,
                 patch=[self.patch_corner, self.shape],
-                only_feature=True
+                only_feature=True,
             )
         else:
             self.x, _, (p_label_neg, p_label_pos) = initialize_model(self.img_process)
@@ -539,8 +544,8 @@ class AnnotationWidgetv2(Container):
 
         self.proposals = []
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
-                self.model, self.x, self.shape, self.proposals, id_=1
-            )
+            self.model, self.x, self.shape, self.proposals, id_=1
+        )
 
         # Add point which model are least certain about
         points = np.vstack(self.proposals[-10:])
@@ -653,7 +658,7 @@ class AnnotationWidgetv2(Container):
                 patch,
                 tm_scores=self.tm_scores,
                 patch=[self.patch_corner, self.shape],
-                only_feature=True
+                only_feature=True,
             )
             self.x = torch.from_numpy(self.x)
 
@@ -666,8 +671,8 @@ class AnnotationWidgetv2(Container):
             # rank_candidate_locations()
             self.proposals = []
             self.cur_proposal_index, self.proposals = rank_candidate_locations(
-                    self.model, self.x, self.shape, self.proposals, id_=1
-                )
+                self.model, self.x, self.shape, self.proposals, id_=1
+            )
 
             # Add point which model are least certain about
             points = np.vstack(self.proposals[-10:])
