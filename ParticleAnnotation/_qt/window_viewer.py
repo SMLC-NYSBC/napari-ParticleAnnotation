@@ -555,8 +555,9 @@ class AnnotationWidgetv2(Container):
         )
 
         # Add point which model are least certain about
-        idx = np.random.choice(len(self.proposals), 10, replace=False)
-        points = np.array([self.proposals[i] for i in idx])
+        # idx = np.random.choice(len(self.proposals), 10, replace=False)
+        # points = np.array([self.proposals[i] for i in idx])
+        points = np.vstack(self.proposals[-10:])
         labels = np.zeros((points.shape[0],))
         labels[:] = 2
 
@@ -914,6 +915,8 @@ class AnnotationWidgetv2(Container):
                 int(self.patch_size.value),
                 tm_scores=self.tm_scores,
             )
+
+            # [UNCOMMENT THIS AFTER TESTING]
 
             # add self.true_labels[:,1:] to the peaks
             max_logits = np.max(peak_logits)
