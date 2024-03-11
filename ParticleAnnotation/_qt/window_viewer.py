@@ -39,7 +39,12 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     update_true_labels,
 )
 
-from ParticleAnnotation.utils.load_data import downsample, load_template, load_coordinates, save_coordinates
+from ParticleAnnotation.utils.load_data import (
+    downsample,
+    load_template,
+    load_coordinates,
+    save_coordinates,
+)
 from ParticleAnnotation.utils.model.utils import (
     rank_candidate_locations,
     get_device,
@@ -121,7 +126,7 @@ class MultipleViewerWidget(QSplitter):
         if len(points) == 2:
             points = (0, points[0], points[1])
         self.points_layer.data = [points]
-        
+
         # Update zoom
         self.viewer_model1.camera.zoom = 10
         self.viewer_model1.camera.center = points
@@ -310,7 +315,7 @@ class AnnotationWidgetv2(Container):
         self.save_ALM = PushButton(name="Save model")
         self.save_ALM.clicked.connect(self._save_model)
 
-        spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
+        # spacer1 = Label(value="------- Step 1: Initialize New Dataset ------")
         self.sampling_layer = LineEdit(name="Pixel", value="8.0")
         self.box_size = LineEdit(name="Box", value="5")
         self.patch_size = LineEdit(name="Patch", value="128")
@@ -341,7 +346,7 @@ class AnnotationWidgetv2(Container):
         self.import_ = PushButton(name="Import Coordinates")
         self.import_.clicked.connect(self._import_coordinates)
 
-        spacer2 = Label(value="------ Step 2: Initialize Active learning model -------")
+        # spacer2 = Label(value="------ Step 2: Initialize Active learning model -------")
         self.patch = PushButton(name="Change Patch")
         self.patch.clicked.connect(self._change_patch)
         self.refresh = PushButton(name="Retrain")
@@ -349,7 +354,7 @@ class AnnotationWidgetv2(Container):
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
-        spacer3 = Label(value="------------ Step 3: Visualize labels tool ------------")
+        # spacer3 = Label(value="------------ Step 3: Visualize labels tool ------------")
         self.slide_pred = FloatSlider(
             name="Filter Particle",
             min=0,
@@ -371,7 +376,7 @@ class AnnotationWidgetv2(Container):
         self.reset_view = PushButton(name="Reset View")
         self.reset_view.clicked.connect(self._reset_view)
 
-        spacer4 = Label(value="------------ Step 4: Manual labels tool ------------")
+        # spacer4 = Label(value="------------ Step 4: Manual labels tool ------------")
         self.manual_label = PushButton(name="Gaussian pre-process")
         self.manual_label.clicked.connect(self.initialize_labeling)
 
@@ -401,24 +406,24 @@ class AnnotationWidgetv2(Container):
         layer_slider = HBox(widgets=(self.slide_pred,))
         layer_visual1 = HBox(widgets=(self.points_layer, self.component_selector))
         layer_visual2 = HBox(widgets=(self.zoom_factor, self.reset_view))
-        
+
         label = VBox(
             widgets=(
-            HBox(widgets=(self.export, self.import_)),
-            HBox(widgets=(self.manual_label,)),
+                HBox(widgets=(self.export, self.import_)),
+                HBox(widgets=(self.manual_label,)),
             )
         )
         # self.insert(0, layout_model)
-        self.insert(1, spacer1)
-        self.insert(2, layer_init)
-        self.insert(3, spacer2)
-        self.insert(4, layer_AL)
-        self.insert(5, spacer3)
-        self.insert(6, layer_slider)
-        self.insert(7, layer_visual1)
-        self.insert(8, layer_visual2)
-        self.insert(9, spacer4)
-        self.insert(10, label)
+        # self.insert(1, spacer1)
+        self.insert(1, layer_init)
+        # self.insert(3, spacer2)
+        self.insert(2, layer_AL)
+        # self.insert(5, spacer3)
+        self.insert(3, layer_slider)
+        self.insert(4, layer_visual1)
+        self.insert(5, layer_visual2)
+        # self.insert(9, spacer4)
+        self.insert(6, label)
 
         device_ = get_device()
         show_info(f"Active learning model runs on: {device_}")
@@ -488,7 +493,6 @@ class AnnotationWidgetv2(Container):
         except:
             show_info("Please load and select image!")
             return
-
         img = self.napari_viewer.layers[active_layer_name]
 
         """Down_sample dataset"""
@@ -526,7 +530,7 @@ class AnnotationWidgetv2(Container):
                 patch,
                 tm_scores=self.tm_scores,
                 patch=[self.patch_corner, self.shape],
-                only_feature=True
+                only_feature=True,
             )
         else:
             self.x, _, (p_label_neg, p_label_pos) = initialize_model(self.img_process)
@@ -539,8 +543,8 @@ class AnnotationWidgetv2(Container):
 
         self.proposals = []
         self.cur_proposal_index, self.proposals = rank_candidate_locations(
-                self.model, self.x, self.shape, self.proposals, id_=1
-            )
+            self.model, self.x, self.shape, self.proposals, id_=1
+        )
 
         # Add point which model are least certain about
         points = np.vstack(self.proposals[-10:])
@@ -656,7 +660,7 @@ class AnnotationWidgetv2(Container):
                 patch,
                 tm_scores=self.tm_scores,
                 patch=[self.patch_corner, self.shape],
-                only_feature=True
+                only_feature=True,
             )
             self.x = torch.from_numpy(self.x)
 
@@ -669,8 +673,8 @@ class AnnotationWidgetv2(Container):
             # rank_candidate_locations()
             self.proposals = []
             self.cur_proposal_index, self.proposals = rank_candidate_locations(
-                    self.model, self.x, self.shape, self.proposals, id_=1
-                )
+                self.model, self.x, self.shape, self.proposals, id_=1
+            )
 
             # Add point which model are least certain about
             points = np.vstack(self.proposals[-10:])

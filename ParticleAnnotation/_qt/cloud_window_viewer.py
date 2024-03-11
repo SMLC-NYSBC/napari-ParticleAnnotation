@@ -19,7 +19,6 @@ from qtpy.QtWidgets import QSplitter
 from napari import Viewer
 
 import numpy as np
-from qtpy.QtWidgets import QFileDialog
 
 from napari.layers import Points
 import napari
