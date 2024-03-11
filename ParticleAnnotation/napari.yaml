@@ -15,7 +15,7 @@ contributions:
 
     # Widgets
     - id: ParticleAnnotation.viewer
-      python_name: ParticleAnnotation._qt.window_viewer:MultipleViewerWidget
+      python_name: ParticleAnnotation._qt.local_window_viewer:MultipleViewerWidget
       title: Local training/prediction
 
     - id: ParticleAnnotation.viewer_cloud

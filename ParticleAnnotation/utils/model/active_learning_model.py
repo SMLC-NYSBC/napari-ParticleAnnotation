@@ -5,9 +5,6 @@ import numpy as np
 from topaz.model.factory import load_model
 import torch
 from tqdm import tqdm
-import re
-from ParticleAnnotation.utils.load_data import downsample
-from topaz.stats import normalize
 
 from ParticleAnnotation.utils.model.utils import (
     find_peaks,
@@ -44,6 +41,7 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
         # Stream patch
         patch = img[i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset]
         shape_ = patch.shape
+
         # Predict
         with torch.no_grad():
             patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
@@ -199,24 +197,17 @@ def update_true_labels(true_labels, points_layer, label):
     return true_labels
 
 
-def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=None):
+def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
-        if tm_scores is not None and patch is not None:
-            filter_values = tm_scores
+        if tm_scores is not None:
+            if not isinstance(tm_scores, torch.Tensor):
+                x = torch.from_numpy(tm_scores.copy()).float()
+            else:
+                x = tm_scores
 
-            z_start, y_start, x_start = patch[0]
-            size_ = patch[1]
-            x = filter_values[
-                :,
-                z_start : z_start + size_[0],
-                y_start : y_start + size_[1],
-                x_start : x_start + size_[2],
-            ]
-            x = torch.from_numpy(x.copy()).float()
             classified = x
-            x = x.permute(1, 2, 3, 0)
             print("Chosen to use TM scores as features")
         else:
             model = torch.load(
@@ -256,9 +247,6 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
 
         x = filter_values.permute(1, 2, 0)
 
-    if isinstance(x, torch.Tensor):
-        x = x.detach().cpu().numpy()
-
     x = x.reshape(-1, x.shape[-1])  # L, C
     if only_feature:
         return x
@@ -274,6 +262,7 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None, patch=N
     xy_positive = xy[[np.array(score).argsort()[-n_part:][::-1]], :][
         0, ...
     ]  # choose top 1000
+
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
     xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))
     p_xy = (xy_negative, xy_positive)

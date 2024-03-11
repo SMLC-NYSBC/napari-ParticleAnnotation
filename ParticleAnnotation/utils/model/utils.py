@@ -78,6 +78,7 @@ def calc_iou(box_1, box_2, size_):
 
 def get_random_patch(img, size_: int, chosen_particles=None):
     z, y, x = img.shape
+
     if chosen_particles is None or chosen_particles.shape[0] == 0:
         if img.shape[0] > size_:
             z_start = np.random.randint(0, z - size_ + 1)
@@ -92,43 +93,43 @@ def get_random_patch(img, size_: int, chosen_particles=None):
         center_z, center_y, center_x = center
 
         if img.shape[0] > size_:
-            z_start = max(0, min(center_z - size_ // 2, z - size_))
+            z_start = max(0, center_z - size_ // 2)
             z_start = int(z_start)
 
         if img.shape[1] > size_:
-            y_start = max(0, min(center_y - size_ // 2, y - size_))
+            y_start = max(0, center_y - size_ // 2)
             y_start = int(y_start)
 
         if img.shape[2] > size_:
-            x_start = max(0, min(center_x - size_ // 2, x - size_))
+            x_start = max(0, center_x - size_ // 2)
             x_start = int(x_start)
 
         # [TO-DO] add non-max suppression here to choose the best centers
         idx = np.where((chosen_particles == center).all(axis=1))
         chosen_particles = np.delete(chosen_particles, idx, axis=0)
 
-    if img.shape[0] <= size_:
-        z_start = 0
-        z_end = z
-    else:
-        z_end = z_start + size_
+    # if img.shape[0] <= size_:
+    #     z_start = 0
+    #     z_end = z
+    # else:
+    #     z_end = z_start + size_
+    #
+    # if img.shape[1] <= size_:
+    #     y_start = 0
+    #     y_end = y
+    # else:
+    #     y_end = y_start + size_
+    #
+    # if img.shape[2] <= size_:
+    #     x_start = 0
+    #     x_end = x
+    # else:
+    #     x_end = x_start + size_
+    #
+    # # Extract the patch from the array
+    # patch = img[z_start:z_end, y_start:y_end, x_start:x_end]
 
-    if img.shape[1] <= size_:
-        y_start = 0
-        y_end = y
-    else:
-        y_end = y_start + size_
-
-    if img.shape[2] <= size_:
-        x_start = 0
-        x_end = x
-    else:
-        x_end = x_start + size_
-
-    # Extract the patch from the array
-    patch = img[z_start:z_end, y_start:y_end, x_start:x_end]
-
-    return patch, (z_start, y_start, x_start), chosen_particles
+    return (z_start, y_start, x_start), chosen_particles
 
 
 def sobel_filter(img):
@@ -199,15 +200,13 @@ def set_proposals(ordered, proposals, id_=1):
     return cur_proposal_index, proposals
 
 
-def rank_candidate_locations(model, x, shape, proposals, id_=1):
+def rank_candidate_locations(logits, shape):
     # rank the candidates by entropy - ask the user to label
     # the highest entropy location, which is where the model has the most uncertainty
     # about the label
     # this is not an optimal strategy, but it works fine for this prototype
-    with torch.no_grad():
-        logits = model(x)
-        log_p = F.logsigmoid(logits).numpy()
-        log_np = F.logsigmoid(-logits).numpy()
+    log_p = F.logsigmoid(logits).numpy()
+    log_np = F.logsigmoid(-logits).numpy()
     entropy = -np.exp(log_p) * log_p - np.exp(log_np) * log_np
 
     # use peak finding to void finding candidates too close together (good for skip)
@@ -221,9 +220,9 @@ def rank_candidate_locations(model, x, shape, proposals, id_=1):
     order = np.argsort(peak_scores)
     ordered = peaks[order]
 
-    cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
+    # cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
 
-    return cur_proposal_index, proposals
+    return ordered
 
 
 def get_device() -> torch.device:
@@ -233,7 +232,7 @@ def get_device() -> torch.device:
     Returns:
         torch.device: Device type.
     """
-    df = torch.rand((1, 1))
+    # df = torch.rand((1, 1))
     device = torch.device("cpu")
     # try:
     #     device = torch.device("cuda:0")
@@ -241,4 +240,5 @@ def get_device() -> torch.device:
     # except AssertionError:
     #     device = torch.device("cpu")
     #     df.to(device)
+
     return device
