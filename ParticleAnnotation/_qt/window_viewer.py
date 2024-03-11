@@ -620,18 +620,21 @@ class AnnotationWidgetv2(Container):
                     )
                 ).T
 
-            # add true_labels from the global variable to the data; remove if any is negative
+            # add true_labels from the global variable to the data; only consider positive x,y,z
             try:
                 if prev_labels.size:
                     for data_ in prev_labels:
+                        print(data_)
                         # if all values in data_ are positive
                         if np.all(data_ > 0):
                             data = np.vstack((data, data_))
                             self.count += 1
-                        else:
-                            if np.any(np.all(data_ == data, axis=1)):
-                                # remove
-                                data = data[~np.all(data == data_, axis=1)]
+                            print("Added to data")
+
+                        if np.any(np.all(data_ == data, axis=1)):
+                            # remove
+                            data = data[~np.all(data == data_, axis=1)]
+                            print("Removed from data")
             except:
                 pass
 
@@ -678,6 +681,16 @@ class AnnotationWidgetv2(Container):
             pos_labels = np.zeros((pos_points.shape[0],))
             pos_labels[:] = 1
 
+            self.create_point_layer(points, labels)
+            self.activate_click = True
+
+            try:
+                self.napari_viewer.selection.active = self.napari_viewer.layers[
+                    "Initial_Labels"
+                ]
+            except:
+                pass
+
             # attempt to remove the old layer
             try:
                 self.napari_viewer.layers.remove("Predicted_Labels")
@@ -696,16 +709,6 @@ class AnnotationWidgetv2(Container):
                 size=5,
             )
 
-            self.create_point_layer(points, labels)
-            self.activate_click = True
-
-            try:
-                self.napari_viewer.selection.active = self.napari_viewer.layers[
-                    "Initial_Labels"
-                ]
-            except:
-                pass
-
             self._reset_view()
 
             self.component_selector.value = 0
@@ -717,7 +720,7 @@ class AnnotationWidgetv2(Container):
         Re-train model, and add 10 most uncertain points to the list
         """
         self.activate_click = True
-
+        self.curr_layer = "Initial_Labels"
         points_layer = self.napari_viewer.layers["Initial_Labels"].data
         label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
         self.true_labels = update_true_labels(self.true_labels, points_layer, label)
@@ -799,6 +802,13 @@ class AnnotationWidgetv2(Container):
             except:
                 pass
 
+            data = np.vstack((data[:, 1:], points.astype(np.float64)))
+            if self.patch_corner is not None:
+                data = correct_coord(data, self.patch_corner, True)
+
+            labels = np.hstack((label, label_unknown))
+            self.create_point_layer(data, labels)
+
             self.napari_viewer.add_points(
                 pos_points,
                 name="Predicted_Labels",
@@ -810,13 +820,6 @@ class AnnotationWidgetv2(Container):
                 symbol="disc",
                 size=5,
             )
-
-            data = np.vstack((data[:, 1:], points.astype(np.float64)))
-            if self.patch_corner is not None:
-                data = correct_coord(data, self.patch_corner, True)
-
-            labels = np.hstack((label, label_unknown))
-            self.create_point_layer(data, labels)
 
             show_info(f"Task finished: Retrain model!")
 
@@ -878,6 +881,11 @@ class AnnotationWidgetv2(Container):
                         weights=self.count.ravel(),
                         pre_train=self.AL_weights,
                     )
+
+        # if any label is 2
+        if np.any(self.napari_viewer.layers["Initial_Labels"].properties["label"] == 2):
+            show_info(f"Please Correct all uncertain particles!")
+            return
 
         if self.img_process.ndim == 2:
             with torch.no_grad():
@@ -991,7 +999,6 @@ class AnnotationWidgetv2(Container):
     def ZEvent(self, viewer):
         name = self.curr_layer
         if self.activate_click:
-            # if self.activate_click
             points_layer = viewer.layers[name].data
             if points_layer.shape[0] == 0:
                 self.update_point_layer_2(self.mouse_position, 0, "add")
@@ -1008,7 +1015,6 @@ class AnnotationWidgetv2(Container):
     def XEvent(self, viewer):
         name = self.curr_layer
         if self.activate_click:
-            # if self.activate_click:
             points_layer = viewer.layers[name].data
             if points_layer.shape[0] == 0:
                 self.update_point_layer_2(self.mouse_position, 1, "add")
@@ -1025,7 +1031,6 @@ class AnnotationWidgetv2(Container):
     def CEvent(self, viewer):
         name = self.curr_layer
         if self.activate_click:
-            # if self.activate_click:
             points_layer = viewer.layers[name].data
 
             # Calculate the distance between the mouse position and all points
@@ -1074,24 +1079,6 @@ class AnnotationWidgetv2(Container):
                     )
             except:
                 pass
-
-    def create_pred_layer(self, point, label, name="Predictions"):
-        try:
-            self.napari_viewer.viewer_model2.layers.remove(name)
-        except:
-            pass
-
-        self.napari_viewer.viewer_model2.add_points(
-            point,
-            name=name,
-            face_color="#00000000",
-            properties={"label": label.astype(np.int16)},
-            edge_color="label",
-            edge_color_cycle=self.color_map_specified,
-            edge_width=0.1,
-            symbol="square",
-            size=40,
-        )
 
     def create_point_layer(self, point, label, name="Initial_Labels"):
         try:
@@ -1184,6 +1171,7 @@ class AnnotationWidgetv2(Container):
 
     def _component_num_changed(self):
         self._zoom()
+
 
     def _zoom(self):
         if self.napari_viewer.dims.ndisplay != 2:
