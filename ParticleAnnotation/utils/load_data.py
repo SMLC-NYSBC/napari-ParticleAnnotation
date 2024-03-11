@@ -86,6 +86,7 @@ def load_coordinates(path):
         if np.all(data[:, 3] == data[:, 3].astype(int)):
             labels = data[:, 3].astype(int)
             data = data[:, 0:3]
+            
         else:
             if np.all(data[:, 0] == data[:, 0].astype(int)):
                 data = data[:, 1:4]
@@ -103,6 +104,15 @@ def load_coordinates(path):
         else:
             labels = np.ones(data.shape[0])
         data = data[:, 1:4]
+
+    data = np.array(
+            (
+                np.array(labels).astype(np.int16),
+                data[:, 0],
+                data[:, 1],
+                data[:, 2],
+            )
+        ).T
 
     return data, labels
 
@@ -142,14 +152,11 @@ def load_template(path, temp_name):
             f"{root}/scores_{temp_name}.pt", map_location=device_
         ).numpy()
         # flip the template score along the y-axis
-        ice_files = [f for f in os.listdir(f"{root}") if f.endswith(".pt")]
-        ice_score = [torch.load(
-            f"{root}/{i}", map_location=device_
-        ).numpy() for i in ice_files]
+        ice_score = torch.load(
+            f"{root}/scores_ice.pt", map_location=device_
+        ).numpy()
 
-        template_score = np.concatenate([template_score[None, :],
-                                         np.concatenate([ice_score], axis=0)],
-                                        axis=0)
+        template_score = np.concatenate([template_score, ice_score], axis=0)
         template_score = np.flip(template_score, axis=2)
         print("Loaded template scores")
     except:

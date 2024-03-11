@@ -445,21 +445,29 @@ class AnnotationWidgetv2(Container):
         """Logic to import coordinates"""
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         try:
-            self.true_labels, labels = load_coordinates(self.filename)
-            print("Shape of true_labels is - ", self.true_labels.shape)
-            self.create_point_layer(self.true_labels, labels, name="Imported Labels")
+            data, labels = load_coordinates(self.filename)
+            self.true_labels = update_true_labels(self.true_labels, data[:,1:], labels)
+            self.create_point_layer(data[:,1:], labels, name="Imported Labels")
+            print("Loaded coordinates")
         except:
             show_info("Could not load coordinates!")
 
     def _export_coordinates(self):
         """Logic to export coordinates"""
-        try:
-            filename, _ = QFileDialog.getSaveFileName(
-                caption="Save File", directory="coordinates.csv"
-            )
-            save_coordinates(filename, self.true_labels)
-        except:
-            show_info("Could not save coordinates!")
+        # try:
+        points_layer = self.napari_viewer.layers["Initial_Labels"].data
+        label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+        self.true_labels = update_true_labels(self.true_labels, points_layer, label)
+
+        filename, _ = QFileDialog.getSaveFileName(
+            caption="Save File", directory="coordinates.csv"
+        )
+        if self.true_labels.size:
+            # dont save first axis
+            save_coordinates(filename, self.true_labels[:,1:])
+            print("Saved coordinates")
+        # except:
+        #     show_info("Could not save coordinates!")
 
     def _choose_initial_picks(self):
         self.image_layer_name = self.napari_viewer.layers.selection.active.name
@@ -547,8 +555,8 @@ class AnnotationWidgetv2(Container):
         )
 
         # Add point which model are least certain about
-        points = np.vstack(self.proposals[-10:])
-        # initialised are all zeros
+        idx = np.random.choice(len(self.proposals), 10, replace=False)
+        points = np.array([self.proposals[i] for i in idx])
         labels = np.zeros((points.shape[0],))
         labels[:] = 2
 
@@ -628,24 +636,19 @@ class AnnotationWidgetv2(Container):
             try:
                 if prev_labels.size:
                     for data_ in prev_labels:
-                        print(data_)
                         # if all values in data_ are positive
-                        if np.all(data_ > 0):
-                            data = np.vstack((data, data_))
-                            self.count += 1
-                            print("Added to data")
-
-                        if np.any(np.all(data_ == data, axis=1)):
-                            # remove
-                            data = data[~np.all(data == data_, axis=1)]
-                            print("Removed from data")
+                        # check if already not there
+                        if np.any(np.all(data_ == data, axis=1)) == False:
+                            if np.all(data_ > 0):
+                                data = np.vstack((data, data_))
+                                self.count += 1
             except:
                 pass
 
             self.y = label_points_to_mask(data, self.shape, self.box_size.value)
             self.count = (~torch.isnan(self.y)).float()
+
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
-            # weights = [self.model.weights, self.model.bias]
 
             show_info(f"Task finished: Retrain model!")
 
@@ -772,13 +775,11 @@ class AnnotationWidgetv2(Container):
                 if prev_labels.size:
                     for data_ in prev_labels:
                         # if all values in data_ are positive
-                        if np.all(data_ > 0):
-                            data = np.vstack((data, data_))
-                            self.count += 1
-                        else:
-                            if np.any(np.all(data_ == data, axis=1)):
-                                # remove
-                                data = data[~np.all(data == data_, axis=1)]
+                        # check if already not there
+                        if np.any(np.all(data_ == data, axis=1)) == False:
+                            if np.all(data_ > 0):
+                                data = np.vstack((data, data_))
+                                self.count += 1
             except:
                 pass
 
@@ -889,6 +890,7 @@ class AnnotationWidgetv2(Container):
         # if any label is 2
         if np.any(self.napari_viewer.layers["Initial_Labels"].properties["label"] == 2):
             show_info(f"Please Correct all uncertain particles!")
+            self.activate_click = True
             return
 
         if self.img_process.ndim == 2:
