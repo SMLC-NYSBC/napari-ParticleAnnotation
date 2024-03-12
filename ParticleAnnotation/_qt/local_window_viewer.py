@@ -518,11 +518,11 @@ class AnnotationWidgetv2(Container):
             # Initialize template here
             tm_scores = load_template()
             tm_scores = downsample(tm_scores, factor=factor)
-            for idx, i in enumerate(tm_scores):
-                min_ = i.min()
-                max_ = i.max()
-
-                tm_scores[idx, :] = (i - min_) / (max_ - min_)
+            # for idx, i in enumerate(tm_scores):
+            #     min_ = i.min()
+            #     max_ = i.max()
+            #
+            #     tm_scores[idx, :] = (i - min_) / (max_ - min_)
 
             # tm_scores, _ = normalize(tm_scores.copy(), method="affine", use_cuda=False)
             self.tm_scores = tm_scores
