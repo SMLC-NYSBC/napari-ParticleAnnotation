@@ -137,3 +137,6 @@ dmypy.json
 *.tif
 *.npy
 *.npy
+*.tif
+*.pt
+

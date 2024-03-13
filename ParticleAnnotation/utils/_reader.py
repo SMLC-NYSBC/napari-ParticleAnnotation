@@ -21,7 +21,7 @@ def get_reader_img(path: PathOrPaths) -> Optional[ReaderFunction]:
         path = path[0]
 
     # Check if the file extension is supported.
-    extensions = (".mrc", ".mrcs", ".map")
+    extensions = (".mrc", ".mrcs", ".map", ".tif")
     if not path.endswith(extensions):
         return None
 
