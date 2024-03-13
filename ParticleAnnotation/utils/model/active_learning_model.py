@@ -16,12 +16,13 @@ import io
 import requests
 
 
-def predict_3d_with_AL(img, model, weights, offset):
+def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
     peaks, peaks_logits = [], []
     device_ = get_device()
 
     grid = divide_grid(img, offset)
-    init_model = torch.load(
+    if tm_scores is None:
+        init_model = torch.load(
             io.BytesIO(
                 requests.get(
                     "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
@@ -29,9 +30,9 @@ def predict_3d_with_AL(img, model, weights, offset):
                 ).content
             )
         )
-    init_model = init_model.features.to(device_)
-    init_model.fill()
-    init_model.eval()
+        init_model = init_model.features.to(device_)
+        init_model.fill()
+        init_model.eval()
 
     if weights is not None:
         model.fit(pre_train=weights)
@@ -44,8 +45,19 @@ def predict_3d_with_AL(img, model, weights, offset):
         # Predict
         with torch.no_grad():
             patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
-            patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
-
+            if tm_scores is None:
+                patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
+            else:
+                z_start, y_start, x_start = i[0], i[1], i[2]
+                patch = tm_scores[
+                    :,
+                    z_start : z_start + offset,
+                    y_start : y_start + offset,
+                    x_start : x_start + offset,
+                ]
+                patch = torch.from_numpy(patch.copy()).float().to(device_)
+                patch = patch.permute(1, 2, 3, 0)
+                patch = patch.reshape(-1, patch.shape[-1])
             logits = model(patch).reshape(*shape_)
 
         if device_ == "cpu":
@@ -64,6 +76,8 @@ def predict_3d_with_AL(img, model, weights, offset):
         peaks_df = correct_coord(peaks_df, i, True)
         peaks.append(peaks_df)
         peaks_logits.append(peaks_logits_df)
+
+    print("Done with AL training")
 
     return np.vstack(peaks), np.concatenate(peaks_logits)
 
@@ -160,31 +174,64 @@ def label_points_to_mask(points, shape, size):
     return y
 
 
-def initialize_model(mrc, n_part=10, only_feature=False):
+def update_true_labels(true_labels, points_layer, label):
+    data = np.asarray(points_layer)
+    if data.shape[1] == 2:
+        data = np.array((np.array(label).astype(np.int16), data[:, 0], data[:, 1])).T
+    else:
+        data = np.array(
+            (
+                np.array(label).astype(np.int16),
+                data[:, 0],
+                data[:, 1],
+                data[:, 2],
+            )
+        ).T
+
+    for data_ in data:
+        if data_[0] == 1:
+            true_labels = np.vstack((true_labels, data_)) if true_labels.size else data_
+
+    true_labels = np.unique(true_labels, axis=0)
+
+    return true_labels
+
+
+def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
     device_ = get_device()
 
     if len(mrc.shape) == 3:
-        model = torch.load(
-            io.BytesIO(
-                requests.get(
-                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
-                    timeout=(5, None),
-                ).content
+        if tm_scores is not None:
+            if not isinstance(tm_scores, torch.Tensor):
+                x = torch.from_numpy(tm_scores.copy()).float()
+            else:
+                x = tm_scores
+
+            classified = x
+            print("Chosen to use TM scores as features")
+        else:
+            model = torch.load(
+                io.BytesIO(
+                    requests.get(
+                        "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+                        timeout=(5, None),
+                    ).content
+                )
             )
-        )
-        classifier = model.classifier.to(device_)
-        model = model.features.to(device_)
-        model.fill()
-        model.eval()
-        classifier.eval()
+            classifier = model.classifier.to(device_)
+            model = model.features.to(device_)
+            model.fill()
+            model.eval()
+            classifier.eval()
+            # see classifier
+            mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
 
-        mrc = torch.from_numpy(mrc).float().unsqueeze(0).to(device_)
+            with torch.no_grad():
+                filter_values = model(mrc).squeeze(0)
+                classified = torch.sigmoid(classifier(filter_values))
 
-        with torch.no_grad():
-            filter_values = model(mrc).squeeze(0)
-            classified = torch.sigmoid(classifier(filter_values))
-
-        x = filter_values.permute(1, 2, 3, 0)
+            x = filter_values.permute(1, 2, 3, 0)
+            print("Chosen to use the Topaz features")
     else:
         model = load_model("resnet16")
         classifier = model.classifier.to(device_)
@@ -200,23 +247,25 @@ def initialize_model(mrc, n_part=10, only_feature=False):
 
         x = filter_values.permute(1, 2, 0)
 
-    x = x.detach().cpu().numpy()
-
+    x = x.reshape(-1, x.shape[-1])  # L, C
     if only_feature:
         return x
 
-    if isinstance(classifier, torch.Tensor):
+    if isinstance(classified, torch.Tensor):
         classified = classified.detach().cpu().numpy()
 
-    x = x.reshape(-1, x.shape[-1])  # L, C
     y = torch.zeros(len(x)) + np.nan
-
     # Classified particles
     xy, score = find_peaks(classified[0, :], with_score=True)
-    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]  # Bottom 10
+
+    xy_negative = xy[[np.array(score).argsort()[:n_part][::-1]], :][0, ...]
+    xy_positive = xy[[np.array(score).argsort()[-n_part:][::-1]], :][
+        0, ...
+    ]  # choose top 1000
 
     xy_negative = np.hstack((np.zeros((xy_negative.shape[0], 1)), xy_negative))
-    p_xy = xy_negative
+    xy_positive = np.hstack((np.ones((xy_positive.shape[0], 1)), xy_positive))
+    p_xy = (xy_negative, xy_positive)
 
     return x, y, p_xy
 
@@ -224,8 +273,11 @@ def initialize_model(mrc, n_part=10, only_feature=False):
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
         self.device = get_device()
-        self.weights = torch.zeros(n_features, device=self.device)
-        self.bias = torch.zeros(1, device=self.device)
+        # self.weights = torch.zeros(n_features, device=self.device)
+        # random initialization
+        self.weights = torch.randn(n_features, device=self.device)
+        # self.bias = torch.zeros(1, device=self.device)
+        self.bias = torch.randn(1, device=self.device)
         self.l2 = l2
         self.pi = pi
         self.pi_logit = np.log(pi) - np.log1p(-pi)
@@ -262,7 +314,6 @@ class BinaryLogisticRegression:
             x = torch.from_numpy(x).to(self.device)
         else:
             x = x.to(self.device)
-
         return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):

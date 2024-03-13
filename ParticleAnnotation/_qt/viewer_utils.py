@@ -64,17 +64,38 @@ def copy_layer_le_4_16(layer: Layer, name: str = ""):
 
 
 def copy_layer(layer: Layer, name: str = ""):
-    # If napari version < 0.4.16, create a new layer object with the same data as the original layer
-    res_layer = Layer.create(*layer.as_layer_data_tuple())
-
-    # Share the data with the original layer if it's an Image or Labels layer
+    # Share the data with the original layer if it's an Image or Labels layer; don't copy predictions
     if isinstance(layer, (Image, Points)):
+        # If napari version < 0.4.16, create a new layer object with the same data as the original layer
+        res_layer = Layer.create(*layer.as_layer_data_tuple())
+        if layer.name != "Predicted_Labels":
+            res_layer.data = layer.data
+            # Set the viewer name for the copied layer
+            res_layer.metadata["viewer_name"] = name
+
+            return res_layer
+
+
+def copy_layer_viewer2(layer: Layer, name: str = ""):
+    # Share the data with the original layer if it's an Image or Labels layer
+    if isinstance(layer, (Image)):
+        # If napari version < 0.4.16, create a new layer object with the same data as the original layer
+        res_layer = Layer.create(*layer.as_layer_data_tuple())
         res_layer.data = layer.data
+        # Set the viewer name for the copied layer
+        res_layer.metadata["viewer_name"] = name
 
-    # Set the viewer name for the copied layer
-    res_layer.metadata["viewer_name"] = name
+        return res_layer
 
-    return res_layer
+    if isinstance(layer, (Points)):
+        if layer.name == "Predicted_Labels":
+            # If napari version < 0.4.16, create a new layer object with the same data as the original layer
+            res_layer = Layer.create(*layer.as_layer_data_tuple())
+            res_layer.data = layer.data
+            # Set the viewer name for the copied layer
+            res_layer.metadata["viewer_name"] = name
+
+            return res_layer
 
 
 def get_property_names(layer: Layer):
