@@ -440,7 +440,7 @@ class AnnotationWidgetv2(Container):
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         try:
             data, labels = load_coordinates(self.filename)
-            self.true_labels = update_true_labels(self.true_labels, data[:,1:], labels)
+            self.true_labels = update_true_labels(self.true_labels, data[:, 1:], labels)
             self.create_point_layer(data[:,1:], labels, name="Imported Labels")
             print("Loaded coordinates")
         except:
@@ -451,17 +451,23 @@ class AnnotationWidgetv2(Container):
         # try:
         points_layer = self.napari_viewer.layers["Initial_Labels"].data
         label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
-        self.true_labels = update_true_labels(self.true_labels, points_layer, label)
+        print(points_layer.shape, label.shape)
+        print(f"{self.image_layer_name}_Prediction")
+
+        pred_points = self.napari_viewer.layers[f"{self.image_layer_name}_Prediction"].data
+        pred_label = self.napari_viewer.layers[f"{self.image_layer_name}_Prediction"].properties["label"]
+        print(pred_points.shape, pred_label.shape)
+
+        points_layer = np.vstack((points_layer, pred_points))
+        label = np.hstack((label, pred_label))
 
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File", directory="coordinates.csv"
         )
         if self.true_labels.size:
             # dont save first axis
-            save_coordinates(filename, self.true_labels[:, 1:])
+            save_coordinates(filename, np.hstack((label[:, None], points_layer)))
             print("Saved coordinates")
-        # except:
-        #     show_info("Could not save coordinates!")
 
     def _choose_initial_picks(self):
         self.image_layer_name = self.napari_viewer.layers.selection.active.name
@@ -474,10 +480,10 @@ class AnnotationWidgetv2(Container):
 
         try:
             self.chosen_particles = self.napari_viewer.layers["Chosen Particles"].data
-            labels = self.napari_viewer.layers["Chosen Particles"].properties["label"]
+            # labels = self.napari_viewer.layers["Chosen Particles"].properties["label"]
 
             # choose only particles with label 1
-            self.chosen_particles = self.chosen_particles[labels == 1]
+            # self.chosen_particles = self.chosen_particles[labels == 1]
             assert len(self.chosen_particles) > 0
             self.napari_viewer.layers.remove("Chosen Particles")
         except:
@@ -521,7 +527,6 @@ class AnnotationWidgetv2(Container):
             # for idx, i in enumerate(tm_scores):
             #     min_ = i.min()
             #     max_ = i.max()
-            #
             #     tm_scores[idx, :] = (i - min_) / (max_ - min_)
 
             # tm_scores, _ = normalize(tm_scores.copy(), method="affine", use_cuda=False)
@@ -531,13 +536,14 @@ class AnnotationWidgetv2(Container):
             self.create_image_layer(self.tm_scores[0])
 
             # self.tm_scores = np.zeros(self.img_process.shape)
-            self.patch_corner, self.chosen_particles = get_random_patch(
+            self.patch_corner = get_random_patch(
                 self.img_process, int(self.patch_size.value), self.chosen_particles
             )
+
             patch = self.img_process[
-                    self.patch_corner[0]:self.patch_corner[0]+int(self.patch_size.value),
-                    self.patch_corner[1]:self.patch_corner[1]+int(self.patch_size.value),
-                    self.patch_corner[2]:self.patch_corner[2]+int(self.patch_size.value)
+                    self.patch_corner[0]:self.patch_corner[0] + int(self.patch_size.value),
+                    self.patch_corner[1]:self.patch_corner[1] + int(self.patch_size.value),
+                    self.patch_corner[2]:self.patch_corner[2] + int(self.patch_size.value)
                     ]
             tm_score = self.tm_scores[
                     :,
@@ -549,7 +555,7 @@ class AnnotationWidgetv2(Container):
             self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
             self.x = self.x.reshape(-1, self.x.shape[-1])
         else:
-            self.x, _, (p_label_neg, p_label_pos) = initialize_model(self.img_process)
+            self.x, _, _ = initialize_model(self.img_process)
             self.patch_corner = None
             self.x = torch.from_numpy(self.x)
 
@@ -563,7 +569,6 @@ class AnnotationWidgetv2(Container):
         self.count = torch.where(
             ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
         )
-
         self.model.fit(
             self.x,
             self.y.ravel(),
@@ -585,7 +590,6 @@ class AnnotationWidgetv2(Container):
         labels[:] = 2
 
         self.create_point_layer(points.astype(np.float64), labels)
-
         """ Initialize model and pick initial particles """
         self.activate_click = True
         try:
@@ -606,6 +610,10 @@ class AnnotationWidgetv2(Container):
 
             points_layer = self.napari_viewer.layers["Initial_Labels"].data
             label = self.napari_viewer.layers["Initial_Labels"].properties["label"]
+            if np.any(label == 2):
+                show_info(f"Please Correct all uncertain particles!")
+                return
+
             self.true_labels = update_true_labels(self.true_labels, points_layer, label)
             points_layer = correct_coord(points_layer, self.patch_corner, False)
 
@@ -621,10 +629,6 @@ class AnnotationWidgetv2(Container):
             #             prev_labels[:, 2],
             #         )
             #     ).T
-
-            if np.any(label == 2):
-                show_info(f"Please Correct all uncertain particles!")
-                return
 
             data = np.asarray(points_layer)
             if data.shape[1] == 2:
@@ -662,9 +666,10 @@ class AnnotationWidgetv2(Container):
             show_info(f"Task finished: Retrain model!")
 
             # Feed new patch
-            self.patch_corner, self.chosen_particles = get_random_patch(
+            self.patch_corner = get_random_patch(
                 self.img_process, int(self.patch_size.value), self.chosen_particles
             )
+            print(self.patch_corner)
             patch = self.img_process[
                     self.patch_corner[0]:self.patch_corner[0] + int(self.patch_size.value),
                     self.patch_corner[1]:self.patch_corner[1] + int(self.patch_size.value),
@@ -687,6 +692,8 @@ class AnnotationWidgetv2(Container):
             with torch.no_grad():
                 logits = self.model(self.x).reshape(*self.shape)
             logits = logits.cpu().detach()
+            print(logits.shape)
+            self.create_image_layer(logits.cpu().detach().numpy(), "logits")
 
             """Get Entropy"""
             # rank_candidate_locations()
@@ -696,7 +703,9 @@ class AnnotationWidgetv2(Container):
             )
 
             # Add point which model are least certain about
-            points = np.vstack(self.proposals[-10:])
+            points = np.vstack(self.proposals[:10])
+            points = correct_coord(points, self.patch_corner, True)
+
             labels = np.zeros((points.shape[0],))
             labels[:] = 2
 
@@ -715,22 +724,22 @@ class AnnotationWidgetv2(Container):
                 pass
 
             # attempt to remove the old layer
-            try:
-                self.napari_viewer.layers.remove("Predicted_Labels")
-            except:
-                pass
+            # try:
+            #     self.napari_viewer.layers.remove("Predicted_Labels")
+            # except:
+            #     pass
 
-            self.napari_viewer.add_points(
-                pos_points,
-                name="Predicted_Labels",
-                properties={"confidence": pos_labels},
-                edge_color="black",
-                face_color="confidence",
-                face_colormap="viridis",
-                edge_width=0.1,
-                symbol="disc",
-                size=5,
-            )
+            # self.napari_viewer.add_points(
+            #     pos_points,
+            #     name="Predicted_Labels",
+            #     properties={"confidence": pos_labels},
+            #     edge_color="black",
+            #     face_color="confidence",
+            #     face_colormap="viridis",
+            #     edge_width=0.1,
+            #     symbol="disc",
+            #     size=5,
+            # )
 
             self.reset_view()
 
@@ -809,7 +818,7 @@ class AnnotationWidgetv2(Container):
             )
 
             # Add point which model are least certain about
-            points = np.vstack(self.proposals[-10:])
+            points = np.vstack(self.proposals[:10])
             label_unknown = np.zeros((points.shape[0],))
             label_unknown[:] = 2
 
@@ -1066,7 +1075,7 @@ class AnnotationWidgetv2(Container):
     def SEvent(self, viewer):
         if self.activate_click:
             if self.component_selector.value > 0:
-                self.reset_view()
+                # self.reset_view()
                 self.component_selector.value = self.component_selector.value - 1
 
     def DEvent(self, viewer):
@@ -1075,7 +1084,7 @@ class AnnotationWidgetv2(Container):
             points_layer = len(viewer.layers[name].data)
 
             if self.component_selector.value < points_layer:
-                self.reset_view()
+                # self.reset_view()
                 self.component_selector.value = self.component_selector.value + 1
         except KeyError:
             pass
@@ -1134,24 +1143,27 @@ class AnnotationWidgetv2(Container):
             )
             self.napari_viewer.layers[name].mode = "select"
 
-    def create_image_layer(self, tm_scores):
+    def create_image_layer(self, tm_scores, name="TM_Scores"):
         try:
-            self.napari_viewer.layers.remove("TM_Scores")
+            self.napari_viewer.layers.remove(name)
         except:
             pass
 
         print("Creating image layer for tm_scores")
         self.napari_viewer.add_image(
-            tm_scores, name="TM_Scores", colormap="viridis", opacity=0.25
+            tm_scores, name=name, colormap="viridis", opacity=0.25
         )
 
-        self.napari_viewer.layers["TM_Scores"].contrast_limits = (
-            tm_scores.min(),
-            tm_scores.max(),
-        )
+        try:
+            self.napari_viewer.layers[name].contrast_limits = (
+                tm_scores.min(),
+                tm_scores.max(),
+            )
+        except:
+            pass
 
         # set layer as not visible
-        self.napari_viewer.layers["TM_Scores"].visible = False
+        self.napari_viewer.layers[name].visible = False
 
     def update_point_layer_2(self, index, label, func):
         name = self.curr_layer

@@ -7,7 +7,6 @@ import tifffile.tifffile as tiff
 import torch
 import starfile
 import torch.nn.functional as F
-import re
 from ParticleAnnotation.utils.model.utils import get_device
 from qtpy.QtWidgets import QFileDialog
 
@@ -122,7 +121,7 @@ def save_coordinates(path, data):
     Save coordinates to a file.
     """
     # add header
-    header = ["axis_0", "axis_1", "axis_2"]
+    header = ["Confidence", "Z", "Y", "X"]
     data = np.vstack([header, data])
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
@@ -144,13 +143,17 @@ def load_template():
 
     # [TO-DO] Remove down sampling after testing
     # root = f'/h2/njain/data/tomonet_template_matched/downsampled'
-    root = QFileDialog.getOpenFileName(None, "Select a score file")[0]
-    print(root)
+    root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
 
-    # root = f"/Users/navyajain/napari-ParticleAnnotation-1/test_images/"
-    # print(f"Found template name as - {tomo_name}")
-    template_score = torch.load(root, map_location=device_
-                                )
+    if len(root) == 1:
+        template_score = torch.load(root[0], map_location=device_)
+    else:
+        root = np.sort(root)
+        template_score = []
+        for i in root:
+            template_score.append(torch.load(i, map_location=device_))
+        template_score = np.concatenate(template_score, axis=0)
+    template_score = np.flip(template_score, axis=2)
     print("Loaded template scores")
     # try:
     #     template_score = torch.load(root, map_location=device_
