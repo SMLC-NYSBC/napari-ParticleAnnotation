@@ -20,6 +20,9 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
     peaks, peaks_logits = [], []
     device_ = get_device()
 
+    if tm_scores is not None:
+        assert tm_scores.shape[1:] == img.shape
+
     grid = divide_grid(img, offset)
     if tm_scores is None:
         init_model = torch.load(
@@ -38,14 +41,16 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
         model.fit(pre_train=weights)
 
     for i in tqdm(grid):
-        # Stream patch
-        patch = img[i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset]
-        shape_ = patch.shape
-
         # Predict
         with torch.no_grad():
-            patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
             if tm_scores is None:
+                # Stream patch
+                patch = img[
+                    i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset
+                ]
+                shape_ = patch.shape
+                patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
+
                 patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
             else:
                 z_start, y_start, x_start = i[0], i[1], i[2]
@@ -58,6 +63,7 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
                 patch = torch.from_numpy(patch.copy()).float().to(device_)
                 patch = patch.permute(1, 2, 3, 0)
                 patch = patch.reshape(-1, patch.shape[-1])
+
             logits = model(patch).reshape(*shape_)
 
         if device_ == "cpu":

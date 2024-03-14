@@ -47,7 +47,8 @@ from ParticleAnnotation.utils.model.utils import (
     rank_candidate_locations,
     get_device,
     get_random_patch,
-    correct_coord, find_peaks,
+    correct_coord,
+    find_peaks,
 )
 from ParticleAnnotation._qt.viewer_utils import (
     ViewerModel,
@@ -441,7 +442,7 @@ class AnnotationWidgetv2(Container):
         try:
             data, labels = load_coordinates(self.filename)
             self.true_labels = update_true_labels(self.true_labels, data[:, 1:], labels)
-            self.create_point_layer(data[:,1:], labels, name="Imported Labels")
+            self.create_point_layer(data[:, 1:], labels, name="Imported Labels")
             print("Loaded coordinates")
         except:
             show_info("Could not load coordinates!")
@@ -454,8 +455,12 @@ class AnnotationWidgetv2(Container):
         print(points_layer.shape, label.shape)
         print(f"{self.image_layer_name}_Prediction")
 
-        pred_points = self.napari_viewer.layers[f"{self.image_layer_name}_Prediction"].data
-        pred_label = self.napari_viewer.layers[f"{self.image_layer_name}_Prediction"].properties["label"]
+        pred_points = self.napari_viewer.layers[
+            f"{self.image_layer_name}_Prediction"
+        ].data
+        pred_label = self.napari_viewer.layers[
+            f"{self.image_layer_name}_Prediction"
+        ].properties["label"]
         print(pred_points.shape, pred_label.shape)
 
         points_layer = np.vstack((points_layer, pred_points))
@@ -541,15 +546,21 @@ class AnnotationWidgetv2(Container):
             )
 
             patch = self.img_process[
-                    self.patch_corner[0]:self.patch_corner[0] + int(self.patch_size.value),
-                    self.patch_corner[1]:self.patch_corner[1] + int(self.patch_size.value),
-                    self.patch_corner[2]:self.patch_corner[2] + int(self.patch_size.value)
-                    ]
+                self.patch_corner[0] : self.patch_corner[0]
+                + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1]
+                + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2]
+                + int(self.patch_size.value),
+            ]
             tm_score = self.tm_scores[
-                    :,
-                    self.patch_corner[0]:self.patch_corner[0] + int(self.patch_size.value),
-                    self.patch_corner[1]:self.patch_corner[1] + int(self.patch_size.value),
-                    self.patch_corner[2]:self.patch_corner[2] + int(self.patch_size.value),
+                :,
+                self.patch_corner[0] : self.patch_corner[0]
+                + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1]
+                + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2]
+                + int(self.patch_size.value),
             ]
             self.shape = patch.shape
             self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
@@ -577,7 +588,9 @@ class AnnotationWidgetv2(Container):
         )
 
         self.proposals = []
-        self.proposals, scores = find_peaks(tm_score[0, :], int(self.box_size.value), with_score=True)
+        self.proposals, scores = find_peaks(
+            tm_score[0, :], int(self.box_size.value), with_score=True
+        )
         order = np.argsort(scores)
         self.proposals = self.proposals[order]
 
@@ -586,7 +599,7 @@ class AnnotationWidgetv2(Container):
         # points = np.array([self.proposals[i] for i in idx])
         points = np.vstack(self.proposals[:10])
         points = correct_coord(points, self.patch_corner, True)
-        labels = np.zeros((points.shape[0], ))
+        labels = np.zeros((points.shape[0],))
         labels[:] = 2
 
         self.create_point_layer(points.astype(np.float64), labels)
@@ -671,16 +684,22 @@ class AnnotationWidgetv2(Container):
             )
             print(self.patch_corner)
             patch = self.img_process[
-                    self.patch_corner[0]:self.patch_corner[0] + int(self.patch_size.value),
-                    self.patch_corner[1]:self.patch_corner[1] + int(self.patch_size.value),
-                    self.patch_corner[2]:self.patch_corner[2] + int(self.patch_size.value)
-                    ]
+                self.patch_corner[0] : self.patch_corner[0]
+                + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1]
+                + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2]
+                + int(self.patch_size.value),
+            ]
             tm_score = self.tm_scores[
-                       :,
-                       self.patch_corner[0]:self.patch_corner[0] + int(self.patch_size.value),
-                       self.patch_corner[1]:self.patch_corner[1] + int(self.patch_size.value),
-                       self.patch_corner[2]:self.patch_corner[2] + int(self.patch_size.value),
-                       ]
+                :,
+                self.patch_corner[0] : self.patch_corner[0]
+                + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1]
+                + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2]
+                + int(self.patch_size.value),
+            ]
             self.shape = patch.shape
 
             # Features from new patch
@@ -698,9 +717,7 @@ class AnnotationWidgetv2(Container):
             """Get Entropy"""
             # rank_candidate_locations()
             self.proposals = []
-            self.proposals = rank_candidate_locations(
-                logits, self.shape
-            )
+            self.proposals = rank_candidate_locations(logits, self.shape)
 
             # Add point which model are least certain about
             points = np.vstack(self.proposals[:10])

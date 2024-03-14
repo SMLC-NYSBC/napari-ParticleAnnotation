@@ -85,7 +85,7 @@ def load_coordinates(path):
         if np.all(data[:, 3] == data[:, 3].astype(int)):
             labels = data[:, 3].astype(int)
             data = data[:, 0:3]
-            
+
         else:
             if np.all(data[:, 0] == data[:, 0].astype(int)):
                 data = data[:, 1:4]
@@ -105,13 +105,13 @@ def load_coordinates(path):
         data = data[:, 1:4]
 
     data = np.array(
-            (
-                np.array(labels).astype(np.int16),
-                data[:, 0],
-                data[:, 1],
-                data[:, 2],
-            )
-        ).T
+        (
+            np.array(labels).astype(np.int16),
+            data[:, 0],
+            data[:, 1],
+            data[:, 2],
+        )
+    ).T
 
     return data, labels
 
@@ -146,14 +146,20 @@ def load_template():
     root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
 
     if len(root) == 1:
-        template_score = torch.load(root[0], map_location=device_)
+        template_score = [torch.load(root[0], map_location=device_)]
     else:
         root = np.sort(root)
         template_score = []
         for i in root:
             template_score.append(torch.load(i, map_location=device_))
-        template_score = np.concatenate(template_score, axis=0)
-    template_score = np.flip(template_score, axis=2)
+    template_score = torch.cat(template_score, 0)
+
+    template_score = np.flip(
+        template_score.numpy()
+        if isinstance(template_score, torch.Tensor)
+        else template_score,
+        axis=2,
+    )
     print("Loaded template scores")
     # try:
     #     template_score = torch.load(root, map_location=device_

@@ -236,20 +236,55 @@ def rank_candidate_locations(logits, shape):
     return ordered
 
 
-def get_device() -> torch.device:
+def get_device(device: str = "0") -> torch.device:
     """
-    Return device that can be used for training or predictions
+    Return a device that can be used for training or predictions
+
+    Args:
+        device (str, int): Device name or ID.
 
     Returns:
         torch.device: Device type.
     """
-    # df = torch.rand((1, 1))
-    device = torch.device("cpu")
-    # try:
-    #     device = torch.device("cuda:0")
-    #     df.to(device)
-    # except AssertionError:
-    #     device = torch.device("cpu")
-    #     df.to(device)
-
+    if device == "gpu":  # Load GPU ID 0
+        if torch.cuda.is_available():
+            device = torch.device("cuda:0")
+        else:
+            device = torch.device("cpu")
+    elif device == "cpu":  # Load CPU
+        device = torch.device("cpu")
+    elif device_is_str(device):  # Load specific GPU ID
+        if torch.cuda.is_available():
+            if int(device) == -1:
+                device = torch.device("cpu")
+            else:
+                device = torch.device(f"cuda:{int(device)}")
+        else:
+            device = torch.device("cpu")
+    elif device == "mps":  # Load Apple silicon
+        if torch.backends.mps.is_available():
+            device = torch.device("cpu")  # So far pytorch don't support CNN on MPS
+        else:
+            device = torch.device("cpu")
     return device
+
+
+def device_is_str(device: str = "0") -> bool:
+    """
+    Check if used device is convertible to int value
+
+    Args:
+        device (str, int): Device ID.
+
+    Returns:
+        bool: Check for input string/int
+    """
+
+    try:
+        int(device)
+        if isinstance(int(device), int):
+            return True
+        else:
+            return False
+    except ValueError:
+        return False
