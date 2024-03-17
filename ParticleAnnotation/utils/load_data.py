@@ -85,7 +85,7 @@ def load_coordinates(path):
         if np.all(data[:, 3] == data[:, 3].astype(int)):
             labels = data[:, 3].astype(int)
             data = data[:, 0:3]
-            
+
         else:
             if np.all(data[:, 0] == data[:, 0].astype(int)):
                 data = data[:, 1:4]
@@ -105,13 +105,13 @@ def load_coordinates(path):
         data = data[:, 1:4]
 
     data = np.array(
-            (
-                np.array(labels).astype(np.int16),
-                data[:, 0],
-                data[:, 1],
-                data[:, 2],
-            )
-        ).T
+        (
+            np.array(labels).astype(np.int16),
+            data[:, 0],
+            data[:, 1],
+            data[:, 2],
+        )
+    ).T
 
     return data, labels
 
