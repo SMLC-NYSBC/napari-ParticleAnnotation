@@ -60,6 +60,8 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
                     y_start : y_start + offset,
                     x_start : x_start + offset,
                 ]
+                shape_ = patch.shape
+
                 patch = torch.from_numpy(patch.copy()).float().to(device_)
                 patch = patch.permute(1, 2, 3, 0)
                 patch = patch.reshape(-1, patch.shape[-1])
