@@ -50,11 +50,9 @@ class AnnotationWidget(Container):
 
         # Key binding
         try:
-            self.napari_viewer.bind_key("z", self.ZEvent)
-            self.napari_viewer.bind_key("x", self.XEvent)
-            self.napari_viewer.bind_key("c", self.CEvent)
-            self.napari_viewer.bind_key("s", self.SEvent)
-            self.napari_viewer.bind_key("d", self.DEvent)
+            self.napari_viewer.bind_key("z", self.ZEvent)  # Add/Update to Negative label
+            self.napari_viewer.bind_key("x", self.XEvent)  # Add/Update to Positive label
+            self.napari_viewer.bind_key("c", self.CEvent)  # Remove label
         except ValueError:
             pass
 
@@ -169,7 +167,6 @@ class AnnotationWidget(Container):
                 # Calculate the distance between the mouse position and all points
                 distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
                 closest_point_index = distances.argmin()
-
                 # Clear the current selection and Select the closest point
                 if self.selected_particle_id != closest_point_index:
                     self.selected_particle_id = closest_point_index
@@ -180,16 +177,6 @@ class AnnotationWidget(Container):
                     )
             except:
                 pass
-
-    def SEvent(
-        self,
-    ):
-        pass
-
-    def DEvent(
-        self,
-    ):
-        pass
 
     def ZEvent(
         self,
@@ -242,6 +229,14 @@ class AnnotationWidget(Container):
     def _load_model(
         self,
     ):
+        """
+        Function to load and update self.AL_weights which is a list [self.weight, self.bias]
+        expected as a pickle torch .pt file.
+
+        If self.model is not None, update model weights. Else create self.model with 
+        this weights.
+        """
+        # TODO Navya
         pass
 
     """
@@ -255,6 +250,15 @@ class AnnotationWidget(Container):
     def _filter_particle_by_confidence(
         self,
     ):
+        """
+        Function to fetch
+        self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
+        and filter particle based on the confidence scored given from
+        self.filter_particle_by_confidence.value
+
+        Function updated ..._Prediction_Filtered Points layer.
+        """
+        # TODO Navya
         pass
 
     def _export_particles(
