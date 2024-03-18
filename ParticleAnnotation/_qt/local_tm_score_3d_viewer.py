@@ -13,6 +13,7 @@ from napari import Viewer
 from napari.layers import Points
 from napari.utils.notifications import show_info
 from napari.settings import get_settings
+from sklearn.neighbors import KDTree
 
 from ParticleAnnotation.utils.model.utils import get_device
 
@@ -47,8 +48,12 @@ class AnnotationWidget(Container):
 
         # Key binding
         try:
-            self.napari_viewer.bind_key("z", self.ZEvent)  # Add/Update to Negative label
-            self.napari_viewer.bind_key("x", self.XEvent)  # Add/Update to Positive label
+            self.napari_viewer.bind_key(
+                "z", self.ZEvent
+            )  # Add/Update to Negative label
+            self.napari_viewer.bind_key(
+                "x", self.XEvent
+            )  # Add/Update to Positive label
             self.napari_viewer.bind_key("c", self.CEvent)  # Remove label
         except ValueError:
             pass
@@ -148,13 +153,21 @@ class AnnotationWidget(Container):
     """
 
     def track_mouse_position(self, viewer, event):
+        """
+        Mouse binding helper function to update stored mouse position when it moves
+        """
         self.mouse_position = event.position
 
     def selected_point_near_mouse(self, viewer, event):
+        """
+        Mouse binding helper function to select point near the mouse pointer
+        """
         if self.activate_click:
+            name = self.napari_viewer.layers.selection.active.name
+
             try:
                 # if self.activate_click:
-                points_layer = viewer.layers["Initial_Labels"].data
+                points_layer = viewer.layers[name].data
 
                 # TODO Filter points_layer and search only for points withing radius
                 # TODO Just in case we have thousands or millions of points issue
@@ -167,27 +180,48 @@ class AnnotationWidget(Container):
                 if self.selected_particle_id != closest_point_index:
                     self.selected_particle_id = closest_point_index
 
-                    viewer.layers["Initial_Labels"].selected_data = set()
-                    viewer.layers["Initial_Labels"].selected_data.add(
+                    viewer.layers[name].selected_data = set()
+                    viewer.layers[name].selected_data.add(
                         closest_point_index
                     )
             except:
                 pass
 
-    def ZEvent(
-        self,
-    ):
-        pass
+    def key_event(self, viewer: Viewer, key: int):
+        """
+        Main key event definition.
 
-    def XEvent(
-        self,
-    ):
-        pass
+        Args:
+            key (int): Key definition of an action.
+        """
+        if self.activate_click:
+            name = self.napari_viewer.layers.selection.active.name
+            points_layer = viewer.layers[name].data
 
-    def CEvent(
-        self,
-    ):
-        pass
+            mouse_position = np.asarray(self.mouse_position).reshape(1, -1)
+            if points_layer.shape[0] == 0:
+                self.update_point_layer(None, key, "add")
+            else:
+                kdtree = KDTree(points_layer)
+                distance, closest_point = kdtree.query(mouse_position, k=1)
+
+                if key == 2:
+                    if distance[0] < 10:
+                        self.update_point_layer(closest_point[0], 0, "remove")
+                else:
+                    if distance[0] > 10:
+                        self.update_point_layer(None, key, "add")
+                    else:
+                        self.update_point_layer(closest_point[0], key, "update")
+
+    def ZEvent(self, viewer):
+        self.key_event(viewer, 0)
+
+    def XEvent(self, viewer):
+        self.key_event(viewer, 1)
+
+    def CEvent(self, viewer):
+        self.key_event(viewer, 2)
 
     """
     Main triggers for GUI
@@ -196,7 +230,14 @@ class AnnotationWidget(Container):
     def _select_particle_for_patches(
         self,
     ):
-        pass
+        self.image_name = (
+            self.filename
+        ) = self.napari_viewer.layers.selection.active.name
+
+        self.create_point_layer(
+            np.array([]), np.array([]), name="Chosen_Particles_of_Interest"
+        )
+        self.activate_click = True
 
     def _initialize_BLR(
         self,
@@ -233,8 +274,8 @@ class AnnotationWidget(Container):
         """
         Function to load and update self.AL_weights which is a list [self.weight, self.bias]
         expected as a pickle torch .pt file.
-        
-        If self.model is not None, update model weights. Else create self.model with 
+
+        If self.model is not None, update model weights. Else create self.model with
         this weights.
         """
         # TODO Navya
@@ -247,6 +288,80 @@ class AnnotationWidget(Container):
     """
     Viewer helper functionality
     """
+
+    def create_point_layer(
+        self, point: np.ndarray, label: np.ndarray, name="Initial_Labels"
+    ):
+        """
+        Create a point layer in napari with 2D/3D points and associated labels.
+        """
+
+        # If layer of the same exist remove it for update
+        # Overwriting layer results in not correctly displayed points labels
+        try:
+            self.napari_viewer.layers.remove(name)
+        except Exception as e:
+            print(f"Warning: {e} error occurs while searching for {name} layer.")
+
+        if point.shape[0] > 0:
+            self.napari_viewer.add_points(
+                point,
+                name=name,
+                face_color="#00000000",  # Hex + alpha
+                properties={"label": label.astype(np.int16)},
+                edge_color="label",
+                edge_color_cycle=self.color_map_particle_classes,
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
+            self.napari_viewer.layers[name].mode = "select"
+        else:  # Create empty layer
+            self.napari_viewer.add_points(
+                point,
+                name=name,
+                face_color="#00000000",  # Hex + alpha
+                edge_color_cycle=self.color_map_particle_classes,
+                edge_width=0.1,
+                symbol="square",
+                size=40,
+            )
+            self.napari_viewer.layers[name].mode = "select"
+
+    def update_point_layer(self, index=None, label=0, func="add"):
+        name = self.napari_viewer.layers.selection.active.name
+        point_layer = self.napari_viewer.layers[name]
+
+        # Add point pointed by mouse
+        if func == "add":
+            points = point_layer.data
+
+            if points.shape[0] == 0:
+                labels = np.array([label])
+                points = np.array([self.mouse_position])
+            else:
+                labels = point_layer.properties["label"]
+                labels = np.insert(labels, len(points), [label], axis=0)
+
+                points = np.insert(points, len(points), self.mouse_position, axis=0)
+
+            self.create_point_layer(points, labels, name)
+        elif func == "remove":  # Remove point pointed by mouse
+            points = point_layer.data
+            labels = point_layer.properties["label"]
+
+            points = np.delete(points, index, axis=0)
+            labels = np.delete(labels, index, axis=0)
+
+            self.create_point_layer(points, labels, name)
+        elif func == "update":  # Update point pointed by mouse
+            points = point_layer.data
+            labels = point_layer.properties["label"]
+            if labels[index] != label:
+                labels[index] = label
+                self.create_point_layer(points, labels, name)
+
+        point_layer.edge_color_cycle = self.color_map_particle_classes
 
     """
     Global helper functions

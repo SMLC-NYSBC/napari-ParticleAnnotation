@@ -1057,7 +1057,7 @@ class AnnotationWidgetv2(Container):
                 kdtree = KDTree(points_layer)
                 distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-                if distance > 12:
+                if distance > 10:
                     self.update_point_layer_2(self.mouse_position, 0, "add")
                 else:
                     self.update_point_layer_2(closest_point_index, 0, "update")
