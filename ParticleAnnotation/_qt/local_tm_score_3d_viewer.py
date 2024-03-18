@@ -31,10 +31,7 @@ class AnnotationWidget(Container):
 
         # Particles selections
         self.cur_proposal_index, self.proposals = 0, []
-        self.chosen_particles = []
-        self.curr_layer = "Chosen Particles"
-        self.true_labels = np.array([])
-        self.particle_list = []
+        self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
         self.selected_particle_id = None
 
         # BLR model
@@ -165,8 +162,8 @@ class AnnotationWidget(Container):
                 # if self.activate_click:
                 points_layer = viewer.layers[name].data
 
-                # TODO Filter points_layer and search only for points withing radius
-                # TODO Just in case we have thousands or millions of points issue
+                # TODO Navya Filter points_layer and search only for points withing radius
+                # TODO Navya Just in case we have thousands or millions of points issue
 
                 # Calculate the distance between the mouse position and all points
                 distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
@@ -177,9 +174,7 @@ class AnnotationWidget(Container):
                     self.selected_particle_id = closest_point_index
 
                     viewer.layers[name].selected_data = set()
-                    viewer.layers[name].selected_data.add(
-                        closest_point_index
-                    )
+                    viewer.layers[name].selected_data.add(closest_point_index)
             except Exception as e:
                 print(f"Warning: {e} error occurs while searching for {name} layer.")
 
@@ -210,6 +205,8 @@ class AnnotationWidget(Container):
                     else:
                         self.update_point_layer(closest_point[0], key, "update")
 
+            print(self.user_annotations)
+
     def ZEvent(self, viewer):
         self.key_event(viewer, 0)
 
@@ -226,6 +223,9 @@ class AnnotationWidget(Container):
     def _select_particle_for_patches(
         self,
     ):
+        # Restart user annotation storage
+        self.user_annotations = np.zeros((0, 4))
+
         self.image_name = (
             self.filename
         ) = self.napari_viewer.layers.selection.active.name
@@ -284,7 +284,6 @@ class AnnotationWidget(Container):
     """
     Viewer helper functionality
     """
-
     def create_point_layer(
         self, point: np.ndarray, label: np.ndarray, name="Initial_Labels"
     ):
@@ -330,6 +329,7 @@ class AnnotationWidget(Container):
 
         # Add point pointed by mouse
         if func == "add":
+            # Add point
             points = point_layer.data
 
             if points.shape[0] == 0:
@@ -341,20 +341,45 @@ class AnnotationWidget(Container):
 
                 points = np.insert(points, len(points), self.mouse_position, axis=0)
 
+            # Update user annotation storage
+            self.user_annotations = np.concatenate(
+                (self.user_annotations, np.hstack((points, labels[:, None])))
+            )
+            self.user_annotations = np.vstack(
+                tuple(set(map(tuple, self.user_annotations)))
+            )
+
+            # Update point layer
             self.create_point_layer(points, labels, name)
         elif func == "remove":  # Remove point pointed by mouse
             points = point_layer.data
             labels = point_layer.properties["label"]
 
+            # Remove point from user annotation storage
+            idx = np.where(self.user_annotations[:, :3] == points[index])
+            print(idx, np.all(self.user_annotations[:, :3] == points[index], axis=0))
+            self.user_annotations = np.delete(self.user_annotations, idx, axis=0)
+
+            # Remove point from layer
             points = np.delete(points, index, axis=0)
             labels = np.delete(labels, index, axis=0)
 
+            # Update point layer
             self.create_point_layer(points, labels, name)
         elif func == "update":  # Update point pointed by mouse
             points = point_layer.data
             labels = point_layer.properties["label"]
+
+            # Update point in user annotation storage
+            idx = np.where(self.user_annotations[:, :3] == points[index])
+            if self.user_annotations[index, -1] != label:
+                self.user_annotations[index, -1] = label
+
+            # Update point labels
             if labels[index] != label:
                 labels[index] = label
+
+                # Update point layer
                 self.create_point_layer(points, labels, name)
 
         point_layer.edge_color_cycle = self.color_map_particle_classes
@@ -370,7 +395,7 @@ class AnnotationWidget(Container):
         Function to fetch
         self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
         and filter particle based on the confidence scored given from
-        and filter particle based on confidance scored given from
+        and filter particle based on confidence scored given from
         self.filter_particle_by_confidence.value
 
         Function updated ..._Prediction_Filtered Points layer.
@@ -383,12 +408,14 @@ class AnnotationWidget(Container):
     ):
         """
         Fetch all positive and negative particle, and export it as .csv file
-        with header [X, Y, Z, Score].
+        with header [Z, Y, X, Score].
 
         Fetched points should be from all already labels by user or predicted.
         If positive is present score is 1 or max. confidence score from prediction
         if present. For negative prediction it should be -1 or min. confidence
         score from prediction if present.
+
+        Export self.user_annotations [n, 4] organized Z, Y, X, ID
         """
         # TODO Navya
         pass
@@ -401,6 +428,10 @@ class AnnotationWidget(Container):
         with optional confidence scores.
         Use "viridis" colormap them for the scores. If score are not present,
         assign all with score 0.
+
+        Allow for [n, 3] or [n, 4]
+        if napari binder save
+        df = [n, 3 or 4] read it as [1:, 1:] [ZYX]
         """
         # TODO Navya
         pass
