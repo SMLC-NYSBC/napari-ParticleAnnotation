@@ -4,15 +4,11 @@ from magicgui.widgets import (
     PushButton,
     LineEdit,
     FloatSlider,
-    create_widget,
-    SpinBox,
     VBox,
     HBox,
 )
 from napari import Viewer
-from napari.layers import Points
 from napari.utils.notifications import show_info
-from napari.settings import get_settings
 from sklearn.neighbors import KDTree
 
 from ParticleAnnotation.utils.model.utils import get_device
@@ -184,8 +180,8 @@ class AnnotationWidget(Container):
                     viewer.layers[name].selected_data.add(
                         closest_point_index
                     )
-            except:
-                pass
+            except Exception as e:
+                print(f"Warning: {e} error occurs while searching for {name} layer.")
 
     def key_event(self, viewer: Viewer, key: int):
         """
