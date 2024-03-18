@@ -146,14 +146,28 @@ def load_template():
     root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
 
     if len(root) == 1:
-        template_score = torch.load(root[0], map_location=device_)
+        template_score = [torch.load(root[0], map_location=device_)]
     else:
         root = np.sort(root)
         template_score = []
         for i in root:
             template_score.append(torch.load(i, map_location=device_))
-        template_score = np.concatenate(template_score, axis=0)
-    template_score = np.flip(template_score, axis=2)
+    template_score = torch.cat(template_score, 0)
+
+    if device_ == "cpu":
+        template_score = np.flip(
+            template_score.detach().numpy()
+            if isinstance(template_score, torch.Tensor)
+            else template_score,
+            axis=2,
+        )
+    else:
+        template_score = np.flip(
+            template_score.cpu().detach().numpy()
+            if isinstance(template_score, torch.Tensor)
+            else template_score,
+            axis=2,
+        )
     print("Loaded template scores")
     # try:
     #     template_score = torch.load(root, map_location=device_

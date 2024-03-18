@@ -131,5 +131,12 @@ dmypy.json
 .DS_Store
 *.ipynb
 *.mrc
+*.pt
+*.tiff
+*.csv
+*.tif
+*.npy
+*.npy
 *.tif
 *.pt
+

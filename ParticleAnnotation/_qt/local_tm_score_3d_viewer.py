@@ -20,9 +20,6 @@ from ParticleAnnotation.utils.model.utils import get_device
 class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         super().__init__(layout="vertical")
-        settings = get_settings()
-        settings.appearance.theme = "dark"
-
         self.napari_viewer = viewer_tm_score_3d
 
         # Global
@@ -50,11 +47,9 @@ class AnnotationWidget(Container):
 
         # Key binding
         try:
-            self.napari_viewer.bind_key("z", self.ZEvent)
-            self.napari_viewer.bind_key("x", self.XEvent)
-            self.napari_viewer.bind_key("c", self.CEvent)
-            self.napari_viewer.bind_key("s", self.SEvent)
-            self.napari_viewer.bind_key("d", self.DEvent)
+            self.napari_viewer.bind_key("z", self.ZEvent)  # Add/Update to Negative label
+            self.napari_viewer.bind_key("x", self.XEvent)  # Add/Update to Positive label
+            self.napari_viewer.bind_key("c", self.CEvent)  # Remove label
         except ValueError:
             pass
 
@@ -179,16 +174,6 @@ class AnnotationWidget(Container):
             except:
                 pass
 
-    def SEvent(
-        self,
-    ):
-        pass
-
-    def DEvent(
-        self,
-    ):
-        pass
-
     def ZEvent(
         self,
     ):
@@ -248,6 +233,9 @@ class AnnotationWidget(Container):
         """
         Function to load and update self.AL_weights which is a list [self.weight, self.bias]
         expected as a pickle torch .pt file.
+        
+        If self.model is not None, update model weights. Else create self.model with 
+        this weights.
         """
         # TODO Navya
         pass
@@ -270,6 +258,7 @@ class AnnotationWidget(Container):
         """
         Function to fetch
         self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
+        and filter particle based on the confidence scored given from
         and filter particle based on confidance scored given from
         self.filter_particle_by_confidence.value
 
