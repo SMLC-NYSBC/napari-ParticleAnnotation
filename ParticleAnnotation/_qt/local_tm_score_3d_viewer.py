@@ -19,7 +19,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
 )
-from ParticleAnnotation.utils.model.utils import get_device, get_random_patch
+from ParticleAnnotation.utils.model.utils import find_peaks, get_device, get_random_patch
 
 
 class AnnotationWidget(Container):
@@ -78,6 +78,7 @@ class AnnotationWidget(Container):
         self.image_resolution = LineEdit(name="Pixel", value="8.0")
         self.box_size = LineEdit(name="Box", value="5")
         self.patch_size = LineEdit(name="Patch", value="128")
+        self.pdb_id = LineEdit(name="PDB", value='7A4M')
 
         self.select_particle_for_patches = PushButton(name="Select particles")
         self.select_particle_for_patches.clicked.connect(
@@ -122,6 +123,11 @@ class AnnotationWidget(Container):
                 HBox(
                     widgets=(
                         self.image_resolution,
+                        self.pdb_id,
+                    )
+                ),
+                HBox(
+                    widgets=(
                         self.box_size,
                         self.patch_size,
                     )
@@ -134,19 +140,14 @@ class AnnotationWidget(Container):
                 ),
                 HBox(
                     widgets=(
-                        self.save_model,
-                        self.load_model,
-                    )
-                ),
-                HBox(
-                    widgets=(
                         self.train_BLR_on_patch,
                         self.switch_3d_view_to_projection,
                     )
                 ),
                 HBox(widgets=(self.predict,)),
                 HBox(widgets=(self.filter_particle_by_confidence,)),
-                HBox(widgets=(self.export_particles, self.import_particles)),
+                HBox(widgets=(self.export_particles, self.import_particles,)),
+                HBox(widgets=(self.save_model, self.load_model,)),
             )
         )
 
@@ -300,7 +301,7 @@ class AnnotationWidget(Container):
         self.create_image_layer(self.img, name=self.image_name)
 
         # Load and pre-process tm_scores data
-        self.tm_scores = load_template()
+        self.tm_scores = load_template(template=self.pdb_id.value)
         self.tm_scores = downsample(self.tm_scores, factor=factor)
         self.create_image_layer(self.tm_scores[0], name="TM_Scores", transparency=True)
 
@@ -310,21 +311,21 @@ class AnnotationWidget(Container):
             )
 
         patch = self.img_process[
-                self.patch_corner[0] : self.patch_corner[0]
+                self.patch_corner[0]:self.patch_corner[0]
                 + int(self.patch_size.value),
-                self.patch_corner[1] : self.patch_corner[1]
+                self.patch_corner[1]:self.patch_corner[1]
                 + int(self.patch_size.value),
-                self.patch_corner[2] : self.patch_corner[2]
+                self.patch_corner[2]:self.patch_corner[2]
                 + int(self.patch_size.value),
             ]
 
         tm_score = self.tm_scores[
             :,
-            self.patch_corner[0] : self.patch_corner[0]
+            self.patch_corner[0]:self.patch_corner[0]
             + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1]
+            self.patch_corner[1]:self.patch_corner[1]
             + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2]
+            self.patch_corner[2]:self.patch_corner[2]
             + int(self.patch_size.value),
         ]
 
@@ -349,6 +350,12 @@ class AnnotationWidget(Container):
             weights=self.count.ravel(),
             pre_train=self.AL_weights,
         )
+
+        self.selected_particles_with_entropy, scores = find_peaks(
+            tm_score[0, :], with_score=True
+        )
+        order = np.argsort(scores)
+        self.proposals = self.proposals[order]
 
     def _train_BLR_on_patch(
         self,

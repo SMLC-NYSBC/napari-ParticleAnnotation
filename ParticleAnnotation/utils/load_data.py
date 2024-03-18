@@ -126,7 +126,7 @@ def save_coordinates(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
 
-def load_template():
+def load_template(template: str = None):
     """
     Load the template scores from disk.
 
@@ -137,12 +137,14 @@ def load_template():
         The template score data.
 
     """
+    # TODO Navya 
+    # For loading templates, there is new parameter which define template pdb ID
+    # I want that templates are order in the way that first is a template with pdb ID
+    # name == to template parameter. Then rest order not specified. At the end we 
+    # want to have ice socore.
+    # User can load one file (just load dont do anything else), or multiple files
+    # from which we want to organize them correctly as above explained.
     device_ = get_device()
-    # temp_name = temp_name.upper()
-    # tomo_name = re.search(r"ts(\d{1,3})", path).group(0)
-
-    # [TO-DO] Remove down sampling after testing
-    # root = f'/h2/njain/data/tomonet_template_matched/downsampled'
     root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
 
     if len(root) == 1:
@@ -169,28 +171,6 @@ def load_template():
             axis=2,
         )
     print("Loaded template scores")
-    # try:
-    #     template_score = torch.load(root, map_location=device_
-    #     ).numpy()
-    #     # flip the template score along the y-axis
-    #     # ice_score = torch.load(
-    #     #     f"{root}/scores_ice.pt", map_location=device_
-    #     # ).numpy()
-    #
-    #     # We want to load just one file which is already ready
-    #     # template_score = np.concatenate([template_score, ice_score], axis=0)
-    #     # template_score = np.flip(template_score, axis=2)
-    #     print("Loaded template scores")
-    # except:
-    #     print(f"Could not find template {root}")
-    #     # template_score = torch.load(
-    #     #     root, map_location=device_
-    #     # ).numpy()
-    #     # ice_score = torch.load(
-    #     #     f"{root}/scores_ice.pt", map_location=device_
-    #     # ).numpy()
-    #     # template_score = np.concatenate([template_score, ice_score], axis=0)
-    #     # template_score = np.flip(template_score, axis=2)
 
     return template_score
 
