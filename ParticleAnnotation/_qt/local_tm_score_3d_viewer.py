@@ -66,7 +66,7 @@ class AnnotationWidget(Container):
         self.mouse_position = None
         self.click_add_point_callback = None
 
-        # ------- Step 1: Initialize New Dataset ------
+        # ---------------- Initialize New Dataset -----------------
         self.image_resolution = LineEdit(name="Pixel", value="8.0")
         self.box_size = LineEdit(name="Box", value="5")
         self.patch_size = LineEdit(name="Patch", value="128")
@@ -78,18 +78,15 @@ class AnnotationWidget(Container):
         self.initialize_BLR = PushButton(name="Start Training")
         self.initialize_BLR.clicked.connect(self._initialize_BLR)
 
-        self.save_model = PushButton(name="Save Model")
-        self.save_model.clicked.connect(self._save_model)
-        self.load_model = PushButton(name="Load Model")
-        self.load_model.clicked.connect(self._load_model)
-
-        # ------ Step 2: Initialize Active learning model -------
+        # ----------- Initialize Active learning model ------------
         self.train_BLR_on_patch = PushButton(name="Change Patch")
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
+        self.switch_3d_view_to_projection = PushButton(name="3D View / Projection")
+        self.switch_3d_view_to_projection.clicked.connect(self._switch_3d_view_to_projection)
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
-        # ------------ Step 3: Visualize labels tool & export ------------
+        # ------------ Visualize labels tool & export -------------
         self.filter_particle_by_confidence = FloatSlider(
             name="Filter Particle",
             min=0,
@@ -99,10 +96,16 @@ class AnnotationWidget(Container):
             self._filter_particle_by_confidence
         )
 
+        # ---------------- Import & Export modules ----------------
         self.export_particles = PushButton(name="Export picks")
         self.export_particles.clicked.connect(self._export_particles)
         self.import_particles = PushButton(name="Import picks")
         self.import_particles.clicked.connect(self._import_particles)
+
+        self.save_model = PushButton(name="Save Model")
+        self.save_model.clicked.connect(self._save_model)
+        self.load_model = PushButton(name="Load Model")
+        self.load_model.clicked.connect(self._load_model)
 
         widget = VBox(
             widgets=(
@@ -128,6 +131,11 @@ class AnnotationWidget(Container):
                 HBox(
                     widgets=(
                         self.train_BLR_on_patch,
+                        self.switch_3d_view_to_projection,
+                    )
+                ),
+                HBox(
+                    widgets=(
                         self.predict,
                     )
                 ),
@@ -205,8 +213,6 @@ class AnnotationWidget(Container):
                     else:
                         self.update_point_layer(closest_point[0], key, "update")
 
-            print(self.user_annotations)
-
     def ZEvent(self, viewer):
         self.key_event(viewer, 0)
 
@@ -238,6 +244,28 @@ class AnnotationWidget(Container):
     def _initialize_BLR(
         self,
     ):
+        """
+        Main function which build BLR model and start first run of training
+
+        BLR initialization:
+        - Get coordinates of particles from Chosen_Particles_of_Interest
+            - Store it as new self.patches list from which we will pick patch centers
+
+        - Pre-process image and store it as self.image_preprocess
+
+        - Build BLR model as self.model class if self.model is not None
+            - If self.model is None is this mode and continue training or pre-trained model
+            - Draw first patch and pre-process
+            - Initialize model with model.fit
+            - Use model to predict particle pick
+            - Calculate entropy and select 10 particles with highest entropy
+
+        - Present particle to the user as a grid os thing to correct
+            - remove image as image layer
+            - Create new image layer with particles boxes in 3D, add button to show projections
+
+        - Wait for user correction and activation of _train_BLR_on_patch function
+        """
         pass
 
     def _train_BLR_on_patch(
@@ -280,6 +308,8 @@ class AnnotationWidget(Container):
     """
     Viewer functionality
     """
+    def _switch_3d_view_to_projection(self, viewer):
+        pass
 
     """
     Viewer helper functionality
@@ -357,7 +387,6 @@ class AnnotationWidget(Container):
 
             # Remove point from user annotation storage
             idx = np.where(self.user_annotations[:, :3] == points[index])
-            print(idx, np.all(self.user_annotations[:, :3] == points[index], axis=0))
             self.user_annotations = np.delete(self.user_annotations, idx, axis=0)
 
             # Remove point from layer
