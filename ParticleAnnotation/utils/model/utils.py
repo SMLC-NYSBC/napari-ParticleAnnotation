@@ -76,19 +76,19 @@ def calc_iou(box_1, box_2, size_):
     return iou
 
 
-def get_random_patch(img, size_: int, chosen_particles=None):
-    z, y, x = img.shape
+def get_random_patch(img_size, size_: int, chosen_particles=None):
+    z, y, x = img_size
 
     if chosen_particles is None or chosen_particles.shape[0] == 0:
-        if img.shape[0] > size_:
+        if z > size_:
             z_start = np.random.randint(0, z - size_ + 1)
         else:
             z_start = 0
-        if img.shape[1] > size_:
+        if y > size_:
             y_start = np.random.randint(0, y - size_ + 1)
         else:
             y_start = 0
-        if img.shape[2] > size_:
+        if x > size_:
             x_start = np.random.randint(0, x - size_ + 1)
         else:
             x_start = 0
@@ -97,48 +97,23 @@ def get_random_patch(img, size_: int, chosen_particles=None):
         center = chosen_particles[center_idx]
         center_z, center_y, center_x = center
 
-        if img.shape[0] > size_:
+        if z > size_:
             z_start = max(0, center_z - size_ // 2)
             z_start = int(z_start)
         else:
             z_start = 0
 
-        if img.shape[1] > size_:
+        if y > size_:
             y_start = max(0, center_y - size_ // 2)
             y_start = int(y_start)
         else:
             y_start = 0
 
-        if img.shape[2] > size_:
+        if x > size_:
             x_start = max(0, center_x - size_ // 2)
             x_start = int(x_start)
         else:
             x_start = 0
-
-        # [TO-DO] add non-max suppression here to choose the best centers
-        # idx = np.where((chosen_particles == center).all(axis=1))
-        # chosen_particles = np.delete(chosen_particles, idx, axis=0)
-
-    # if img.shape[0] <= size_:
-    #     z_start = 0
-    #     z_end = z
-    # else:
-    #     z_end = z_start + size_
-    #
-    # if img.shape[1] <= size_:
-    #     y_start = 0
-    #     y_end = y
-    # else:
-    #     y_end = y_start + size_
-    #
-    # if img.shape[2] <= size_:
-    #     x_start = 0
-    #     x_end = x
-    # else:
-    #     x_end = x_start + size_
-    #
-    # # Extract the patch from the array
-    # patch = img[z_start:z_end, y_start:y_end, x_start:x_end]
 
     return (z_start, y_start, x_start)
 

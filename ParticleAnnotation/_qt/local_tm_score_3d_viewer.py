@@ -11,7 +11,15 @@ from napari import Viewer
 from napari.utils.notifications import show_info
 from sklearn.neighbors import KDTree
 
-from ParticleAnnotation.utils.model.utils import get_device
+from topaz.stats import normalize
+import torch
+
+from ParticleAnnotation.utils.load_data import downsample, load_template
+from ParticleAnnotation.utils.model.active_learning_model import (
+    BinaryLogisticRegression,
+    label_points_to_mask,
+)
+from ParticleAnnotation.utils.model.utils import get_device, get_random_patch
 
 
 class AnnotationWidget(Container):
@@ -82,7 +90,9 @@ class AnnotationWidget(Container):
         self.train_BLR_on_patch = PushButton(name="Change Patch")
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
         self.switch_3d_view_to_projection = PushButton(name="3D View / Projection")
-        self.switch_3d_view_to_projection.clicked.connect(self._switch_3d_view_to_projection)
+        self.switch_3d_view_to_projection.clicked.connect(
+            self._switch_3d_view_to_projection
+        )
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
@@ -134,11 +144,7 @@ class AnnotationWidget(Container):
                         self.switch_3d_view_to_projection,
                     )
                 ),
-                HBox(
-                    widgets=(
-                        self.predict,
-                    )
-                ),
+                HBox(widgets=(self.predict,)),
                 HBox(widgets=(self.filter_particle_by_confidence,)),
                 HBox(widgets=(self.export_particles, self.import_particles)),
             )
@@ -232,9 +238,9 @@ class AnnotationWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
 
         self.create_point_layer(
             np.array([]), np.array([]), name="Chosen_Particles_of_Interest"
@@ -266,7 +272,83 @@ class AnnotationWidget(Container):
 
         - Wait for user correction and activation of _train_BLR_on_patch function
         """
-        pass
+        self.activate_click = True
+
+        # Collect particle selected by users
+        try:
+            self.patches = self.napari_viewer.layers[
+                "Chosen_Particles_of_Interest"
+            ].data
+
+            assert len(self.patches) > 4
+            self.napari_viewer.layers.remove("Chosen Particles")
+        except AssertionError:
+            show_info("Please choose at least 5 particles to initialize the model!")
+            return
+
+        # Image dataset pre-process
+        img = self.napari_viewer.layers[self.image_name]
+        self.img_process = img.data
+        factor = float(self.sampling_layer.value) / 8  # Normalize to 8A
+        self.img_process = downsample(img.data, factor=factor)
+
+        self.shape = self.img_process.shape
+        self.img_process, _ = normalize(
+            self.img_process.copy(), method="affine", use_cuda=False
+        )
+        img.data = self.img_process
+        self.create_image_layer(self.img, name=self.image_name)
+
+        # Load and pre-process tm_scores data
+        self.tm_scores = load_template()
+        self.tm_scores = downsample(self.tm_scores, factor=factor)
+        self.create_image_layer(self.tm_scores[0], name="TM_Scores", transparency=True)
+
+        # Select patch
+        self.patch_corner = get_random_patch(
+                self.img_process.shape, int(self.patch_size.value), self.patches
+            )
+
+        patch = self.img_process[
+                self.patch_corner[0] : self.patch_corner[0]
+                + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1]
+                + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2]
+                + int(self.patch_size.value),
+            ]
+
+        tm_score = self.tm_scores[
+            :,
+            self.patch_corner[0] : self.patch_corner[0]
+            + int(self.patch_size.value),
+            self.patch_corner[1] : self.patch_corner[1]
+            + int(self.patch_size.value),
+            self.patch_corner[2] : self.patch_corner[2]
+            + int(self.patch_size.value),
+        ]
+
+        # Initialized y (empty label mask) and count
+        self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
+        self.x = self.x.reshape(-1, self.x.shape[-1])
+        self.shape = patch.shape
+        self.y = label_points_to_mask([], self.shape, self.box_size.value)
+        self.count = torch.where(
+            ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
+        )
+
+        # Initialize model
+        if self.model is not None:
+            self.model = BinaryLogisticRegression(
+                n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+            )
+
+        self.model.fit(
+            self.x,
+            self.y.ravel(),
+            weights=self.count.ravel(),
+            pre_train=self.AL_weights,
+        )
 
     def _train_BLR_on_patch(
         self,
@@ -308,12 +390,47 @@ class AnnotationWidget(Container):
     """
     Viewer functionality
     """
+
     def _switch_3d_view_to_projection(self, viewer):
         pass
 
     """
     Viewer helper functionality
     """
+
+    def create_image_layer(self, image, name="TM_Scores", transparency=False):
+        """
+        Create a image layer in napari.
+
+        Args:
+            tm_scores (np.ndarray): Image array to display
+            name (str): Layer name
+            transparency (bool): If True, show image as transparent layer
+        """
+        try:
+            self.napari_viewer.layers.remove(name)
+        except Exception as e:
+            print(f"Warning: {e} error occurs while searching for {name} layer.")
+
+        if transparency:
+            self.napari_viewer.add_image(image, name=name)
+        else:
+            self.napari_viewer.add_image(
+                image, name=name, colormap="viridis", opacity=0.25
+            )
+
+        try:
+            self.napari_viewer.layers[name].contrast_limits = (
+                image.min(),
+                image.max(),
+            )
+        except Exception as e:
+            print(f"Warning: {e} error occurs while searching for {name} layer.")
+
+        if transparency:
+            # set layer as not visible
+            self.napari_viewer.layers[name].visible = False
+
     def create_point_layer(
         self, point: np.ndarray, label: np.ndarray, name="Initial_Labels"
     ):

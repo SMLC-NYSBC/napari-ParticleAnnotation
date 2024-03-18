@@ -613,7 +613,7 @@ class AnnotationWidgetv2(Container):
             pass
 
         self.reset_view()
-        show_info(f"Task finished: Initialize Dataset!")
+        show_info("Task finished: Initialize Dataset!")
 
     def _change_patch(self):
         self.curr_layer = "Initial_Labels"
