@@ -20,9 +20,6 @@ from ParticleAnnotation.utils.model.utils import get_device
 class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         super().__init__(layout="vertical")
-        settings = get_settings()
-        settings.appearance.theme = 'dark'
-
         self.napari_viewer = viewer_tm_score_3d
 
         # Global
@@ -141,9 +138,7 @@ class AnnotationWidget(Container):
             )
         )
 
-        self.napari_viewer.window.add_dock_widget(
-                    widget, area="left"
-                )
+        self.napari_viewer.window.add_dock_widget(widget, area="left")
 
         device_ = get_device()
         show_info(f"Active learning model runs on: {device_}")
@@ -167,6 +162,7 @@ class AnnotationWidget(Container):
                 # Calculate the distance between the mouse position and all points
                 distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
                 closest_point_index = distances.argmin()
+
                 # Clear the current selection and Select the closest point
                 if self.selected_particle_id != closest_point_index:
                     self.selected_particle_id = closest_point_index
@@ -224,6 +220,11 @@ class AnnotationWidget(Container):
     def _save_model(
         self,
     ):
+        """
+        Function to fetch self.AL_weights which is a list [self.weight, self.bias]
+        and save it as a pickle torch .pt file
+        """
+        # TODO Navya
         pass
 
     def _load_model(
@@ -232,7 +233,7 @@ class AnnotationWidget(Container):
         """
         Function to load and update self.AL_weights which is a list [self.weight, self.bias]
         expected as a pickle torch .pt file.
-
+        
         If self.model is not None, update model weights. Else create self.model with 
         this weights.
         """
@@ -244,7 +245,11 @@ class AnnotationWidget(Container):
     """
 
     """
-    Helper functions
+    Viewer helper functionality
+    """
+
+    """
+    Global helper functions
     """
 
     def _filter_particle_by_confidence(
@@ -254,6 +259,7 @@ class AnnotationWidget(Container):
         Function to fetch
         self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
         and filter particle based on the confidence scored given from
+        and filter particle based on confidance scored given from
         self.filter_particle_by_confidence.value
 
         Function updated ..._Prediction_Filtered Points layer.
@@ -264,9 +270,26 @@ class AnnotationWidget(Container):
     def _export_particles(
         self,
     ):
+        """
+        Fetch all positive and negative particle, and export it as .csv file
+        with header [X, Y, Z, Score].
+
+        Fetched points should be from all already labels by user or predicted.
+        If positive is present score is 1 or max. confidence score from prediction
+        if present. For negative prediction it should be -1 or min. confidence
+        score from prediction if present.
+        """
+        # TODO Navya
         pass
 
     def _import_particles(
         self,
     ):
+        """
+        Import file with coordinates. Expect that files contains point in XYZ order,
+        with optional confidence scores.
+        Use "viridis" colormap them for the scores. If score are not present,
+        assign all with score 0.
+        """
+        # TODO Navya
         pass
