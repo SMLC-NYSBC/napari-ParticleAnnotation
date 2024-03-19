@@ -181,9 +181,14 @@ class AnnotationWidget(Container):
                 # if self.activate_click:
                 points_layer = viewer.layers[name].data
 
-                # TODO Navya Filter points_layer and search only for points withing radius
-                # TODO Navya Just in case we have thousands or millions of points issue
-
+                # Filter points_layer and search only for points withing radius
+                # Just in case we have thousands or millions of points issue
+                points_layer = points_layer[
+                    np.where(
+                        np.linalg.norm(points_layer - self.mouse_position, axis=1) < 10
+                    )
+                ]
+                
                 # Calculate the distance between the mouse position and all points
                 distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
                 closest_point_index = distances.argmin()
@@ -388,7 +393,6 @@ class AnnotationWidget(Container):
         Function to fetch self.AL_weights which is a list [self.weight, self.bias]
         and save it as a pickle torch .pt file
         """
-        # TODO Navya
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File", directory="Active_learn_model.pt"
         )
@@ -405,7 +409,6 @@ class AnnotationWidget(Container):
         If self.model is not None, update model weights. Else create self.model with
         this weights.
         """
-        # TODO Navya
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         self.AL_weights = torch.load(f"{self.filename}")
 
@@ -567,7 +570,6 @@ class AnnotationWidget(Container):
 
         Function updated ..._Prediction_Filtered Points layer.
         """
-        # TODO Navya
         active_layer_name = self.napari_viewer.layers.selection.active.name
         if active_layer_name.endswith("Prediction_Filtered"):
             self.napari_viewer.layers.remove(active_layer_name)
@@ -639,7 +641,6 @@ class AnnotationWidget(Container):
         if napari binder save
         df = [n, 3 or 4] read it as [1:, 1:] [ZYX]
         """
-        # TODO Navya
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         try:
             data, labels = load_coordinates(self.filename)
