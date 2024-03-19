@@ -42,6 +42,9 @@ class AnnotationWidget(Container):
         self.cur_proposal_index, self.proposals = 0, []
         self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
         self.selected_particle_id = None
+        # Remove after testing
+        self.particle = None
+        self.confidence = None
 
         # BLR model
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
@@ -357,6 +360,10 @@ class AnnotationWidget(Container):
         )
         order = np.argsort(scores)
         self.proposals = self.proposals[order]
+        
+        # remove after testing
+        self.particle = np.zeros((1, 3))
+        self.confidence = np.zeros((1, 1))
 
     def _train_BLR_on_patch(
         self,
@@ -366,6 +373,8 @@ class AnnotationWidget(Container):
     def _predict(
         self,
     ):
+        # self.particle = peaks
+        # self.confidence = peak_logits
         pass
 
     """
@@ -554,13 +563,36 @@ class AnnotationWidget(Container):
         Function to fetch
         self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
         and filter particle based on the confidence scored given from
-        and filter particle based on confidence scored given from
         self.filter_particle_by_confidence.value
 
         Function updated ..._Prediction_Filtered Points layer.
         """
         # TODO Navya
-        pass
+        active_layer_name = self.napari_viewer.layers.selection.active.name
+        if active_layer_name.endswith("Prediction_Filtered"):
+            self.napari_viewer.layers.remove(active_layer_name)
+            active_layer_name = active_layer_name[:-20]
+        self.napari_viewer.layers[f"{active_layer_name}"].visible = False
+
+        keep_id = np.where(self.confidence >= self.filter_particle_by_confidence.value)
+
+        # self.particle and self.confidence are from self._predict
+        filter_particle = self.particle[keep_id[0], :]
+        filter_confidence = self.confidence[keep_id[0]]
+
+        self.napari_viewer.add_points(
+            filter_particle,
+            name=f"{active_layer_name}_Prediction_Filtered",
+            properties={"confidence": filter_confidence},
+            edge_color="black",
+            face_color="confidence",
+            face_colormap="viridis",
+            edge_width=0.1,
+            symbol="disc",
+            size=5,
+        )
+
+        # pass
 
     def _export_particles(
         self,
@@ -576,8 +608,23 @@ class AnnotationWidget(Container):
 
         Export self.user_annotations [n, 4] organized Z, Y, X, ID
         """
-        # TODO Navya
-        pass
+
+        # self.user_annotations () and self._predict (self.particle, self.confidence)
+        pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
+        pos_points = np.hstack((pos_points, np.ones((pos_points.shape[0], 1))))
+        neg_points = self.user_annotations[self.user_annotations[:, -1] == 0][:, :-1]
+        neg_points = np.hstack((neg_points, -1 * np.ones((neg_points.shape[0], 1))))
+
+        data = np.vstack((pos_points, neg_points))
+        if self.particle is not None:
+            data = np.vstack((data, np.hstack((self.particle, self.confidence))))
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            caption="Save File", directory="exported_particles.csv"
+        )
+        header = ["Z", "Y", "X", "Score"]
+        data = np.vstack([header, data])
+        np.savetxt(filename, data, delimiter=",", fmt="%s")
 
     def _import_particles(
         self,
