@@ -66,7 +66,7 @@ def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
                 patch = patch.permute(1, 2, 3, 0)
                 patch = patch.reshape(-1, patch.shape[-1])
 
-            logits = model(patch).reshape(*shape_)
+            logits = model(patch).reshape(*shape_[1:])
 
         if device_ == "cpu":
             logits = logits.detach().numpy()

@@ -174,6 +174,10 @@ def find_peaks(score, size=size[0] / 3, with_score=False):
         else:
             for i in peaks:
                 scores.append(score[i[0], i[1]])
+
+        order = np.argsort(scores)
+        peaks = peaks[order]
+
         return peaks, scores
     return peaks
 
@@ -241,7 +245,8 @@ def get_device(device: str = "0") -> torch.device:
             device = torch.device("cpu")  # So far pytorch don't support CNN on MPS
         else:
             device = torch.device("cpu")
-    return device
+    # return device
+    return torch.device("cpu")
 
 
 def device_is_str(device: str = "0") -> bool:
