@@ -75,46 +75,36 @@ def load_coordinates(path):
         print("Could not load coordinates from file")
         return None, None
 
+    # remove NaNs
     data = data[~np.isnan(data).any(axis=1)]
+
     # if data is x,y,z just return
     if data.shape[1] == 3:
+        # convert to z,y,x
+        data = data[:, [2, 1, 0]]
         labels = np.ones(data.shape[0])
 
     if data.shape[1] == 4:
         # labels would either be the first or the last column
         if np.all(data[:, 3] == data[:, 3].astype(int)):
-            labels = data[:, 3].astype(int)
+            labels = data[:, 3]
             data = data[:, 0:3]
 
         else:
             if np.all(data[:, 0] == data[:, 0].astype(int)):
                 data = data[:, 1:4]
-                labels = data[:, 0].astype(int)
+                labels = data[:, 0]
             else:
                 labels = np.ones(data.shape[0])
                 data = data[:, 0:3]
+        # data = data[:, [2, 1, 0]]
 
-    # if data is index,x,y,z,label - this is how napari saves!
+    # if data is index,z,y,x,label - this is how napari saves!
     if data.shape[1] == 5:
         labels = data[:, 4]
-        # check if the labels are integers
-        if np.all(labels == labels.astype(int)):
-            labels = labels.astype(int)
-        else:
-            labels = np.ones(data.shape[0])
-        data = data[:, 1:4]
-
-    data = np.array(
-        (
-            np.array(labels).astype(np.int16),
-            data[:, 0],
-            data[:, 1],
-            data[:, 2],
-        )
-    ).T
+        data   = data[:, 1:4]
 
     return data, labels
-
 
 def save_coordinates(path, data):
     """

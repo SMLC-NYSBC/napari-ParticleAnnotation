@@ -15,7 +15,7 @@ from qtpy.QtWidgets import QFileDialog
 from topaz.stats import normalize
 import torch
 
-from ParticleAnnotation.utils.load_data import downsample, load_template
+from ParticleAnnotation.utils.load_data import downsample, load_template, load_coordinates
 from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
@@ -577,7 +577,7 @@ class AnnotationWidget(Container):
         keep_id = np.where(self.confidence >= self.filter_particle_by_confidence.value)
 
         # self.particle and self.confidence are from self._predict
-        filter_particle = self.particle[keep_id[0], :]
+        filter_particle   = self.particle[keep_id[0], :]
         filter_confidence = self.confidence[keep_id[0]]
 
         self.napari_viewer.add_points(
@@ -633,11 +633,36 @@ class AnnotationWidget(Container):
         Import file with coordinates. Expect that files contains point in XYZ order,
         with optional confidence scores.
         Use "viridis" colormap them for the scores. If score are not present,
-        assign all with score 0.
+        assign all with score 0.  
 
         Allow for [n, 3] or [n, 4]
         if napari binder save
         df = [n, 3 or 4] read it as [1:, 1:] [ZYX]
         """
         # TODO Navya
-        pass
+        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
+        try:
+            data, labels = load_coordinates(self.filename)
+            # Update user annotation storage
+            self.user_annotations = np.concatenate(
+                (self.user_annotations, np.hstack((data, labels[:, None])))
+            )
+            self.user_annotations = np.vstack(
+                tuple(set(map(tuple, self.user_annotations)))
+            )
+
+            # add imported points to the layer
+            self.napari_viewer.add_points(
+                        data,
+                        name=f"Imported_Particles",
+                        properties={"confidence": labels},
+                        edge_color="black",
+                        face_color="confidence",
+                        face_colormap="viridis",
+                        edge_width=0.1,
+                        symbol="disc",
+                        size=5,
+                    )
+            print("Loaded coordinates")
+        except:
+            show_info("Could not load coordinates!")
