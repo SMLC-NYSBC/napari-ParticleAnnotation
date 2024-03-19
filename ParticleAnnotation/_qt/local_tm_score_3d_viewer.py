@@ -93,10 +93,14 @@ class AnnotationWidget(Container):
         # ----------- Initialize Active learning model ------------
         self.train_BLR_on_patch = PushButton(name="Change Patch")
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
-        self.switch_3d_view_to_projection = PushButton(name="3D View / Projection")
-        self.switch_3d_view_to_projection.clicked.connect(
-            self._switch_3d_view_to_projection
-        )
+
+        self.show_patch = PushButton(name="Show Patch")
+        self.show_patch.clicked.connect(self._show_patch)
+        self.show_particle_grid = PushButton(name="Show Particle")
+        self.show_particle_grid.clicked.connect(self._show_particle_grid)
+        self.show_current_BLR_predictions = PushButton(name="Show BLR model")
+        self.show_current_BLR_predictions.clicked.connect(self._show_current_BLR_predictions)
+
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
@@ -139,7 +143,13 @@ class AnnotationWidget(Container):
                 HBox(
                     widgets=(
                         self.train_BLR_on_patch,
-                        self.switch_3d_view_to_projection,
+                    )
+                ),
+                HBox(
+                    widgets=(
+                        self.show_patch,
+                        self.show_particle_grid,
+                        self.show_current_BLR_predictions,
                     )
                 ),
                 HBox(widgets=(self.predict,)),
@@ -349,15 +359,8 @@ class AnnotationWidget(Container):
         self.selected_particles_with_entropy, scores = find_peaks(
             tm_score[0, :], with_score=True
         )
-        order = np.argsort(scores)
-        self.proposals = self.proposals[order]
-        
-        # remove after testing
-        self.particle = np.zeros((1, 3))
-        self.confidence = np.zeros((1, 1))
 
-        points = np.vstack(self.proposals[:10])
-        points = correct_coord(points, self.patch_corner, True)
+        points = np.vstack(self.selected_particles_with_entropy[:10])
         labels = np.zeros((points.shape[0],))
         labels[:] = 2
 
@@ -411,7 +414,13 @@ class AnnotationWidget(Container):
     Viewer functionality
     """
 
-    def _switch_3d_view_to_projection(self, viewer):
+    def _show_patch(self, viewer):
+        pass
+
+    def _show_particle_grid(self, viewer):
+        pass
+
+    def _show_current_BLR_predictions(self, viewer):
         pass
 
     """

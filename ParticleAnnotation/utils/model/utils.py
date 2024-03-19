@@ -174,6 +174,10 @@ def find_peaks(score, size=size[0] / 3, with_score=False):
         else:
             for i in peaks:
                 scores.append(score[i[0], i[1]])
+
+        order = np.argsort(scores)
+        peaks = peaks[order]
+
         return peaks, scores
     return peaks
 
