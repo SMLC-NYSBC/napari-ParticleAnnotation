@@ -241,7 +241,8 @@ def get_device(device: str = "0") -> torch.device:
             device = torch.device("cpu")  # So far pytorch don't support CNN on MPS
         else:
             device = torch.device("cpu")
-    return device
+    # return device
+    return torch.device("cpu")
 
 
 def device_is_str(device: str = "0") -> bool:

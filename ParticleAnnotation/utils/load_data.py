@@ -127,21 +127,16 @@ def load_template(template: str = None):
         The template score data.
 
     """
-    # TODO Navya 
-    # For loading templates, there is new parameter which define template pdb ID
-    # I want that templates are order in the way that first is a template with pdb ID
-    # name == to template parameter. Then rest order not specified. At the end we 
-    # want to have ice socore.
-    # User can load one file (just load dont do anything else), or multiple files
-    # from which we want to organize them correctly as above explained.
     device_ = get_device()
     root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
 
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
+        template_idx = 0
     else:
-        root = np.sort(root)
         template_score = []
+        template_idx = [id_ for id_, i in enumerate(root) if i.endswith(template)][0]
+
         for i in root:
             template_score.append(torch.load(i, map_location=device_))
     template_score = torch.cat(template_score, 0)
@@ -162,7 +157,7 @@ def load_template(template: str = None):
         )
     print("Loaded template scores")
 
-    return template_score
+    return template_score, template_idx
 
 
 def load_image(path, aws=False):

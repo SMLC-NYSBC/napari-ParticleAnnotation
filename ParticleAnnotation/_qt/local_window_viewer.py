@@ -542,7 +542,7 @@ class AnnotationWidgetv2(Container):
 
             # self.tm_scores = np.zeros(self.img_process.shape)
             self.patch_corner = get_random_patch(
-                self.img_process, int(self.patch_size.value), self.chosen_particles
+                self.img_process.shape, int(self.patch_size.value), self.chosen_particles
             )
 
             patch = self.img_process[
@@ -676,11 +676,11 @@ class AnnotationWidgetv2(Container):
 
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
-            show_info(f"Task finished: Retrain model!")
+            show_info("Task finished: Retrain model!")
 
             # Feed new patch
             self.patch_corner = get_random_patch(
-                self.img_process, int(self.patch_size.value), self.chosen_particles
+                self.img_process.shape, int(self.patch_size.value), self.chosen_particles
             )
             print(self.patch_corner)
             patch = self.img_process[
@@ -868,7 +868,7 @@ class AnnotationWidgetv2(Container):
                 size=5,
             )
 
-            show_info(f"Task finished: Retrain model!")
+            show_info("Task finished: Retrain model!")
 
     def _predict(self):
         self.curr_layer = "Initial_Labels"
@@ -967,6 +967,7 @@ class AnnotationWidgetv2(Container):
             #         (peak_logits, max_logits * np.ones(self.true_labels.shape[0]))
             #     )
 
+        print(peaks.shape, peak_logits.shape)
         self.napari_viewer.add_points(
             peaks,
             name=f"{self.image_layer_name}_Prediction",

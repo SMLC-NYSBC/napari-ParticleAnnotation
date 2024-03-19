@@ -20,7 +20,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
 )
-from ParticleAnnotation.utils.model.utils import find_peaks, get_device, get_random_patch
+from ParticleAnnotation.utils.model.utils import correct_coord, find_peaks, get_device, get_random_patch
 
 
 class AnnotationWidget(Container):
@@ -79,7 +79,6 @@ class AnnotationWidget(Container):
         self.click_add_point_callback = None
 
         # ---------------- Initialize New Dataset -----------------
-        self.image_resolution = LineEdit(name="Pixel", value="8.0")
         self.box_size = LineEdit(name="Box", value="5")
         self.patch_size = LineEdit(name="Patch", value="128")
         self.pdb_id = LineEdit(name="PDB", value='7A4M')
@@ -126,12 +125,7 @@ class AnnotationWidget(Container):
             widgets=(
                 HBox(
                     widgets=(
-                        self.image_resolution,
                         self.pdb_id,
-                    )
-                ),
-                HBox(
-                    widgets=(
                         self.box_size,
                         self.patch_size,
                     )
@@ -157,8 +151,8 @@ class AnnotationWidget(Container):
 
         self.napari_viewer.window.add_dock_widget(widget, area="left")
 
-        device_ = get_device()
-        show_info(f"Active learning model runs on: {device_}")
+        self.device_ = get_device()
+        show_info(f"Active learning model runs on: {self.device_}")
 
     """
     Mouse and keys bindings
@@ -286,7 +280,7 @@ class AnnotationWidget(Container):
             ].data
 
             assert len(self.patches) > 4
-            self.napari_viewer.layers.remove("Chosen Particles")
+            self.napari_viewer.layers.remove("Chosen_Particles_of_Interest")
         except AssertionError:
             show_info("Please choose at least 5 particles to initialize the model!")
             return
@@ -294,20 +288,15 @@ class AnnotationWidget(Container):
         # Image dataset pre-process
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
-        factor = float(self.sampling_layer.value) / 8  # Normalize to 8A
-        self.img_process = downsample(img.data, factor=factor)
 
         self.shape = self.img_process.shape
         self.img_process, _ = normalize(
             self.img_process.copy(), method="affine", use_cuda=False
         )
-        img.data = self.img_process
-        self.create_image_layer(self.img, name=self.image_name)
+        self.napari_viewer.layers.remove(self.image_name)
 
         # Load and pre-process tm_scores data
-        self.tm_scores = load_template(template=self.pdb_id.value)
-        self.tm_scores = downsample(self.tm_scores, factor=factor)
-        self.create_image_layer(self.tm_scores[0], name="TM_Scores", transparency=True)
+        self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
 
         # Select patch
         self.patch_corner = get_random_patch(
@@ -322,6 +311,7 @@ class AnnotationWidget(Container):
                 self.patch_corner[2]:self.patch_corner[2]
                 + int(self.patch_size.value),
             ]
+        self.create_image_layer(patch, name="Tomogram_Patch")
 
         tm_score = self.tm_scores[
             :,
@@ -332,6 +322,7 @@ class AnnotationWidget(Container):
             self.patch_corner[2]:self.patch_corner[2]
             + int(self.patch_size.value),
         ]
+        self.create_image_layer(tm_score[self.tm_idx], name="TM_Scores", transparency=True)
 
         # Initialized y (empty label mask) and count
         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
@@ -343,7 +334,7 @@ class AnnotationWidget(Container):
         )
 
         # Initialize model
-        if self.model is not None:
+        if self.model is None:
             self.model = BinaryLogisticRegression(
                 n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
             )
@@ -364,6 +355,13 @@ class AnnotationWidget(Container):
         # remove after testing
         self.particle = np.zeros((1, 3))
         self.confidence = np.zeros((1, 1))
+
+        points = np.vstack(self.proposals[:10])
+        points = correct_coord(points, self.patch_corner, True)
+        labels = np.zeros((points.shape[0],))
+        labels[:] = 2
+
+        self.create_point_layer(points.astype(np.float64), labels)
 
     def _train_BLR_on_patch(
         self,
@@ -434,8 +432,8 @@ class AnnotationWidget(Container):
         except Exception as e:
             print(f"Warning: {e} error occurs while searching for {name} layer.")
 
-        if transparency:
-            self.napari_viewer.add_image(image, name=name)
+        if not transparency:
+            self.napari_viewer.add_image(image, name=name, colormap='gray', opacity=1.0)
         else:
             self.napari_viewer.add_image(
                 image, name=name, colormap="viridis", opacity=0.25
@@ -449,8 +447,10 @@ class AnnotationWidget(Container):
         except Exception as e:
             print(f"Warning: {e} error occurs while searching for {name} layer.")
 
-        if transparency:
+        if not transparency:
             # set layer as not visible
+            self.napari_viewer.layers[name].visible = True
+        else:
             self.napari_viewer.layers[name].visible = False
 
     def create_point_layer(
