@@ -413,6 +413,16 @@ class AnnotationWidget(Container):
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         self.AL_weights = torch.load(f"{self.filename}")
 
+        if self.model is not None:
+            self.model.weights = self.AL_weights[0]
+            self.model.bias = self.AL_weights[1]
+        else:
+            self.model = BinaryLogisticRegression(
+                n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+            )
+            self.model.weights = self.AL_weights[0]
+            self.model.bias = self.AL_weights[1]
+
     """
     Viewer functionality
     """
@@ -585,6 +595,10 @@ class AnnotationWidget(Container):
             active_layer_name = active_layer_name[:-20]
         self.napari_viewer.layers[f"{active_layer_name}"].visible = False
 
+        if self.particle is None:
+            show_info("No predicted particles to filter!")
+            return
+        
         keep_id = np.where(self.confidence >= self.filter_particle_by_confidence.value)
 
         # self.particle and self.confidence are from self._predict
@@ -603,8 +617,6 @@ class AnnotationWidget(Container):
             size=5,
         )
 
-        # pass
-
     def _export_particles(
         self,
     ):
@@ -618,24 +630,32 @@ class AnnotationWidget(Container):
         score from prediction if present.
 
         Export self.user_annotations [n, 4] organized Z, Y, X, ID
-        """
-
-        # self.user_annotations () and self._predict (self.particle, self.confidence)
+        """ 
         pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
         pos_points = np.hstack((pos_points, np.ones((pos_points.shape[0], 1))))
+
+        # Save only user annotations (positive labels)
+        filename, _ = QFileDialog.getSaveFileName(
+            caption="Save File", directory="user_annotations.csv"
+        )
+        header = ["Z", "Y", "X", "Score"]
+        data = np.vstack([header, pos_points])
+        np.savetxt(filename, data, delimiter=",", fmt="%s")
+
         neg_points = self.user_annotations[self.user_annotations[:, -1] == 0][:, :-1]
         neg_points = np.hstack((neg_points, -1 * np.ones((neg_points.shape[0], 1))))
 
         data = np.vstack((pos_points, neg_points))
+
+        # update with predicted particles
         if self.particle is not None:
             data = np.vstack((data, np.hstack((self.particle, self.confidence))))
         
-        filename, _ = QFileDialog.getSaveFileName(
-            caption="Save File", directory="exported_particles.csv"
-        )
-        header = ["Z", "Y", "X", "Score"]
-        data = np.vstack([header, data])
-        np.savetxt(filename, data, delimiter=",", fmt="%s")
+            filename, _ = QFileDialog.getSaveFileName(
+                caption="Save File", directory="exported_particles.csv"
+            )
+            data = np.vstack([header, data])
+            np.savetxt(filename, data, delimiter=",", fmt="%s")
 
     def _import_particles(
         self,
