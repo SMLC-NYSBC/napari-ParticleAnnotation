@@ -10,6 +10,7 @@ from magicgui.widgets import (
 from napari import Viewer
 from napari.utils.notifications import show_info
 from sklearn.neighbors import KDTree
+from qtpy.QtWidgets import QFileDialog
 
 from topaz.stats import normalize
 import torch
@@ -379,7 +380,11 @@ class AnnotationWidget(Container):
         and save it as a pickle torch .pt file
         """
         # TODO Navya
-        pass
+        filename, _ = QFileDialog.getSaveFileName(
+            caption="Save File", directory="Active_learn_model.pt"
+        )
+        if self.AL_weights is not None:
+            torch.save(self.AL_weights, filename)
 
     def _load_model(
         self,
@@ -392,7 +397,8 @@ class AnnotationWidget(Container):
         this weights.
         """
         # TODO Navya
-        pass
+        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
+        self.AL_weights = torch.load(f"{self.filename}")
 
     """
     Viewer functionality
