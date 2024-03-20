@@ -631,6 +631,9 @@ class AnnotationWidget(Container):
 
         Export self.user_annotations [n, 4] organized Z, Y, X, ID
         """ 
+
+        # TODO - unique set of points
+        
         pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
