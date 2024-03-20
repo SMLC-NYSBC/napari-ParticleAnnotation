@@ -460,7 +460,7 @@ class AnnotationWidgetv2(Container):
         ].data
         pred_label = self.napari_viewer.layers[
             f"{self.image_layer_name}_Prediction"
-        ].properties["label"]
+        ].properties["confidence"]
         print(pred_points.shape, pred_label.shape)
 
         points_layer = np.vstack((points_layer, pred_points))
@@ -535,10 +535,10 @@ class AnnotationWidgetv2(Container):
             #     tm_scores[idx, :] = (i - min_) / (max_ - min_)
 
             # tm_scores, _ = normalize(tm_scores.copy(), method="affine", use_cuda=False)
-            self.tm_scores = tm_scores
+            self.tm_scores, _tm_idx = tm_scores
 
             # show only chosen particle's TM scores
-            self.create_image_layer(self.tm_scores[0])
+            self.create_image_layer(self.tm_scores[_tm_idx])
 
             # self.tm_scores = np.zeros(self.img_process.shape)
             self.patch_corner = get_random_patch(
