@@ -542,7 +542,9 @@ class AnnotationWidgetv2(Container):
 
             # self.tm_scores = np.zeros(self.img_process.shape)
             self.patch_corner = get_random_patch(
-                self.img_process.shape, int(self.patch_size.value), self.chosen_particles
+                self.img_process.shape,
+                int(self.patch_size.value),
+                self.chosen_particles,
             )
 
             patch = self.img_process[
@@ -680,7 +682,9 @@ class AnnotationWidgetv2(Container):
 
             # Feed new patch
             self.patch_corner = get_random_patch(
-                self.img_process.shape, int(self.patch_size.value), self.chosen_particles
+                self.img_process.shape,
+                int(self.patch_size.value),
+                self.chosen_particles,
             )
             print(self.patch_corner)
             patch = self.img_process[

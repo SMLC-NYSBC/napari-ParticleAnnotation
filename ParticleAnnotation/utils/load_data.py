@@ -112,9 +112,10 @@ def load_coordinates(path):
     # index,z,y,x,label - napari binder saves this format
     if data.shape[1] == 5:
         labels = data[:, 4]
-        data   = data[:, 1:4]
+        data = data[:, 1:4]
 
     return data, labels
+
 
 def save_coordinates(path, data):
     """
