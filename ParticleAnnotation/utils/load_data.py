@@ -78,28 +78,38 @@ def load_coordinates(path):
     # remove NaNs
     data = data[~np.isnan(data).any(axis=1)]
 
-    # if data is x,y,z just return
+    # if data is z,y,x just return
     if data.shape[1] == 3:
-        # convert to z,y,x
-        data = data[:, [2, 1, 0]]
         labels = np.ones(data.shape[0])
 
+    # last column is label or ID
     if data.shape[1] == 4:
-        # labels would either be the first or the last column
         if np.all(data[:, 3] == data[:, 3].astype(int)):
             labels = data[:, 3]
+            # check if labels are in range -1 to 1 and if not set to 1
+            if np.all(labels >= -1) and np.all(labels <= 1):
+                pass
+            else:
+                # handle case when ID is in the last column
+                labels = np.ones(data.shape[0])
+
             data = data[:, 0:3]
 
-        else:
-            if np.all(data[:, 0] == data[:, 0].astype(int)):
-                data = data[:, 1:4]
-                labels = data[:, 0]
+        elif np.all(data[:, 0] == data[:, 0].astype(int)):
+            # first column is labels or ID
+            if np.all(labels >= -1) and np.all(labels <= 1):
+                pass
             else:
+                # handle case when ID is in the first column
                 labels = np.ones(data.shape[0])
-                data = data[:, 0:3]
-        # data = data[:, [2, 1, 0]]
+            data = data[:, 1:4]
+            labels = data[:, 0]
 
-    # if data is index,z,y,x,label - this is how napari saves!
+        else:
+            labels = np.ones(data.shape[0])
+            data = data[:, 0:3]
+
+    # index,z,y,x,label - napari binder saves this format
     if data.shape[1] == 5:
         labels = data[:, 4]
         data   = data[:, 1:4]

@@ -632,16 +632,14 @@ class AnnotationWidget(Container):
         Export self.user_annotations [n, 4] organized Z, Y, X, ID
         """ 
         pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
-        pos_points = np.hstack((pos_points, np.ones((pos_points.shape[0], 1))))
-
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File", directory="user_annotations.csv"
         )
-        header = ["Z", "Y", "X", "Score"]
-        data = np.vstack([header, pos_points])
-        np.savetxt(filename, data, delimiter=",", fmt="%s")
+        data = np.hstack((pos_points, np.arange(1, pos_points.shape[0] + 1)[:, None]))
+        np.savetxt(filename, data, delimiter=",", fmt="%s", header = "Z, Y, X, ID")
 
+        pos_points = np.hstack((pos_points, np.ones((pos_points.shape[0], 1))))
         neg_points = self.user_annotations[self.user_annotations[:, -1] == 0][:, :-1]
         neg_points = np.hstack((neg_points, -1 * np.ones((neg_points.shape[0], 1))))
 
@@ -654,8 +652,7 @@ class AnnotationWidget(Container):
             filename, _ = QFileDialog.getSaveFileName(
                 caption="Save File", directory="exported_particles.csv"
             )
-            data = np.vstack([header, data])
-            np.savetxt(filename, data, delimiter=",", fmt="%s")
+            np.savetxt(filename, data, delimiter=",", fmt="%s", header="Z, Y, X, confidence")
 
     def _import_particles(
         self,
@@ -693,6 +690,6 @@ class AnnotationWidget(Container):
                         symbol="disc",
                         size=5,
                     )
-            print("Loaded coordinates")
+            show_info(f"Imported {data.shape[0]} particles!")
         except:
             show_info("Could not load coordinates!")
