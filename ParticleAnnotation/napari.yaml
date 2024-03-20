@@ -18,21 +18,21 @@ contributions:
       python_name: ParticleAnnotation._qt.local_tm_score_3d_viewer:AnnotationWidget
       title: Local 3D TM Score
 
-    - id: ParticleAnnotation.viewer
-      python_name: ParticleAnnotation._qt.local_window_viewer:MultipleViewerWidget
-      title: Local training/prediction
+    # - id: ParticleAnnotation.viewer
+    #   python_name: ParticleAnnotation._qt.local_window_viewer:MultipleViewerWidget
+    #   title: Local training/prediction
 
-    - id: ParticleAnnotation.viewer_cloud
-      python_name: ParticleAnnotation._qt.cloud_window_viewer:MultipleViewerWidget
-      title: Cloud training
+    # - id: ParticleAnnotation.viewer_cloud
+    #   python_name: ParticleAnnotation._qt.cloud_window_viewer:MultipleViewerWidget
+    #   title: Cloud training
 
-    - id: ParticleAnnotation.viewer_predict
-      python_name: ParticleAnnotation._qt.predict:AnnotationWidgetv2
-      title: Cloud prediction
+    # - id: ParticleAnnotation.viewer_predict
+    #   python_name: ParticleAnnotation._qt.predict:AnnotationWidgetv2
+    #   title: Cloud prediction
 
-    - id: ParticleAnnotation.viewer_upload
-      python_name: ParticleAnnotation._qt.upload:WidgetUpload
-      title: Cloud upload data
+    # - id: ParticleAnnotation.viewer_upload
+    #   python_name: ParticleAnnotation._qt.upload:WidgetUpload
+    #   title: Cloud upload data
 
   readers:
     - command: ParticleAnnotation.import_data
@@ -51,14 +51,14 @@ contributions:
     - command: ParticleAnnotation.viewer_tm_score_3d
       display_name: Local 3D TM Score[CPU/GPU]
 
-    - command: ParticleAnnotation.viewer
-      display_name: Local [CPU/GPU]
+    # - command: ParticleAnnotation.viewer
+    #   display_name: Local [CPU/GPU]
 
-    - command: ParticleAnnotation.viewer_cloud
-      display_name: AWS Cloud [GPU]
+    # - command: ParticleAnnotation.viewer_cloud
+    #   display_name: AWS Cloud [GPU]
 
-    - command: ParticleAnnotation.viewer_predict
-      display_name: Predict Cloud [GPU]
+    # - command: ParticleAnnotation.viewer_predict
+    #   display_name: Predict Cloud [GPU]
 
-    - command: ParticleAnnotation.viewer_upload
-      display_name: Upload data to AWS
+    # - command: ParticleAnnotation.viewer_upload
+    #   display_name: Upload data to AWS
