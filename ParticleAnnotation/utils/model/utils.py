@@ -178,7 +178,7 @@ def find_peaks(score, size=size[0] / 3, with_score=False):
         order = np.argsort(scores)
         peaks = peaks[order]
 
-        return peaks, scores
+        return np.vstack(peaks), np.vstack(scores)
     return peaks
 
 
