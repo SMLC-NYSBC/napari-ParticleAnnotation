@@ -388,24 +388,29 @@ class AnnotationWidget(Container):
             tm_score[0, :], with_score=True
         )
 
-        points = np.vstack(self.selected_particles_find_peaks[:10])
+        points = np.vstack(self.selected_particles_find_peaks[:10]).astype(np.float64)
         labels = np.zeros((points.shape[0],))
         labels[:] = 2
 
-        # TODO add points from self.user_annotation that are in the crop
+        stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
+        point_indexes = np.all((stored_points >= 0) & (stored_points <= 128), axis=1)
+        points = np.vstack((points, stored_points[point_indexes]))
+        labels = np.hstack((labels, self.user_annotations[point_indexes, 3]))
 
-        self.patch_points = points.astype(np.float64)
+        self.patch_points = points
         self.patch_label = labels
 
         self.create_point_layer(
             points.astype(np.float64), labels, name="Particle_BLR_is_Uncertain"
         )
+        self.napari_viewer.reset_view()
 
     def _train_BLR_on_patch(
         self,
     ):
         self.grid = False
         self.clean_viewer()
+        
         pass
 
     def _predict(
@@ -413,6 +418,7 @@ class AnnotationWidget(Container):
     ):
         self.grid = False
         self.clean_viewer()
+        
         pass
 
     """""" """""" """""" """""" """
@@ -473,26 +479,29 @@ class AnnotationWidget(Container):
         self.grid = False
         self.clean_viewer()
 
-        patch = self.img_process[
-            self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
-        ]
-        self.create_image_layer(patch, name="Tomogram_Patch")
+        if self.img_process is not None:
+            patch = self.img_process[
+                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+            ]
+            self.create_image_layer(patch, name="Tomogram_Patch")
 
-        tm_score = self.tm_scores[
-            :,
-            self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
-        ]
-        self.create_image_layer(
-            tm_score[self.tm_idx], name="TM_Scores", transparency=True
-        )
+        if self.tm_scores is not None:
+            tm_score = self.tm_scores[
+                :,
+                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+            ]
+            self.create_image_layer(
+                tm_score[self.tm_idx], name="TM_Scores", transparency=True
+            )
 
-        self.create_point_layer(
-            self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
-        )
+        if self.patch_points is not None:
+            self.create_point_layer(
+                self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
+            )
 
     def _show_particle_patch_grid(self):
         """
@@ -527,24 +536,24 @@ class AnnotationWidget(Container):
         self.grid = False
         self.clean_viewer()
 
-        patch = self.img_process[
-            self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
-        ]
-        self.create_image_layer(patch, name="Tomogram_Patch")
-
-        tm_score = self.tm_scores[
-            :,
-            self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
-        ]
-        self.create_image_layer(
-            tm_score[self.tm_idx], name="TM_Scores", transparency=True
-        )
-
         if self.model is not None:
+            patch = self.img_process[
+                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+            ]
+            self.create_image_layer(patch, name="Tomogram_Patch")
+
+            tm_score = self.tm_scores[
+                :,
+                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
+                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
+                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+            ]
+            self.create_image_layer(
+                tm_score[self.tm_idx], name="TM_Scores", transparency=True
+            )
+
             self.shape = patch.shape
 
             # Features from new patch
