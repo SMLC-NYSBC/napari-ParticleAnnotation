@@ -62,11 +62,16 @@ class AnnotationWidget(Container):
         self.activate_user_clicks = False
         self.correct_positions, self.patch_corner = False, None
         self.grid = False
+        self.grid_labeling_mode = False
 
         # Key binding
         try:
-            self.napari_viewer.bind_key("z", self.ZEvent)  # Add/Update to Negative label
-            self.napari_viewer.bind_key("x", self.XEvent)  # Add/Update to Positive label
+            self.napari_viewer.bind_key(
+                "z", self.ZEvent
+            )  # Add/Update to Negative label
+            self.napari_viewer.bind_key(
+                "x", self.XEvent
+            )  # Add/Update to Positive label
             self.napari_viewer.bind_key("c", self.CEvent)  # Remove label
         except ValueError:
             pass
@@ -87,7 +92,7 @@ class AnnotationWidget(Container):
         self.click_add_point_callback = None
 
         # ---------------- Initialize New Dataset -----------------
-        self.box_size = LineEdit(name="Box", value="5")
+        self.box_size = LineEdit(name="Box", value="10")
         self.patch_size = LineEdit(name="Patch", value="128")
         self.pdb_id = LineEdit(name="PDB", value="7A4M")
 
@@ -273,9 +278,9 @@ class AnnotationWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = self.filename = (
-            self.napari_viewer.layers.selection.active.name
-        )
+        self.image_name = (
+            self.filename
+        ) = self.napari_viewer.layers.selection.active.name
 
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
@@ -408,6 +413,7 @@ class AnnotationWidget(Container):
         self,
     ):
         self.grid = False
+        self.grid_labeling_mode = False
         self.clean_viewer()
 
         pass
@@ -416,6 +422,7 @@ class AnnotationWidget(Container):
         self,
     ):
         self.grid = False
+        self.grid_labeling_mode = False
         self.clean_viewer()
 
         pass
@@ -476,6 +483,7 @@ class AnnotationWidget(Container):
         Viewer function to display a current patch and all particles in it.
         """
         self.grid = False
+        self.grid_labeling_mode = False
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
@@ -510,16 +518,16 @@ class AnnotationWidget(Container):
         with particle in the center.
         """
         self.grid = True
+        self.grid_labeling_mode = True
         self.clean_viewer()
-        # Load all particles
-        # For each particle, crop self.patch_size cube and assign them ID
-        # Load all crops into single array with offsets with N rows and 5 columns
-        # Display it as an image layers
-        # Display particles layer
 
         # Particles are in self.patch_points, self.patch_label
         crop_particles = []
         crop_tm_scores = []
+
+        grid_particle_points = np.zeros_like(self.patch_points)
+        grid_particle_labels = self.patch_label.copy()
+
         patch_size = 25
         crop_size = 50
 
@@ -544,7 +552,6 @@ class AnnotationWidget(Container):
         n_x = np.min((5, len(self.patch_points))).astype(np.int8)
         n_y = np.ceil(len(self.patch_points) / 5).astype(np.int8)
 
-        print(len(self.patch_points), n_y, n_x)
         if len(self.patch_points) < 6:
             crop_grid_img = np.zeros(
                 (crop_size, crop_size, n_x * crop_size + n_x * 5),
@@ -567,36 +574,47 @@ class AnnotationWidget(Container):
         # Build and display particle grid
         x_min = 0
         y_min = 0
-        iter_ = 0
-        for i, j in zip(crop_particles, crop_tm_scores):
-            iter_ += 1
+        for idx, (i, j) in enumerate(zip(crop_particles, crop_tm_scores)):
+            # Draw particles and place them in the right positions
+            particle = np.asarray(i.shape) / 2
+            particle[0] -= 1
+            particle[1] += y_min
+            particle[2] += x_min
+            grid_particle_points[idx, :] = particle
 
             i_z, i_y, i_x = i.shape
             j_z, j_y, j_x = j.shape
             if crop_grid_img.shape[1] == crop_size:
+                # Add crops
                 crop_grid_img[0:i_z, 0:i_y, x_min : x_min + i_x] = i
                 crop_grid_tm_scores[0:j_z, 0:j_y, x_min : x_min + j_x] = j
             else:
+                # Add crops
                 crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
                 crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
 
-            x_min += crop_size + 5
-            if iter_ == 5:
-                iter_, x_min = 0, 0
+            if (idx + 1) % 5 == 0 and x_min != 0:
+                x_min = 0
                 y_min += crop_size + 5
+            else:
+                x_min += crop_size + 5
 
+        print(grid_particle_points, grid_particle_labels)
         self.create_image_layer(crop_grid_img, name="Particles_crops")
         self.create_image_layer(
             crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
         )
-
-        # Draw particles and place them in the right positions
+        self.create_point_layer(
+            grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
+        )
 
     def _show_particle_all_grid(self):
         """
         Viewer function to show all stored particles on self.user_annotation
         and particle_layer. Particles are shown as a grid with particle in the center.
         """
+        self.grid = True
+        self.grid_labeling_mode = True
         # Load all particles
         # For each particle, crop self.patch_size cube and arrange them in a grid
         # N rows and 5 columns
@@ -609,6 +627,7 @@ class AnnotationWidget(Container):
         the current patch.
         """
         self.grid = False
+        self.grid_labeling_mode = False
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
