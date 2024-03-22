@@ -65,12 +65,8 @@ class AnnotationWidget(Container):
 
         # Key binding
         try:
-            self.napari_viewer.bind_key(
-                "z", self.ZEvent
-            )  # Add/Update to Negative label
-            self.napari_viewer.bind_key(
-                "x", self.XEvent
-            )  # Add/Update to Positive label
+            self.napari_viewer.bind_key("z", self.ZEvent)  # Add/Update to Negative label
+            self.napari_viewer.bind_key("x", self.XEvent)  # Add/Update to Positive label
             self.napari_viewer.bind_key("c", self.CEvent)  # Remove label
         except ValueError:
             pass
@@ -277,9 +273,9 @@ class AnnotationWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
 
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
@@ -524,8 +520,8 @@ class AnnotationWidget(Container):
         # Particles are in self.patch_points, self.patch_label
         crop_particles = []
         crop_tm_scores = []
-        patch_size = int(self.patch_size.value) // 2
-        crop_size = int(self.patch_size.value)
+        patch_size = 25
+        crop_size = 50
 
         for i in self.patch_points:
             i = correct_coord(np.array(i), self.patch_corner, True)
@@ -551,20 +547,20 @@ class AnnotationWidget(Container):
         print(len(self.patch_points), n_y, n_x)
         if len(self.patch_points) < 6:
             crop_grid_img = np.zeros(
-                (crop_size, crop_size, n_x * crop_size + n_x * 10),
+                (crop_size, crop_size, n_x * crop_size + n_x * 5),
                 dtype=self.img_process.dtype,
             )
             crop_grid_tm_scores = np.zeros(
-                (crop_size, crop_size, n_x * crop_size + n_x * 10),
+                (crop_size, crop_size, n_x * crop_size + n_x * 5),
                 dtype=self.tm_scores.dtype,
             )
         else:
             crop_grid_img = np.zeros(
-                (crop_size, n_y * crop_size + n_y * 10, n_x * crop_size + n_x * 10),
+                (crop_size, n_y * crop_size + n_y * 5, n_x * crop_size + n_x * 5),
                 dtype=self.img_process.dtype,
             )
             crop_grid_tm_scores = np.zeros(
-                (crop_size, n_y * crop_size + n_y * 10, n_x * crop_size + n_x * 10),
+                (crop_size, n_y * crop_size + n_y * 5, n_x * crop_size + n_x * 5),
                 dtype=self.tm_scores.dtype,
             )
 
@@ -584,10 +580,10 @@ class AnnotationWidget(Container):
                 crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
                 crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
 
-            x_min += crop_size + 10
+            x_min += crop_size + 5
             if iter_ == 5:
                 iter_, x_min = 0, 0
-                y_min += crop_size + 10
+                y_min += crop_size + 5
 
         self.create_image_layer(crop_grid_img, name="Particles_crops")
         self.create_image_layer(
@@ -689,7 +685,7 @@ class AnnotationWidget(Container):
         try:
             self.napari_viewer.layers.remove(name)
         except Exception as e:
-            show_info(f"Warning: {e} error occurs while searching for {name} layer.")
+            show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
 
         if not transparency:
             self.napari_viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
@@ -704,7 +700,7 @@ class AnnotationWidget(Container):
                 image.max(),
             )
         except Exception as e:
-            show_info(f"Warning: {e} error occurs while searching for {name} layer.")
+            show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
 
         if not transparency:
             # set layer as not visible
@@ -724,7 +720,7 @@ class AnnotationWidget(Container):
         try:
             self.napari_viewer.layers.remove(name)
         except Exception as e:
-            pass
+            show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
 
         if point.shape[0] > 0:
             self.napari_viewer.add_points(
