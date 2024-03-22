@@ -33,14 +33,9 @@ def divide_grid(array, size):
 
 def correct_coord(data, patch_corner, normalize):
     if normalize:
-        data[:, 0] = data[:, 0] + patch_corner[0]
-        data[:, 1] = data[:, 1] + patch_corner[1]
-        data[:, 2] = data[:, 2] + patch_corner[2]
+        data = data + patch_corner
     else:
-        data[:, 0] = data[:, 0] - patch_corner[0]
-        data[:, 1] = data[:, 1] - patch_corner[1]
-        data[:, 2] = data[:, 2] - patch_corner[2]
-
+        data = data - patch_corner
     return data
 
 

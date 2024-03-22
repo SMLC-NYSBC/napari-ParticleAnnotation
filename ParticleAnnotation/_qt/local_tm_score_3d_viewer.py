@@ -227,7 +227,9 @@ class AnnotationWidget(Container):
                     viewer.layers[name].selected_data = set()
                     viewer.layers[name].selected_data.add(closest_point_index)
             except Exception as e:
-                show_info(f"Warning: {e} error occurs while searching for {name} layer.")
+                show_info(
+                    f"Warning: {e} error occurs while searching for {name} layer."
+                )
 
     def key_event(self, viewer: Viewer, key: int):
         """
@@ -330,6 +332,7 @@ class AnnotationWidget(Container):
             show_info("Please choose at least 5 particles to initialize the model!")
             return
 
+        patch_size = int(self.patch_size.value)
         # Image dataset pre-process
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
@@ -342,21 +345,21 @@ class AnnotationWidget(Container):
 
         # Select patch
         self.patch_corner = get_random_patch(
-            self.img_process.shape, int(self.patch_size.value), self.patches
+            self.img_process.shape, patch_size, self.patches
         )
 
         patch = self.img_process[
-            self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+            self.patch_corner[0] : self.patch_corner[0] + patch_size,
+            self.patch_corner[1] : self.patch_corner[1] + patch_size,
+            self.patch_corner[2] : self.patch_corner[2] + patch_size,
         ]
         self.create_image_layer(patch, name="Tomogram_Patch")
 
         tm_score = self.tm_scores[
             :,
-            self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-            self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-            self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+            self.patch_corner[0] : self.patch_corner[0] + patch_size,
+            self.patch_corner[1] : self.patch_corner[1] + patch_size,
+            self.patch_corner[2] : self.patch_corner[2] + patch_size,
         ]
         self.create_image_layer(
             tm_score[self.tm_idx], name="TM_Scores", transparency=True
@@ -410,7 +413,7 @@ class AnnotationWidget(Container):
     ):
         self.grid = False
         self.clean_viewer()
-        
+
         pass
 
     def _predict(
@@ -418,7 +421,7 @@ class AnnotationWidget(Container):
     ):
         self.grid = False
         self.clean_viewer()
-        
+
         pass
 
     """""" """""" """""" """""" """
@@ -479,20 +482,21 @@ class AnnotationWidget(Container):
         self.grid = False
         self.clean_viewer()
 
+        patch_size = int(self.patch_size.value)
         if self.img_process is not None:
             patch = self.img_process[
-                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+                self.patch_corner[0] : self.patch_corner[0] + patch_size,
+                self.patch_corner[1] : self.patch_corner[1] + patch_size,
+                self.patch_corner[2] : self.patch_corner[2] + patch_size,
             ]
             self.create_image_layer(patch, name="Tomogram_Patch")
 
         if self.tm_scores is not None:
             tm_score = self.tm_scores[
                 :,
-                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+                self.patch_corner[0] : self.patch_corner[0] + patch_size,
+                self.patch_corner[1] : self.patch_corner[1] + patch_size,
+                self.patch_corner[2] : self.patch_corner[2] + patch_size,
             ]
             self.create_image_layer(
                 tm_score[self.tm_idx], name="TM_Scores", transparency=True
@@ -512,10 +516,85 @@ class AnnotationWidget(Container):
         self.grid = True
         self.clean_viewer()
         # Load all particles
-        # For each particle, crop self.patch_size cube and arrange them in a grid
-        # N rows and 5 columns
-        # Display Grid
-        pass
+        # For each particle, crop self.patch_size cube and assign them ID
+        # Load all crops into single array with offsets with N rows and 5 columns
+        # Display it as an image layers
+        # Display particles layer
+
+        # Particles are in self.patch_points, self.patch_label
+        crop_particles = []
+        crop_tm_scores = []
+        patch_size = int(self.patch_size.value) // 2
+        crop_size = int(self.patch_size.value)
+
+        for i in self.patch_points:
+            i = correct_coord(np.array(i), self.patch_corner, True)
+            i_min = np.max((i - patch_size, [0, 0, 0]), axis=0).astype(np.int16)
+            i_max = np.max((i + patch_size, [0, 0, 0]), axis=0).astype(np.int16)
+
+            crop_particle = self.img_process[
+                i_min[0] : i_max[0], i_min[1] : i_max[1], i_min[2] : i_max[2]
+            ]
+            crop_tm_score = self.tm_scores[
+                self.tm_idx,
+                i_min[0] : i_max[0],
+                i_min[1] : i_max[1],
+                i_min[2] : i_max[2],
+            ]
+            crop_particles.append(crop_particle)
+            crop_tm_scores.append(crop_tm_score)
+
+        # Get empty grid
+        n_x = np.min((5, len(self.patch_points))).astype(np.int8)
+        n_y = np.ceil(len(self.patch_points) / 5).astype(np.int8)
+
+        print(len(self.patch_points), n_y, n_x)
+        if len(self.patch_points) < 6:
+            crop_grid_img = np.zeros(
+                (crop_size, crop_size, n_x * crop_size + n_x * 10),
+                dtype=self.img_process.dtype,
+            )
+            crop_grid_tm_scores = np.zeros(
+                (crop_size, crop_size, n_x * crop_size + n_x * 10),
+                dtype=self.tm_scores.dtype,
+            )
+        else:
+            crop_grid_img = np.zeros(
+                (crop_size, n_y * crop_size + n_y * 10, n_x * crop_size + n_x * 10),
+                dtype=self.img_process.dtype,
+            )
+            crop_grid_tm_scores = np.zeros(
+                (crop_size, n_y * crop_size + n_y * 10, n_x * crop_size + n_x * 10),
+                dtype=self.tm_scores.dtype,
+            )
+
+        # Build and display particle grid
+        x_min = 0
+        y_min = 0
+        iter_ = 0
+        for i, j in zip(crop_particles, crop_tm_scores):
+            iter_ += 1
+
+            i_z, i_y, i_x = i.shape
+            j_z, j_y, j_x = j.shape
+            if crop_grid_img.shape[1] == crop_size:
+                crop_grid_img[0:i_z, 0:i_y, x_min : x_min + i_x] = i
+                crop_grid_tm_scores[0:j_z, 0:j_y, x_min : x_min + j_x] = j
+            else:
+                crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
+                crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
+
+            x_min += crop_size + 10
+            if iter_ == 5:
+                iter_, x_min = 0, 0
+                y_min += crop_size + 10
+
+        self.create_image_layer(crop_grid_img, name="Particles_crops")
+        self.create_image_layer(
+            crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
+        )
+
+        # Draw particles and place them in the right positions
 
     def _show_particle_all_grid(self):
         """
@@ -536,19 +615,20 @@ class AnnotationWidget(Container):
         self.grid = False
         self.clean_viewer()
 
+        patch_size = int(self.patch_size.value)
         if self.model is not None:
             patch = self.img_process[
-                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+                self.patch_corner[0] : self.patch_corner[0] + patch_size,
+                self.patch_corner[1] : self.patch_corner[1] + patch_size,
+                self.patch_corner[2] : self.patch_corner[2] + patch_size,
             ]
             self.create_image_layer(patch, name="Tomogram_Patch")
 
             tm_score = self.tm_scores[
                 :,
-                self.patch_corner[0] : self.patch_corner[0] + int(self.patch_size.value),
-                self.patch_corner[1] : self.patch_corner[1] + int(self.patch_size.value),
-                self.patch_corner[2] : self.patch_corner[2] + int(self.patch_size.value),
+                self.patch_corner[0] : self.patch_corner[0] + patch_size,
+                self.patch_corner[1] : self.patch_corner[1] + patch_size,
+                self.patch_corner[2] : self.patch_corner[2] + patch_size,
             ]
             self.create_image_layer(
                 tm_score[self.tm_idx], name="TM_Scores", transparency=True
@@ -565,9 +645,9 @@ class AnnotationWidget(Container):
             logits = logits.cpu().detach()
             self.create_image_layer(logits.cpu().detach().numpy(), "Logits", True)
 
-            blr_model_state_points, blr_model_state_labels = find_peaks(torch.sigmoid(logits),
-                                                                        int(self.box_size.value),
-                                                                        True)
+            blr_model_state_points, blr_model_state_labels = find_peaks(
+                torch.sigmoid(logits), int(self.box_size.value), True
+            )
             print(blr_model_state_points.shape, blr_model_state_labels.shape)
 
             blr_model_state_points = blr_model_state_points[:100, :]
@@ -585,12 +665,15 @@ class AnnotationWidget(Container):
             )
         else:
             self._show_patch()
-            show_info('Warning No BLR model load!')
+            show_info("Warning No BLR model load!")
 
     """""" """""" """""" """""" """
     Viewer helper functionality
     """ """""" """""" """""" """"""
-    def clean_viewer(self,):
+
+    def clean_viewer(
+        self,
+    ):
         self.napari_viewer.layers.select_all()
         self.napari_viewer.layers.remove_selected()
 
@@ -641,7 +724,7 @@ class AnnotationWidget(Container):
         try:
             self.napari_viewer.layers.remove(name)
         except Exception as e:
-            show_info(f"Warning: {e} error occurs while searching for {name} layer.")
+            pass
 
         if point.shape[0] > 0:
             self.napari_viewer.add_points(
@@ -677,7 +760,7 @@ class AnnotationWidget(Container):
             self.patch_points = point_layer.data
             self.patch_label = point_layer.properties["label"]
         except Exception as e:
-            show_info(f'Warning {e}: No Particle_BLR_is_Uncertain layer')
+            show_info(f"Warning {e}: No Particle_BLR_is_Uncertain layer")
 
         # Add point pointed by mouse
         if func == "add":
@@ -877,9 +960,9 @@ class AnnotationWidget(Container):
         # If not exist max is equal to 1.
         # Finally draw user_annotation, add confidence score define in max, and
         # concatenate with predicted point_layer if exist.
-        # TODO Navya: Also would be good to output particles in sorted order, 
+        # TODO Navya: Also would be good to output particles in sorted order,
         # With particles of highest confidence should be put first.
-        
+
         # Positive user annotations
         pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
 
