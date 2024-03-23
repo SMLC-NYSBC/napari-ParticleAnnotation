@@ -27,6 +27,9 @@ from ParticleAnnotation.utils.model.utils import (
     get_random_patch,
     rank_candidate_locations,
 )
+from ParticleAnnotation.utils.viewer.viewer_functionality import (
+    build_gird_with_particles,
+)
 
 
 class AnnotationWidget(Container):
@@ -250,14 +253,20 @@ class AnnotationWidget(Container):
                 kdtree = KDTree(points_layer)
                 distance, closest_point = kdtree.query(mouse_position, k=1)
 
-                if key == 2:
-                    if distance[0] < 10:
-                        self.update_point_layer(closest_point[0], 0, "remove")
-                else:
-                    if distance[0] > 10:
-                        self.update_point_layer(None, key, "add")
+                if not self.grid:
+                    if key == 2:
+                        if distance[0] < 10:
+                            self.update_point_layer(closest_point[0], 0, "remove")
                     else:
-                        self.update_point_layer(closest_point[0], key, "update")
+                        if distance[0] > 10:
+                            self.update_point_layer(None, key, "add")
+                        else:
+                            self.update_point_layer(closest_point[0], key, "update")
+                else:
+                    if key in [0, 1]:
+                        self.update_point_grid(closest_point[0], key, "update")
+                    else:
+                        self.update_point_grid(closest_point[0], key, "remove")
 
     def ZEvent(self, viewer):
         self.key_event(viewer, 0)
@@ -278,9 +287,9 @@ class AnnotationWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
 
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
@@ -521,85 +530,20 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = True
         self.clean_viewer()
 
-        # Particles are in self.patch_points, self.patch_label
-        crop_particles = []
-        crop_tm_scores = []
+        (
+            crop_grid_img,
+            crop_grid_tm_scores,
+            grid_particle_points,
+            grid_particle_labels,
+        ) = build_gird_with_particles(
+            self.patch_points,
+            self.patch_label,
+            self.patch_corner,
+            self.img_process,
+            self.tm_scores,
+            self.tm_idx,
+        )
 
-        grid_particle_points = np.zeros_like(self.patch_points)
-        grid_particle_labels = self.patch_label.copy()
-
-        patch_size = 25
-        crop_size = 50
-
-        for i in self.patch_points:
-            i = correct_coord(np.array(i), self.patch_corner, True)
-            i_min = np.max((i - patch_size, [0, 0, 0]), axis=0).astype(np.int16)
-            i_max = np.max((i + patch_size, [0, 0, 0]), axis=0).astype(np.int16)
-
-            crop_particle = self.img_process[
-                i_min[0] : i_max[0], i_min[1] : i_max[1], i_min[2] : i_max[2]
-            ]
-            crop_tm_score = self.tm_scores[
-                self.tm_idx,
-                i_min[0] : i_max[0],
-                i_min[1] : i_max[1],
-                i_min[2] : i_max[2],
-            ]
-            crop_particles.append(crop_particle)
-            crop_tm_scores.append(crop_tm_score)
-
-        # Get empty grid
-        n_x = np.min((5, len(self.patch_points))).astype(np.int8)
-        n_y = np.ceil(len(self.patch_points) / 5).astype(np.int8)
-
-        if len(self.patch_points) < 6:
-            crop_grid_img = np.zeros(
-                (crop_size, crop_size, n_x * crop_size + n_x * 5),
-                dtype=self.img_process.dtype,
-            )
-            crop_grid_tm_scores = np.zeros(
-                (crop_size, crop_size, n_x * crop_size + n_x * 5),
-                dtype=self.tm_scores.dtype,
-            )
-        else:
-            crop_grid_img = np.zeros(
-                (crop_size, n_y * crop_size + n_y * 5, n_x * crop_size + n_x * 5),
-                dtype=self.img_process.dtype,
-            )
-            crop_grid_tm_scores = np.zeros(
-                (crop_size, n_y * crop_size + n_y * 5, n_x * crop_size + n_x * 5),
-                dtype=self.tm_scores.dtype,
-            )
-
-        # Build and display particle grid
-        x_min = 0
-        y_min = 0
-        for idx, (i, j) in enumerate(zip(crop_particles, crop_tm_scores)):
-            # Draw particles and place them in the right positions
-            particle = np.asarray(i.shape) / 2
-            particle[0] -= 1
-            particle[1] += y_min
-            particle[2] += x_min
-            grid_particle_points[idx, :] = particle
-
-            i_z, i_y, i_x = i.shape
-            j_z, j_y, j_x = j.shape
-            if crop_grid_img.shape[1] == crop_size:
-                # Add crops
-                crop_grid_img[0:i_z, 0:i_y, x_min : x_min + i_x] = i
-                crop_grid_tm_scores[0:j_z, 0:j_y, x_min : x_min + j_x] = j
-            else:
-                # Add crops
-                crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
-                crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
-
-            if (idx + 1) % 5 == 0 and x_min != 0:
-                x_min = 0
-                y_min += crop_size + 5
-            else:
-                x_min += crop_size + 5
-
-        print(grid_particle_points, grid_particle_labels)
         self.create_image_layer(crop_grid_img, name="Particles_crops")
         self.create_image_layer(
             crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
@@ -615,11 +559,29 @@ class AnnotationWidget(Container):
         """
         self.grid = True
         self.grid_labeling_mode = True
-        # Load all particles
-        # For each particle, crop self.patch_size cube and arrange them in a grid
-        # N rows and 5 columns
-        # Display Grid
-        pass
+        self.clean_viewer()
+
+        (
+            crop_grid_img,
+            crop_grid_tm_scores,
+            grid_particle_points,
+            grid_particle_labels,
+        ) = build_gird_with_particles(
+            self.user_annotations[:, :3],
+            self.user_annotations[:, 3],
+            self.patch_corner,
+            self.img_process,
+            self.tm_scores,
+            self.tm_idx,
+        )
+
+        self.create_image_layer(crop_grid_img, name="Particles_crops")
+        self.create_image_layer(
+            crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
+        )
+        self.create_point_layer(
+            grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
+        )
 
     def _show_current_BLR_predictions(self):
         """
@@ -765,6 +727,25 @@ class AnnotationWidget(Container):
                 size=40,
             )
             self.napari_viewer.layers[name].mode = "select"
+
+    def update_point_grid(self, index=None, label=0, func="update"):
+        point_layer = self.napari_viewer.layers["Particle_BLR_is_Uncertain"]
+        points = point_layer.data
+        labels = point_layer.properties["label"]
+
+        if func == "update":
+            # Update point labels
+            if labels[index] != label:
+                labels[index] = label
+
+            self.patch_label = labels
+        elif func == "remove":
+            self.patch_points = np.delete(self.patch_points, index, axis=0)
+            points = np.delete(points, index, axis=0)
+            self.patch_label = np.delete(self.patch_label, index, axis=0)
+            labels = np.delete(points, index, axis=0)
+
+        self.create_point_layer(points, labels, "Particle_BLR_is_Uncertain")
 
     def update_point_layer(self, index=None, label=0, func="add"):
         name = self.napari_viewer.layers.selection.active.name
