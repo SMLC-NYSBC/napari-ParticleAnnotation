@@ -195,13 +195,13 @@ class AnnotationWidget(Container):
     Mouse and keys bindings
     """ """""" """""" """""" ""
 
-    def track_mouse_position(self, viewer, event):
+    def track_mouse_position(self, viewer: Viewer, event):
         """
         Mouse binding helper function to update stored mouse position when it moves
         """
         self.mouse_position = event.position
 
-    def selected_point_near_mouse(self, viewer, event):
+    def selected_point_near_mouse(self, viewer: Viewer, event):
         """
         Mouse binding helper function to select point near the mouse pointer
         """
@@ -416,6 +416,8 @@ class AnnotationWidget(Container):
         self.create_point_layer(
             points.astype(np.float64), labels, name="Particle_BLR_is_Uncertain"
         )
+
+        self._show_particle_patch_grid()
         self.napari_viewer.reset_view()
 
     def _train_BLR_on_patch(
@@ -561,6 +563,8 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = True
         self.clean_viewer()
 
+        print(self.user_annotations[:, :3])
+        print(self.user_annotations[:, 3])
         (
             crop_grid_img,
             crop_grid_tm_scores,
@@ -569,7 +573,7 @@ class AnnotationWidget(Container):
         ) = build_gird_with_particles(
             self.user_annotations[:, :3],
             self.user_annotations[:, 3],
-            self.patch_corner,
+            (0, 0, 0),
             self.img_process,
             self.tm_scores,
             self.tm_idx,
@@ -625,7 +629,6 @@ class AnnotationWidget(Container):
             blr_model_state_points, blr_model_state_labels = find_peaks(
                 torch.sigmoid(logits), int(self.box_size.value), True
             )
-            print(blr_model_state_points.shape, blr_model_state_labels.shape)
 
             blr_model_state_points = blr_model_state_points[:100, :]
             blr_model_state_labels = blr_model_state_labels[:100, :].flatten()
@@ -739,11 +742,31 @@ class AnnotationWidget(Container):
                 labels[index] = label
 
             self.patch_label = labels
+
+            # Check if point index from self.point_layer is already in self.user_annotations
+            # Add and/or update point label in self.user_annotations
+            idx = self.patch_points[index] in self.user_annotations[:, :3]
+            if idx:  # Add point to self.user_annotation
+                idx = np.where(self.patch_points[index] in self.user_annotations[:, :3])[0][0]
+                self.user_annotations[idx, 3] = label
+            else:  # Update point label in self.user_annotations
+                self.user_annotations = np.insert(
+                    self.user_annotations,
+                    0,
+                    np.insert(self.patch_points[index], 3, [label], axis=1),
+                    axis=0,
+                )
         elif func == "remove":
+            points = np.delete(self.patch_points, index, axis=0)
             self.patch_points = np.delete(self.patch_points, index, axis=0)
-            points = np.delete(points, index, axis=0)
             self.patch_label = np.delete(self.patch_label, index, axis=0)
-            labels = np.delete(points, index, axis=0)
+            labels = np.delete(self.patch_points, index, axis=0)
+
+            idx = self.patch_points[index] in self.user_annotations[:, :3]
+            if idx:  # Remove point to self.user_annotation
+                idx = np.where(self.patch_points[index] in self.user_annotations[:, :3])[0][0]
+
+                self.user_annotations = np.delete(self.user_annotations, index, axis=0)
 
         self.create_point_layer(points, labels, "Particle_BLR_is_Uncertain")
 

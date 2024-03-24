@@ -4,7 +4,12 @@ from ParticleAnnotation.utils.model.utils import correct_coord
 
 
 def build_gird_with_particles(
-    patch_points, patch_label: np.ndarray, patch_corner, img_process, tm_scores, tm_idx
+    patch_points: np.ndarray,
+    patch_label: np.ndarray,
+    patch_corner: tuple,
+    img_process: np.ndarray,
+    tm_scores: np.ndarray,
+    tm_idx: int,
 ):
     # Particles are in self.patch_points, self.patch_label
     crop_particles = []
@@ -84,9 +89,9 @@ def build_gird_with_particles(
         else:
             x_min += crop_size + 5
 
-        return (
-            crop_grid_img,
-            crop_grid_tm_scores,
-            grid_particle_points,
-            grid_particle_labels,
-        )
+    return (
+        crop_grid_img,
+        crop_grid_tm_scores,
+        grid_particle_points,
+        grid_particle_labels,
+    )
