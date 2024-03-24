@@ -3,6 +3,28 @@ import numpy as np
 from ParticleAnnotation.utils.model.utils import correct_coord
 
 
+def draw_patch_and_scores(
+    img: np.ndarray, scores: np.ndarray, patch_corner: np.ndarray, patch_size: int
+):
+    patch = np.array(())
+    tm_score = np.array(())
+    while patch.shape != (patch_size, patch_size, patch_size):
+        patch = img[
+            patch_corner[0] : patch_corner[0] + patch_size,
+            patch_corner[1] : patch_corner[1] + patch_size,
+            patch_corner[2] : patch_corner[2] + patch_size,
+        ]
+
+        tm_score = scores[
+            :,
+            patch_corner[0] : patch_corner[0] + patch_size,
+            patch_corner[1] : patch_corner[1] + patch_size,
+            patch_corner[2] : patch_corner[2] + patch_size,
+        ]
+
+    return patch, tm_score
+
+
 def build_gird_with_particles(
     patch_points: np.ndarray,
     patch_label: np.ndarray,

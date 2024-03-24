@@ -205,8 +205,6 @@ def rank_candidate_locations(logits, shape):
     order = np.argsort(peak_scores)
     ordered = peaks[order]
 
-    # cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
-
     return ordered
 
 

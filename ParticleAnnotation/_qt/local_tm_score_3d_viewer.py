@@ -29,6 +29,7 @@ from ParticleAnnotation.utils.model.utils import (
 )
 from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
+    draw_patch_and_scores,
 )
 
 
@@ -108,7 +109,7 @@ class AnnotationWidget(Container):
         self.initialize_BLR.clicked.connect(self._initialize_BLR)
 
         # ----------- Initialize Active learning model ------------
-        self.train_BLR_on_patch = PushButton(name="Change Patch")
+        self.train_BLR_on_patch = PushButton(name="Re-train BLR model")
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
 
         self.show_patch = PushButton(name="Patch")
@@ -288,9 +289,9 @@ class AnnotationWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = self.filename = (
-            self.napari_viewer.layers.selection.active.name
-        )
+        self.image_name = (
+            self.filename
+        ) = self.napari_viewer.layers.selection.active.name
 
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
@@ -359,19 +360,10 @@ class AnnotationWidget(Container):
             self.img_process.shape, patch_size, self.patches
         )
 
-        patch = self.img_process[
-            self.patch_corner[0] : self.patch_corner[0] + patch_size,
-            self.patch_corner[1] : self.patch_corner[1] + patch_size,
-            self.patch_corner[2] : self.patch_corner[2] + patch_size,
-        ]
+        patch, tm_score = draw_patch_and_scores(
+            self.img_process, self.tm_scores, self.patch_corner, patch_size
+        )
         self.create_image_layer(patch, name="Tomogram_Patch")
-
-        tm_score = self.tm_scores[
-            :,
-            self.patch_corner[0] : self.patch_corner[0] + patch_size,
-            self.patch_corner[1] : self.patch_corner[1] + patch_size,
-            self.patch_corner[2] : self.patch_corner[2] + patch_size,
-        ]
         self.create_image_layer(
             tm_score[self.tm_idx], name="TM_Scores", transparency=True
         )
@@ -407,15 +399,14 @@ class AnnotationWidget(Container):
         labels[:] = 2
 
         stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
-        point_indexes = np.all((stored_points >= 0) & (stored_points <= 128), axis=1)
-        points = np.vstack((points, stored_points[point_indexes]))
-        labels = np.hstack((labels, self.user_annotations[point_indexes, 3]))
-
-        self.patch_points = points
-        self.patch_label = labels
+        point_indexes = np.all(
+            (stored_points >= 0) & (stored_points <= patch_size), axis=1
+        )
+        self.patch_points = np.vstack((points, stored_points[point_indexes]))
+        self.patch_label = np.hstack((labels, self.user_annotations[point_indexes, 3]))
 
         self.create_point_layer(
-            points.astype(np.float64), labels, name="Particle_BLR_is_Uncertain"
+            self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
         )
 
         self._show_particle_patch_grid()
@@ -428,7 +419,79 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = False
         self.clean_viewer()
 
-        pass
+        patch_size = int(self.patch_size.value)
+
+        """Re-trained BLR model on user corrected particles"""
+        # Retrive coordinate within patch
+        stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
+        point_indexes = np.all(
+            (stored_points >= 0) & (stored_points <= patch_size), axis=1
+        )
+        points = correct_coord(
+            self.user_annotations[point_indexes, :3], self.patch_corner, False
+        )
+        labels = self.user_annotations[point_indexes, 3]
+
+        # Update BLR inputs
+        data = np.array(
+            (
+                np.array(labels).astype(np.int16),
+                points[:, 0],
+                points[:, 1],
+                points[:, 2],
+            )
+        ).T
+        self.y = label_points_to_mask(data, self.shape, self.box_size.value)
+        self.count = (~torch.isnan(self.y)).float()
+
+        # Re-trained BLR model
+        self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+
+        """Draw new patch and find new particle for user to label"""
+        # Select patch
+        self.patch_corner = get_random_patch(
+            self.img_process.shape, patch_size, self.patches
+        )
+
+        # Display new patch and associated scores
+        patch, tm_score = draw_patch_and_scores(
+            self.img_process, self.tm_scores, self.patch_corner, patch_size
+        )
+
+        # BLR training and model update
+        self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
+        self.x = self.x.reshape(-1, self.x.shape[-1])
+
+        with torch.no_grad():
+            logits = self.model(self.x).reshape(*self.shape)
+            logits = logits.cpu().detach()
+
+        # Draw 10 coordinates with lowest entropy
+        self.proposals = rank_candidate_locations(logits, self.shape)
+        self.patch_points = np.vstack(self.proposals[:10])
+        self.patch_label = np.zeros((self.patch_points.shape[0],))
+        self.patch_label[:] = 2
+
+        stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
+        point_indexes = np.all(
+            (stored_points >= 0) & (stored_points <= patch_size), axis=1
+        )
+        self.patch_points = np.vstack((self.patch_points, stored_points[point_indexes]))
+        self.patch_label = np.hstack(
+            (self.patch_label, self.user_annotations[point_indexes, 3])
+        )
+
+        """Display new particles and image layers"""
+        self.create_image_layer(patch, name="Tomogram_Patch")
+        self.create_image_layer(
+            tm_score[self.tm_idx], name="TM_Scores", transparency=True
+        )
+        self.create_point_layer(
+            self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
+        )
+
+        self._show_particle_patch_grid()
+        self.napari_viewer.reset_view()
 
     def _predict(
         self,
@@ -486,6 +549,8 @@ class AnnotationWidget(Container):
             )
             self.model.fit(pre_train=self.AL_weights)
 
+        self.AL_weights = None  # Reset to allow re-training
+
     """""" """""" """""" """
     Viewer functionality
     """ """""" """""" """"""
@@ -500,20 +565,15 @@ class AnnotationWidget(Container):
 
         patch_size = int(self.patch_size.value)
         if self.img_process is not None:
-            patch = self.img_process[
-                self.patch_corner[0] : self.patch_corner[0] + patch_size,
-                self.patch_corner[1] : self.patch_corner[1] + patch_size,
-                self.patch_corner[2] : self.patch_corner[2] + patch_size,
-            ]
+            patch, _ = draw_patch_and_scores(
+                self.img_process, self.tm_scores, self.patch_corner, patch_size
+            )
             self.create_image_layer(patch, name="Tomogram_Patch")
 
         if self.tm_scores is not None:
-            tm_score = self.tm_scores[
-                :,
-                self.patch_corner[0] : self.patch_corner[0] + patch_size,
-                self.patch_corner[1] : self.patch_corner[1] + patch_size,
-                self.patch_corner[2] : self.patch_corner[2] + patch_size,
-            ]
+            _, tm_score = draw_patch_and_scores(
+                self.img_process, self.tm_scores, self.patch_corner, patch_size
+            )
             self.create_image_layer(
                 tm_score[self.tm_idx], name="TM_Scores", transparency=True
             )
@@ -564,8 +624,6 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = True
         self.clean_viewer()
 
-        print(self.user_annotations[:, :3].astype(np.int16))
-        print(self.user_annotations[:, 3])
         (
             crop_grid_img,
             crop_grid_tm_scores,
@@ -598,41 +656,33 @@ class AnnotationWidget(Container):
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
+        box = int(self.box_size.value)
         if self.model is not None:
-            patch = self.img_process[
-                self.patch_corner[0] : self.patch_corner[0] + patch_size,
-                self.patch_corner[1] : self.patch_corner[1] + patch_size,
-                self.patch_corner[2] : self.patch_corner[2] + patch_size,
-            ]
+            patch, tm_score = draw_patch_and_scores(
+                self.img_process, self.tm_scores, self.patch_corner, patch_size
+            )
             self.create_image_layer(patch, name="Tomogram_Patch")
-
-            tm_score = self.tm_scores[
-                :,
-                self.patch_corner[0] : self.patch_corner[0] + patch_size,
-                self.patch_corner[1] : self.patch_corner[1] + patch_size,
-                self.patch_corner[2] : self.patch_corner[2] + patch_size,
-            ]
             self.create_image_layer(
                 tm_score[self.tm_idx], name="TM_Scores", transparency=True
             )
 
+            # Features from current patch
             self.shape = patch.shape
-
-            # Features from new patch
             self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
             self.x = self.x.reshape(-1, self.x.shape[-1])
 
             with torch.no_grad():
                 logits = self.model(self.x).reshape(*self.shape)
-            logits = logits.cpu().detach()
-            self.create_image_layer(logits.cpu().detach().numpy(), "Logits", True)
+                logits = torch.sigmoid(logits).cpu().detach().numpy()
+
+            self.create_image_layer(logits, "Logits", True)
 
             blr_model_state_points, blr_model_state_labels = find_peaks(
-                torch.sigmoid(logits), int(self.box_size.value), True
+                logits, box, True
             )
 
-            blr_model_state_points = blr_model_state_points[:100, :]
-            blr_model_state_labels = blr_model_state_labels[:100, :].flatten()
+            blr_model_state_points = blr_model_state_points[-25:, :]
+            blr_model_state_labels = blr_model_state_labels[-25:, :].flatten()
             self.napari_viewer.add_points(
                 blr_model_state_points,
                 name="BLR_prediction",
@@ -741,6 +791,7 @@ class AnnotationWidget(Container):
             point = correct_coord(self.patch_points[index], (0, 0, 0), True)
         else:
             point = correct_coord(self.patch_points[index], self.patch_corner, True)
+
         if func == "update":
             # Update point labels
             if labels[index] != label:
@@ -750,7 +801,9 @@ class AnnotationWidget(Container):
 
             # Check if point index from self.point_layer is already in self.user_annotations
             # Add and/or update point label in self.user_annotations
-            idx = point in self.user_annotations[:, :3]
+            idx = self.user_annotations[:, :3] - point
+            idx = 0 in np.sum(idx.astype(np.float16), axis=1)
+
             if idx:  # Add point to self.user_annotation
                 idx = np.where(point in self.user_annotations[:, :3])[0][0]
                 self.user_annotations[idx, 3] = label
