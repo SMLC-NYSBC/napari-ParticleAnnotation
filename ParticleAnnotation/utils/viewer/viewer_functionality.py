@@ -61,10 +61,17 @@ def build_gird_with_particles(
         crop_tm_scores.append(crop_tm_score)
 
     # Get empty grid
-    n_x = np.min((5, len(patch_points))).astype(np.int8)
-    n_y = np.ceil(len(patch_points) / 5).astype(np.int8)
+    if len(patch_points) < 50:
+        grid = 5
+    elif len(patch_points) < 100:
+        grid = 10
+    else:
+        grid = 20
 
-    if len(patch_points) < 6:
+    n_x = np.min((grid, len(patch_points))).astype(np.int8)
+    n_y = np.ceil(len(patch_points) / grid).astype(np.int8)
+
+    if len(patch_points) < (grid + 1):
         crop_grid_img = np.zeros(
             (crop_size, crop_size, n_x * crop_size + n_x * 5),
             dtype=img_process.dtype,
@@ -105,7 +112,7 @@ def build_gird_with_particles(
             crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
             crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
 
-        if (idx + 1) % 5 == 0 and x_min != 0:
+        if (idx + 1) % grid == 0 and x_min != 0:
             x_min = 0
             y_min += crop_size + 5
         else:
