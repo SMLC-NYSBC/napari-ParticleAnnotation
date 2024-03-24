@@ -64,7 +64,8 @@ class AnnotationWidget(Container):
         }
         self.activate_user_clicks = False
         self.correct_positions, self.patch_corner = False, None
-        self.grid = False
+
+        self.all_grid = False
         self.grid_labeling_mode = False
 
         # Key binding
@@ -253,7 +254,7 @@ class AnnotationWidget(Container):
                 kdtree = KDTree(points_layer)
                 distance, closest_point = kdtree.query(mouse_position, k=1)
 
-                if not self.grid:
+                if not self.grid_labeling_mode:
                     if key == 2:
                         if distance[0] < 10:
                             self.update_point_layer(closest_point[0], 0, "remove")
@@ -423,7 +424,7 @@ class AnnotationWidget(Container):
     def _train_BLR_on_patch(
         self,
     ):
-        self.grid = False
+        self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
 
@@ -432,7 +433,7 @@ class AnnotationWidget(Container):
     def _predict(
         self,
     ):
-        self.grid = False
+        self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
 
@@ -493,7 +494,7 @@ class AnnotationWidget(Container):
         """
         Viewer function to display a current patch and all particles in it.
         """
-        self.grid = False
+        self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
 
@@ -528,7 +529,7 @@ class AnnotationWidget(Container):
         self.user_annotation and particle_layer. Particles are shown as a grid
         with particle in the center.
         """
-        self.grid = True
+        self.all_grid = False
         self.grid_labeling_mode = True
         self.clean_viewer()
 
@@ -559,11 +560,11 @@ class AnnotationWidget(Container):
         Viewer function to show all stored particles on self.user_annotation
         and particle_layer. Particles are shown as a grid with particle in the center.
         """
-        self.grid = True
+        self.all_grid = True
         self.grid_labeling_mode = True
         self.clean_viewer()
 
-        print(self.user_annotations[:, :3])
+        print(self.user_annotations[:, :3].astype(np.int16))
         print(self.user_annotations[:, 3])
         (
             crop_grid_img,
@@ -592,7 +593,7 @@ class AnnotationWidget(Container):
         Viewer function to run current BLR model and show predicted particles on
         the current patch.
         """
-        self.grid = False
+        self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
 
@@ -736,6 +737,10 @@ class AnnotationWidget(Container):
         points = point_layer.data
         labels = point_layer.properties["label"]
 
+        if self.all_grid:
+            point = correct_coord(self.patch_points[index], (0, 0, 0), True)
+        else:
+            point = correct_coord(self.patch_points[index], self.patch_corner, True)
         if func == "update":
             # Update point labels
             if labels[index] != label:
@@ -745,15 +750,15 @@ class AnnotationWidget(Container):
 
             # Check if point index from self.point_layer is already in self.user_annotations
             # Add and/or update point label in self.user_annotations
-            idx = self.patch_points[index] in self.user_annotations[:, :3]
+            idx = point in self.user_annotations[:, :3]
             if idx:  # Add point to self.user_annotation
-                idx = np.where(self.patch_points[index] in self.user_annotations[:, :3])[0][0]
+                idx = np.where(point in self.user_annotations[:, :3])[0][0]
                 self.user_annotations[idx, 3] = label
             else:  # Update point label in self.user_annotations
                 self.user_annotations = np.insert(
                     self.user_annotations,
                     0,
-                    np.insert(self.patch_points[index], 3, [label], axis=1),
+                    np.insert(point, 3, [label], axis=1),
                     axis=0,
                 )
         elif func == "remove":
@@ -762,9 +767,9 @@ class AnnotationWidget(Container):
             self.patch_label = np.delete(self.patch_label, index, axis=0)
             labels = np.delete(self.patch_points, index, axis=0)
 
-            idx = self.patch_points[index] in self.user_annotations[:, :3]
+            idx = point in self.user_annotations[:, :3]
             if idx:  # Remove point to self.user_annotation
-                idx = np.where(self.patch_points[index] in self.user_annotations[:, :3])[0][0]
+                idx = np.where(point in self.user_annotations[:, :3])[0][0]
 
                 self.user_annotations = np.delete(self.user_annotations, index, axis=0)
 
