@@ -444,7 +444,7 @@ class AnnotationWidget(Container):
             # TODO Navya. We may not have yet self.x but if the weight is loaded
             # we can determined how many n_features is there from weights
             self.model = BinaryLogisticRegression(
-                n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+                n_features=self.AL_weights[0].shape[0], l2=1.0, pi=0.01, pi_weight=1000
             )
             self.model.fit(pre_train=self.AL_weights)
 
@@ -733,28 +733,34 @@ class AnnotationWidget(Container):
             active_layer_name = active_layer_name[:-20]
 
         self.napari_viewer.layers[f"{active_layer_name}"].visible = False
+        
+        try:
+            pred_points = self.napari_viewer.layers[
+            f"{self.image_layer_name}_Prediction"
+            ].data
 
-        if self.particle is None:
+            pred_label = self.napari_viewer.layers[
+            f"{self.image_layer_name}_Prediction"
+            ].properties["confidence"]
+
+            keep_id = np.where(pred_label >= self.filter_particle_by_confidence.value)
+
+            filter_particle   = pred_points[keep_id[0], :]
+            filter_confidence = pred_label[keep_id[0]]
+
+            self.napari_viewer.add_points(
+                filter_particle,
+                name=f"{active_layer_name}_Prediction_Filtered",
+                properties={"confidence": filter_confidence},
+                edge_color="black",
+                face_color="confidence",
+                face_colormap="viridis",
+                edge_width=0.1,
+                symbol="disc",
+                size=5,
+            )
+        except:
             show_info("No predicted particles to filter!")
-            return
-
-        keep_id = np.where(self.confidence >= self.filter_particle_by_confidence.value)
-
-        # self.particle and self.confidence are from self._predict
-        filter_particle = self.particle[keep_id[0], :]
-        filter_confidence = self.confidence[keep_id[0]]
-
-        self.napari_viewer.add_points(
-            filter_particle,
-            name=f"{active_layer_name}_Prediction_Filtered",
-            properties={"confidence": filter_confidence},
-            edge_color="black",
-            face_color="confidence",
-            face_colormap="viridis",
-            edge_width=0.1,
-            symbol="disc",
-            size=5,
-        )
 
     def _export_particles(
         self,
@@ -774,34 +780,53 @@ class AnnotationWidget(Container):
         # ends with _prediction exist. if yes Ask for it. Get min and max value.
         # If not exist max is equal to 1. 
         # Finally draw user_annotation, add confidence score define in max, and 
-        # concatenate with predicted point_layer if exist.
+        # concatenate with predicted point_layer if exist. -> 
+        
+        # [Update 03/20] I think we should save only positive labels as user_annotations.csv which 
+        # are not corrupted with negative junk. All predicted + user annotations can be saved separately
 
-        # Positive user annotations
+        try:
+            pred_points = self.napari_viewer.layers[
+            f"{self.image_layer_name}_Prediction"
+            ].data
+
+            pred_label = self.napari_viewer.layers[
+            f"{self.image_layer_name}_Prediction"
+            ].properties["confidence"]
+
+            max_val = np.max(pred_label)
+            min_val = np.min(pred_label)
+        except:
+            max_val = 1
+            min_val = -1
+
+        # Save only label == 1 from user annotations
         pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
 
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File", directory="user_annotations.csv"
         )
-        data = np.hstack((pos_points, np.ones(pos_points.shape[0] + 1)[:, None]))
-        np.savetxt(filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence")
 
-        pos_points = np.hstack((pos_points, np.ones((pos_points.shape[0], 1))))
+        data = np.hstack((pos_points, np.arange(1, pos_points.shape[0] + 1)[:, None]))
+        np.savetxt(filename, data, delimiter=",", fmt="%s", header = "Z, Y, X, ID")
+        
+        pos_points = np.hstack((pos_points, max_val*np.ones((pos_points.shape[0], 1))))
         neg_points = self.user_annotations[self.user_annotations[:, -1] == 0][:, :-1]
-        neg_points = np.hstack((neg_points, -1 * np.ones((neg_points.shape[0], 1))))
+        neg_points = np.hstack((neg_points, -min_val * np.ones((neg_points.shape[0], 1))))
 
         data = np.vstack((pos_points, neg_points))
 
-        # update with predicted particles
-        if self.particle is not None:
-            data = np.vstack((data, np.hstack((self.particle, self.confidence))))
-
+        try:
+            data = np.vstack((data, np.hstack((pred_points, pred_label))))
             filename, _ = QFileDialog.getSaveFileName(
                 caption="Save File", directory="exported_particles.csv"
             )
             np.savetxt(
                 filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
             )
+        except:
+            pass
 
     def _import_particles(
         self,
