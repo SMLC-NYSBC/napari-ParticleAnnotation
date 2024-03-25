@@ -11,6 +11,7 @@ from napari import Viewer
 from napari.utils.notifications import show_info
 from sklearn.neighbors import KDTree
 from qtpy.QtWidgets import QFileDialog
+import tifffile.tifffile as tif
 
 from topaz.stats import normalize
 import torch
@@ -537,7 +538,6 @@ class AnnotationWidget(Container):
         peaks_confidence = peaks_confidence[order]
 
         self.create_image_layer(logits, "Logits", transparency=True)
-        import tifffile.tifffile as tif
         tif.imwrite('logits.tif', logits)
         tif.imwrite('tm_scores.tif', self.tm_scores[self.tm_idx])
 
@@ -1052,8 +1052,6 @@ class AnnotationWidget(Container):
             keep_id = np.where(
                 confidence_all >= self.filter_particle_by_confidence.value
             )
-
-            # self.particle and self.confidence are from self._predict
             particles_filter = particles_all[keep_id[0], :]
             confidence_filter = confidence_all[keep_id[0]]
 
@@ -1096,12 +1094,12 @@ class AnnotationWidget(Container):
 
         try:
             pred_points = self.napari_viewer.layers[
-            f"{self.image_layer_name}_Prediction"
+            f"Particle_Prediction"
             ].data
 
             pred_label = self.napari_viewer.layers[
-            f"{self.image_layer_name}_Prediction"
-            ].properties["confidence"]
+            f"Particle_Prediction"
+            ].properties["label"]
 
             max_val = np.max(pred_label)
             min_val = np.min(pred_label)
