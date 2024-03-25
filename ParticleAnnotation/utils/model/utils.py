@@ -33,14 +33,9 @@ def divide_grid(array, size):
 
 def correct_coord(data, patch_corner, normalize):
     if normalize:
-        data[:, 0] = data[:, 0] + patch_corner[0]
-        data[:, 1] = data[:, 1] + patch_corner[1]
-        data[:, 2] = data[:, 2] + patch_corner[2]
+        data = data + patch_corner
     else:
-        data[:, 0] = data[:, 0] - patch_corner[0]
-        data[:, 1] = data[:, 1] - patch_corner[1]
-        data[:, 2] = data[:, 2] - patch_corner[2]
-
+        data = data - patch_corner
     return data
 
 
@@ -157,11 +152,11 @@ def polar_to_cartesian(rho, theta):
     return x, y
 
 
-def find_peaks(score, size=size[0] / 3, with_score=False):
+def find_peaks(score, size=15, with_score=False):
     if isinstance(score, torch.Tensor):
         score = score.detach().cpu().numpy()
 
-    max_filter = maximum_filter(score, size=size)
+    max_filter = maximum_filter(score.astype(np.float32), size=size)
     peaks = score - max_filter
     peaks = np.where(peaks == 0)
     peaks = np.stack(peaks, axis=-1)
@@ -178,7 +173,7 @@ def find_peaks(score, size=size[0] / 3, with_score=False):
         order = np.argsort(scores)
         peaks = peaks[order]
 
-        return peaks, scores
+        return np.vstack(peaks), np.vstack(scores)
     return peaks
 
 
@@ -209,8 +204,6 @@ def rank_candidate_locations(logits, shape):
         peak_scores = entropy[peaks[:, 0], peaks[:, 1]]
     order = np.argsort(peak_scores)
     ordered = peaks[order]
-
-    # cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
 
     return ordered
 
