@@ -49,7 +49,7 @@ contributions:
 
   widgets:
     - command: ParticleAnnotation.viewer_tm_score_3d
-      display_name: Local 3D TM Score[CPU/GPU]
+      display_name: Local 3D TM Score [CPU/GPU]
 
     - command: ParticleAnnotation.viewer
       display_name: Local [CPU/GPU] (Depreciated)

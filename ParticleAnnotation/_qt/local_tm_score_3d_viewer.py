@@ -395,12 +395,11 @@ class AnnotationWidget(Container):
             pre_train=self.AL_weights,
         )
 
-        print(tm_score[self.tm_idx, :].dtype)
         self.selected_particles_find_peaks, _ = find_peaks(
             tm_score[self.tm_idx, :], 15, with_score=True
         )
 
-        points = np.vstack(self.selected_particles_find_peaks[:10]).astype(np.float64)
+        points = np.vstack(self.selected_particles_find_peaks[:10]).astype(np.float16)
         labels = np.zeros((points.shape[0],))
         labels[:] = 2
 
@@ -538,8 +537,8 @@ class AnnotationWidget(Container):
         peaks_confidence = peaks_confidence[order]
 
         self.create_image_layer(logits, "Logits", transparency=True)
-        tif.imwrite('logits.tif', logits)
-        tif.imwrite('tm_scores.tif', self.tm_scores[self.tm_idx])
+        tif.imwrite("logits.tif", logits)
+        tif.imwrite("tm_scores.tif", self.tm_scores[self.tm_idx])
 
         self.napari_viewer.add_points(
             peaks,
@@ -1043,7 +1042,9 @@ class AnnotationWidget(Container):
         try:
             self.napari_viewer.layers["Particle_Prediction"].visible = False
             particles_all = self.napari_viewer.layers["Particle_Prediction"].data
-            confidence_all = self.napari_viewer.layers["Particle_Prediction"].properties["label"]
+            confidence_all = self.napari_viewer.layers[
+                "Particle_Prediction"
+            ].properties["label"]
 
             if len(particles_all) == 0:
                 show_info("No predicted particles to filter!")
@@ -1054,6 +1055,11 @@ class AnnotationWidget(Container):
             )
             particles_filter = particles_all[keep_id[0], :]
             confidence_filter = confidence_all[keep_id[0]]
+
+            try:
+                self.napari_viewer.layers.remove("Particle_Prediction_Filtered")
+            except:
+                pass
 
             self.napari_viewer.add_points(
                 particles_filter,
@@ -1082,30 +1088,16 @@ class AnnotationWidget(Container):
         score from prediction if present.
 
         Export self.user_annotations [n, 4] organized Z, Y, X, ID
-        """ 
-        # TODO Navya redo export, simplified it by firstly searching if point layer which
-        # ends with _prediction exist. if yes Ask for it. Get min and max value.
-        # If not exist max is equal to 1. 
-        # Finally draw user_annotation, add confidence score define in max, and 
-        # concatenate with predicted point_layer if exist. -> 
-        
-        # [Update 03/20] I think we should save only positive labels as user_annotations.csv which 
-        # are not corrupted with negative junk. All predicted + user annotations can be saved separately
+        """
+        user_annotations = self.user_annotations.copy()
 
         try:
-            pred_points = self.napari_viewer.layers[
-            f"Particle_Prediction"
-            ].data
-
-            pred_label = self.napari_viewer.layers[
-            f"Particle_Prediction"
+            prediction_particle = self.napari_viewer.layers["Particle_Prediction"].data
+            prediction_labels = self.napari_viewer.layers[
+                "Particle_Prediction"
             ].properties["label"]
-
-            max_val = np.max(pred_label)
-            min_val = np.min(pred_label)
         except:
-            max_val = 1
-            min_val = -1
+            prediction_particle, prediction_labels = [], []
 
         # Save only label == 1 from user annotations
         pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
@@ -1115,27 +1107,19 @@ class AnnotationWidget(Container):
             caption="Save File", directory="user_annotations.csv"
         )
 
-        data = np.hstack((pos_points, np.arange(1, pos_points.shape[0] + 1)[:, None]))
-        np.savetxt(filename, data, delimiter=",", fmt="%s", header = "Z, Y, X, ID")
-        
-        pos_points = np.hstack((pos_points, max_val*np.ones((pos_points.shape[0], 1))))
-        neg_points = self.user_annotations[self.user_annotations[:, -1] == 0][:, :-1]
-        neg_points = np.hstack((neg_points, -min_val * np.ones((neg_points.shape[0], 1))))
+        if len(prediction_particle) == 0:
+            data = user_annotations
+        else:
+            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
+            min_, max_ = np.min(prediction_labels), np.max(prediction_labels)
 
-            # user_annotations[user_annotations[:, 3] == 0, 3] = min_
-            # user_annotations[user_annotations[:, 3] == 1, 3] = max_
-            # data = np.concatenate((user_annotations, prediction))
+        user_annotations[user_annotations[:, 3] == 0, 3] = min_
+        user_annotations[user_annotations[:, 3] == 1, 3] = max_
+        data = np.concatenate((user_annotations, prediction))
 
-        try:
-            data = np.vstack((data, np.hstack((pred_points, pred_label))))
-            filename, _ = QFileDialog.getSaveFileName(
-                caption="Save File", directory="exported_particles.csv"
-            )
-            np.savetxt(
-                filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
-            )
-        except:
-            pass
+        np.savetxt(
+            filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
+        )
 
     def _import_particles(
         self,
@@ -1158,13 +1142,11 @@ class AnnotationWidget(Container):
         self.user_annotations = np.concatenate(
             (self.user_annotations, np.hstack((data, labels[:, None])))
         )
-        self.user_annotations = np.vstack(
-            tuple(set(map(tuple, self.user_annotations)))
-        )
+        self.user_annotations = np.vstack(tuple(set(map(tuple, self.user_annotations))))
 
         # add imported points to the layer
         try:
-            self.napari_viewer.layers['Imported_Particles'].remove
+            self.napari_viewer.layers.remove("Imported_Particles")
         except:
             pass
 
@@ -1180,5 +1162,3 @@ class AnnotationWidget(Container):
             size=5,
         )
         show_info(f"Imported {data.shape[0]} particles!")
-        # except Exception as e:
-        #     show_info(f"Warning {e}: Could not load coordinates!")

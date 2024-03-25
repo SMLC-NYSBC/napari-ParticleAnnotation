@@ -8,20 +8,29 @@ def draw_patch_and_scores(
 ):
     patch = np.array(())
     tm_score = np.array(())
-    while patch.shape != (patch_size, patch_size, patch_size):
-        patch = img[
-            patch_corner[0] : patch_corner[0] + patch_size,
-            patch_corner[1] : patch_corner[1] + patch_size,
-            patch_corner[2] : patch_corner[2] + patch_size,
-        ]
 
-        tm_score = scores[
-            :,
-            patch_corner[0] : patch_corner[0] + patch_size,
-            patch_corner[1] : patch_corner[1] + patch_size,
-            patch_corner[2] : patch_corner[2] + patch_size,
-        ]
-        print(patch.shape)
+    patch = img[
+        patch_corner[0] : patch_corner[0] + patch_size,
+        patch_corner[1] : patch_corner[1] + patch_size,
+        patch_corner[2] : patch_corner[2] + patch_size,
+    ]
+
+    tm_score = scores[
+        :,
+        patch_corner[0] : patch_corner[0] + patch_size,
+        patch_corner[1] : patch_corner[1] + patch_size,
+        patch_corner[2] : patch_corner[2] + patch_size,
+    ]
+
+    if patch.shape != (patch_size, patch_size, patch_size):
+        df_patch = np.zeros((patch_size, patch_size, patch_size))
+        df_tm_score = np.zeros((patch_size, patch_size, patch_size))
+
+        shape_ = patch.shape
+        df_patch[: shape_[0], : shape_[1], : shape_[2]] = patch
+        df_tm_score[:, : shape_[0], : shape_[1], : shape_[2]] = tm_score
+
+        return df_patch, df_tm_score
 
     return patch, tm_score
 
