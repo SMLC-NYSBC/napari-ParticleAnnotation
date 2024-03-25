@@ -115,7 +115,7 @@ def load_tomogram():
     root = QFileDialog.getOpenFileNames(
         None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
     )[0]
-    image, px = load_mrc_file(mrc=root[0]).astype(np.float16)
+    image, px = load_mrc_file(mrc=root[0])
 
     return image, px, os.path.split(root[0])[1][:-4]
 

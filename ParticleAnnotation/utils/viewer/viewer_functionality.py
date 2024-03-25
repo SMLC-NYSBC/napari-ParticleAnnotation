@@ -21,6 +21,7 @@ def draw_patch_and_scores(
             patch_corner[1] : patch_corner[1] + patch_size,
             patch_corner[2] : patch_corner[2] + patch_size,
         ]
+        print(patch.shape)
 
     return patch, tm_score
 
