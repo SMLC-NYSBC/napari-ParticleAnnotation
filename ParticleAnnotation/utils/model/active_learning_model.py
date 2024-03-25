@@ -16,78 +16,81 @@ import io
 import requests
 
 
-def predict_3d_with_AL(img, model, weights, offset, tm_scores=None):
+def predict_3d_with_AL(
+    img: np.ndarray, tm_scores: np.ndarray, model, offset: int, maximum_filter_size=25
+):
     peaks, peaks_logits = [], []
     device_ = get_device()
 
-    if tm_scores is not None:
-        assert tm_scores.shape[1:] == img.shape
+    assert tm_scores.shape[1:] == img.shape
+
+    # if tm_scores is None:
+    #     init_model = torch.load(
+    #         io.BytesIO(
+    #             requests.get(
+    #                 "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+    #                 timeout=(5, None),
+    #             ).content
+    #         )
+    #     )
+    #     init_model = init_model.features.to(device_)
+    #     init_model.fill()
+    #     init_model.eval()
+
+    # if weights is not None:
+    #     model.fit(pre_train=weights)
 
     grid = divide_grid(img, offset)
-    if tm_scores is None:
-        init_model = torch.load(
-            io.BytesIO(
-                requests.get(
-                    "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
-                    timeout=(5, None),
-                ).content
-            )
-        )
-        init_model = init_model.features.to(device_)
-        init_model.fill()
-        init_model.eval()
-
-    if weights is not None:
-        model.fit(pre_train=weights)
-
+    full_logits = np.zeros_like(img)
     for i in tqdm(grid):
         # Predict
         with torch.no_grad():
-            if tm_scores is None:
-                # Stream patch
-                patch = img[
-                    i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset
-                ]
-                shape_ = patch.shape
-                patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
+            # if tm_scores is None:
+            #     # Stream patch
+            #     patch = img[
+            #         i[0] : i[0] + offset, i[1] : i[1] + offset, i[2] : i[2] + offset
+            #     ]
+            #     shape_ = patch.shape
+            #     patch = torch.from_numpy(patch).float().unsqueeze(0).to(device_)
 
-                patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
-            else:
-                z_start, y_start, x_start = i[0], i[1], i[2]
-                patch = tm_scores[
-                    :,
-                    z_start : z_start + offset,
-                    y_start : y_start + offset,
-                    x_start : x_start + offset,
-                ]
-                shape_ = patch.shape
+            #     patch = init_model(patch).squeeze(0).permute(1, 2, 3, 0)
+            # else:
+            z_start, y_start, x_start = i[0], i[1], i[2]
+            patch = tm_scores[
+                :,
+                z_start : z_start + offset,
+                y_start : y_start + offset,
+                x_start : x_start + offset,
+            ]
+            shape_ = patch.shape
 
-                patch = torch.from_numpy(patch.copy()).float().to(device_)
-                patch = patch.permute(1, 2, 3, 0)
-                patch = patch.reshape(-1, patch.shape[-1])
+            patch = torch.from_numpy(patch.copy()).float().to(device_)
+            patch = patch.permute(1, 2, 3, 0)
+            patch = patch.reshape(-1, patch.shape[-1])
 
             logits = model(patch).reshape(*shape_[1:])
 
-        if device_ == "cpu":
-            logits = logits.detach().numpy()
-        else:
-            logits = logits.cpu().detach().numpy()
+            if device_ == "cpu":
+                logits = logits.detach().numpy()
+            else:
+                logits = logits.cpu().detach().numpy()
 
-        # Extract peaks
-        max_filter = maximum_filter(logits, size=25)
-        peaks_df = logits - max_filter
-        peaks_df = np.where(peaks_df == 0)
-        peaks_df = np.stack(peaks_df, axis=-1)
+            full_logits[
+                z_start : z_start + offset,
+                y_start : y_start + offset,
+                x_start : x_start + offset,
+            ] = logits
 
-        # Save patch peaks and its logits
-        peaks_logits_df = logits[peaks_df[:, 0], peaks_df[:, 1], peaks_df[:, 2]]
-        peaks_df = correct_coord(peaks_df, i, True)
-        peaks.append(peaks_df)
-        peaks_logits.append(peaks_logits_df)
+    # Extract peaks
+    max_filter = maximum_filter(full_logits, size=maximum_filter_size)
+    peaks = full_logits - max_filter
+    peaks = np.where(peaks == 0)
+    peaks = np.stack(peaks, axis=-1)
 
-    print("Done with AL training")
+    # Save patch peaks and its logits
+    peaks_logits = full_logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
 
-    return np.vstack(peaks), np.concatenate(peaks_logits)
+    return peaks, peaks_logits, full_logits
 
 
 def fill_label_region(y, ci, cj, label, size: int, cz=None):
@@ -281,11 +284,11 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
         self.device = get_device()
-        # self.weights = torch.zeros(n_features, device=self.device)
+        self.weights = torch.zeros(n_features, device=self.device)
         # random initialization
-        self.weights = torch.randn(n_features, device=self.device)
-        # self.bias = torch.zeros(1, device=self.device)
-        self.bias = torch.randn(1, device=self.device)
+        # self.weights = torch.randn(n_features, device=self.device)
+        self.bias = torch.zeros(1, device=self.device)
+        # self.bias = torch.randn(1, device=self.device)
         self.l2 = l2
         self.pi = pi
         self.pi_logit = np.log(pi) - np.log1p(-pi)

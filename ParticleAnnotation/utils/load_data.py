@@ -84,30 +84,8 @@ def load_coordinates(path):
 
     # last column is label or ID
     if data.shape[1] == 4:
-        if np.all(data[:, 3] == data[:, 3].astype(int)):
-            labels = data[:, 3]
-            # check if labels are in range -1 to 1 and if not set to 1
-            if np.all(labels >= -1) and np.all(labels <= 1):
-                pass
-            else:
-                # handle case when ID is in the last column
-                labels = np.ones(data.shape[0])
-
-            data = data[:, 0:3]
-
-        elif np.all(data[:, 0] == data[:, 0].astype(int)):
-            # first column is labels or ID
-            if np.all(labels >= -1) and np.all(labels <= 1):
-                pass
-            else:
-                # handle case when ID is in the first column
-                labels = np.ones(data.shape[0])
-            data = data[:, 1:4]
-            labels = data[:, 0]
-
-        else:
-            labels = np.ones(data.shape[0])
-            data = data[:, 0:3]
+        labels = data[:, 3]
+        data = data[:, 0:3]
 
     # index,z,y,x,label - napari binder saves this format
     if data.shape[1] == 5:
@@ -127,43 +105,63 @@ def save_coordinates(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
 
+def load_tomogram():
+    """
+    Load image data
+
+    Return:
+        Image data.
+    """
+    root = QFileDialog.getOpenFileNames(
+        None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
+    )[0]
+    image, px = load_mrc_file(mrc=root[0]).astype(np.float16)
+
+    return image, px, os.path.split(root[0])[1][:-4]
+
+
 def load_template(template: str = None):
     """
     Load the template scores from disk.
 
     Args:
-        path: A string representing the path of the file to read.
+        path str, None: A string representing the path of the file to read.
 
     Returns:
-        The template score data.
-
+        The template score data and index indicating position template score.
     """
     device_ = get_device()
-    root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
+    root = QFileDialog.getOpenFileNames(
+        None, "Select a template score files", filter="Pytorch(*.pt)"
+    )[0]
 
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
         template_idx = 0
     else:
         template_score = []
-        template_idx = [id_ for id_, i in enumerate(root) if i.endswith(template)][0]
+        template_idx = [id_ for id_, i in enumerate(root) if i[:-3].endswith(template)][0]
 
         for i in root:
-            template_score.append(torch.load(i, map_location=device_))
+            template_score.append(torch.load(i, map_location=device_).type(torch.float16))
     template_score = torch.cat(template_score, 0)
 
     if device_ == "cpu":
         template_score = np.flip(
-            template_score.detach().numpy()
-            if isinstance(template_score, torch.Tensor)
-            else template_score,
+            (
+                template_score.detach().numpy()
+                if isinstance(template_score, torch.Tensor)
+                else template_score
+            ),
             axis=2,
         )
     else:
         template_score = np.flip(
-            template_score.cpu().detach().numpy()
-            if isinstance(template_score, torch.Tensor)
-            else template_score,
+            (
+                template_score.cpu().detach().numpy()
+                if isinstance(template_score, torch.Tensor)
+                else template_score
+            ),
             axis=2,
         )
     print("Loaded template scores")

@@ -152,11 +152,11 @@ def polar_to_cartesian(rho, theta):
     return x, y
 
 
-def find_peaks(score, size=size[0] / 3, with_score=False):
+def find_peaks(score, size=15, with_score=False):
     if isinstance(score, torch.Tensor):
         score = score.detach().cpu().numpy()
 
-    max_filter = maximum_filter(score, size=size)
+    max_filter = maximum_filter(score.astype(np.float32), size=size)
     peaks = score - max_filter
     peaks = np.where(peaks == 0)
     peaks = np.stack(peaks, axis=-1)
