@@ -33,14 +33,9 @@ def divide_grid(array, size):
 
 def correct_coord(data, patch_corner, normalize):
     if normalize:
-        data[:, 0] = data[:, 0] + patch_corner[0]
-        data[:, 1] = data[:, 1] + patch_corner[1]
-        data[:, 2] = data[:, 2] + patch_corner[2]
+        data = data + patch_corner
     else:
-        data[:, 0] = data[:, 0] - patch_corner[0]
-        data[:, 1] = data[:, 1] - patch_corner[1]
-        data[:, 2] = data[:, 2] - patch_corner[2]
-
+        data = data - patch_corner
     return data
 
 
@@ -76,19 +71,19 @@ def calc_iou(box_1, box_2, size_):
     return iou
 
 
-def get_random_patch(img, size_: int, chosen_particles=None):
-    z, y, x = img.shape
+def get_random_patch(img_size, size_: int, chosen_particles=None):
+    z, y, x = img_size
 
     if chosen_particles is None or chosen_particles.shape[0] == 0:
-        if img.shape[0] > size_:
+        if z > size_:
             z_start = np.random.randint(0, z - size_ + 1)
         else:
             z_start = 0
-        if img.shape[1] > size_:
+        if y > size_:
             y_start = np.random.randint(0, y - size_ + 1)
         else:
             y_start = 0
-        if img.shape[2] > size_:
+        if x > size_:
             x_start = np.random.randint(0, x - size_ + 1)
         else:
             x_start = 0
@@ -97,48 +92,23 @@ def get_random_patch(img, size_: int, chosen_particles=None):
         center = chosen_particles[center_idx]
         center_z, center_y, center_x = center
 
-        if img.shape[0] > size_:
+        if z > size_:
             z_start = max(0, center_z - size_ // 2)
             z_start = int(z_start)
         else:
             z_start = 0
 
-        if img.shape[1] > size_:
+        if y > size_:
             y_start = max(0, center_y - size_ // 2)
             y_start = int(y_start)
         else:
             y_start = 0
 
-        if img.shape[2] > size_:
+        if x > size_:
             x_start = max(0, center_x - size_ // 2)
             x_start = int(x_start)
         else:
             x_start = 0
-
-        # [TO-DO] add non-max suppression here to choose the best centers
-        # idx = np.where((chosen_particles == center).all(axis=1))
-        # chosen_particles = np.delete(chosen_particles, idx, axis=0)
-
-    # if img.shape[0] <= size_:
-    #     z_start = 0
-    #     z_end = z
-    # else:
-    #     z_end = z_start + size_
-    #
-    # if img.shape[1] <= size_:
-    #     y_start = 0
-    #     y_end = y
-    # else:
-    #     y_end = y_start + size_
-    #
-    # if img.shape[2] <= size_:
-    #     x_start = 0
-    #     x_end = x
-    # else:
-    #     x_end = x_start + size_
-    #
-    # # Extract the patch from the array
-    # patch = img[z_start:z_end, y_start:y_end, x_start:x_end]
 
     return (z_start, y_start, x_start)
 
@@ -182,11 +152,11 @@ def polar_to_cartesian(rho, theta):
     return x, y
 
 
-def find_peaks(score, size=size[0] / 3, with_score=False):
+def find_peaks(score, size=15, with_score=False):
     if isinstance(score, torch.Tensor):
         score = score.detach().cpu().numpy()
 
-    max_filter = maximum_filter(score, size=size)
+    max_filter = maximum_filter(score.astype(np.float32), size=size)
     peaks = score - max_filter
     peaks = np.where(peaks == 0)
     peaks = np.stack(peaks, axis=-1)
@@ -199,7 +169,11 @@ def find_peaks(score, size=size[0] / 3, with_score=False):
         else:
             for i in peaks:
                 scores.append(score[i[0], i[1]])
-        return peaks, scores
+
+        order = np.argsort(scores)
+        peaks = peaks[order]
+
+        return np.vstack(peaks), np.vstack(scores)
     return peaks
 
 
@@ -230,8 +204,6 @@ def rank_candidate_locations(logits, shape):
         peak_scores = entropy[peaks[:, 0], peaks[:, 1]]
     order = np.argsort(peak_scores)
     ordered = peaks[order]
-
-    # cur_proposal_index, proposals = set_proposals(ordered, proposals, id_)
 
     return ordered
 
@@ -266,7 +238,8 @@ def get_device(device: str = "0") -> torch.device:
             device = torch.device("cpu")  # So far pytorch don't support CNN on MPS
         else:
             device = torch.device("cpu")
-    return device
+    # return device
+    return torch.device("cpu")
 
 
 def device_is_str(device: str = "0") -> bool:

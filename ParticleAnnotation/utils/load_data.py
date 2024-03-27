@@ -81,43 +81,22 @@ def load_coordinates(path):
         print("Could not load coordinates from file")
         return None, None
 
+    # remove NaNs
     data = data[~np.isnan(data).any(axis=1)]
-    # if data is x,y,z just return
+
+    # if data is z,y,x just return
     if data.shape[1] == 3:
         labels = np.ones(data.shape[0])
 
+    # last column is label or ID
     if data.shape[1] == 4:
-        # labels would either be the first or the last column
-        if np.all(data[:, 3] == data[:, 3].astype(int)):
-            labels = data[:, 3].astype(int)
-            data = data[:, 0:3]
+        labels = data[:, 3]
+        data = data[:, 0:3]
 
-        else:
-            if np.all(data[:, 0] == data[:, 0].astype(int)):
-                data = data[:, 1:4]
-                labels = data[:, 0].astype(int)
-            else:
-                labels = np.ones(data.shape[0])
-                data = data[:, 0:3]
-
-    # if data is index,x,y,z,label - this is how napari saves!
+    # index,z,y,x,label - napari binder saves this format
     if data.shape[1] == 5:
         labels = data[:, 4]
-        # check if the labels are integers
-        if np.all(labels == labels.astype(int)):
-            labels = labels.astype(int)
-        else:
-            labels = np.ones(data.shape[0])
         data = data[:, 1:4]
-
-    data = np.array(
-        (
-            np.array(labels).astype(np.int16),
-            data[:, 0],
-            data[:, 1],
-            data[:, 2],
-        )
-    ).T
 
     return data, labels
 
@@ -132,73 +111,68 @@ def save_coordinates(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
 
-def load_template():
+def load_tomogram():
+    """
+    Load image data
+
+    Return:
+        Image data.
+    """
+    root = QFileDialog.getOpenFileNames(
+        None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
+    )[0]
+    image, px = load_mrc_file(mrc=root[0])
+
+    return image, px, os.path.split(root[0])[1][:-4]
+
+
+def load_template(template: str = None):
     """
     Load the template scores from disk.
 
     Args:
-        path: A string representing the path of the file to read.
+        path str, None: A string representing the path of the file to read.
 
     Returns:
-        The template score data.
-
+        The template score data and index indicating position template score.
     """
     device_ = get_device()
-    # temp_name = temp_name.upper()
-    # tomo_name = re.search(r"ts(\d{1,3})", path).group(0)
-
-    # [TO-DO] Remove down sampling after testing
-    # root = f'/h2/njain/data/tomonet_template_matched/downsampled'
-    root = QFileDialog.getOpenFileNames(None, "Select a score file")[0]
+    root = QFileDialog.getOpenFileNames(
+        None, "Select a template score files", filter="Pytorch(*.pt)"
+    )[0]
 
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
+        template_idx = 0
     else:
-        root = np.sort(root)
         template_score = []
+        template_idx = [id_ for id_, i in enumerate(root) if i[:-3].endswith(template)][0]
+
         for i in root:
-            template_score.append(torch.load(i, map_location=device_))
+            template_score.append(torch.load(i, map_location=device_).type(torch.float16))
     template_score = torch.cat(template_score, 0)
 
     if device_ == "cpu":
         template_score = np.flip(
-            template_score.detach().numpy()
-            if isinstance(template_score, torch.Tensor)
-            else template_score,
+            (
+                template_score.detach().numpy()
+                if isinstance(template_score, torch.Tensor)
+                else template_score
+            ),
             axis=2,
         )
     else:
         template_score = np.flip(
-            template_score.cpu().detach().numpy()
-            if isinstance(template_score, torch.Tensor)
-            else template_score,
+            (
+                template_score.cpu().detach().numpy()
+                if isinstance(template_score, torch.Tensor)
+                else template_score
+            ),
             axis=2,
         )
     print("Loaded template scores")
-    # try:
-    #     template_score = torch.load(root, map_location=device_
-    #     ).numpy()
-    #     # flip the template score along the y-axis
-    #     # ice_score = torch.load(
-    #     #     f"{root}/scores_ice.pt", map_location=device_
-    #     # ).numpy()
-    #
-    #     # We want to load just one file which is already ready
-    #     # template_score = np.concatenate([template_score, ice_score], axis=0)
-    #     # template_score = np.flip(template_score, axis=2)
-    #     print("Loaded template scores")
-    # except:
-    #     print(f"Could not find template {root}")
-    #     # template_score = torch.load(
-    #     #     root, map_location=device_
-    #     # ).numpy()
-    #     # ice_score = torch.load(
-    #     #     f"{root}/scores_ice.pt", map_location=device_
-    #     # ).numpy()
-    #     # template_score = np.concatenate([template_score, ice_score], axis=0)
-    #     # template_score = np.flip(template_score, axis=2)
 
-    return template_score
+    return template_score, template_idx
 
 
 def load_image(path, aws=False):

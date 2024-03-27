@@ -460,7 +460,7 @@ class AnnotationWidgetv2(Container):
         ].data
         pred_label = self.napari_viewer.layers[
             f"{self.image_layer_name}_Prediction"
-        ].properties["label"]
+        ].properties["confidence"]
         print(pred_points.shape, pred_label.shape)
 
         points_layer = np.vstack((points_layer, pred_points))
@@ -535,14 +535,16 @@ class AnnotationWidgetv2(Container):
             #     tm_scores[idx, :] = (i - min_) / (max_ - min_)
 
             # tm_scores, _ = normalize(tm_scores.copy(), method="affine", use_cuda=False)
-            self.tm_scores = tm_scores
+            self.tm_scores, _tm_idx = tm_scores
 
             # show only chosen particle's TM scores
-            self.create_image_layer(self.tm_scores[0])
+            self.create_image_layer(self.tm_scores[_tm_idx])
 
             # self.tm_scores = np.zeros(self.img_process.shape)
             self.patch_corner = get_random_patch(
-                self.img_process, int(self.patch_size.value), self.chosen_particles
+                self.img_process.shape,
+                int(self.patch_size.value),
+                self.chosen_particles,
             )
 
             patch = self.img_process[
@@ -613,7 +615,7 @@ class AnnotationWidgetv2(Container):
             pass
 
         self.reset_view()
-        show_info(f"Task finished: Initialize Dataset!")
+        show_info("Task finished: Initialize Dataset!")
 
     def _change_patch(self):
         self.curr_layer = "Initial_Labels"
@@ -676,11 +678,13 @@ class AnnotationWidgetv2(Container):
 
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
-            show_info(f"Task finished: Retrain model!")
+            show_info("Task finished: Retrain model!")
 
             # Feed new patch
             self.patch_corner = get_random_patch(
-                self.img_process, int(self.patch_size.value), self.chosen_particles
+                self.img_process.shape,
+                int(self.patch_size.value),
+                self.chosen_particles,
             )
             print(self.patch_corner)
             patch = self.img_process[
@@ -868,7 +872,7 @@ class AnnotationWidgetv2(Container):
                 size=5,
             )
 
-            show_info(f"Task finished: Retrain model!")
+            show_info("Task finished: Retrain model!")
 
     def _predict(self):
         self.curr_layer = "Initial_Labels"
@@ -967,6 +971,7 @@ class AnnotationWidgetv2(Container):
             #         (peak_logits, max_logits * np.ones(self.true_labels.shape[0]))
             #     )
 
+        print(peaks.shape, peak_logits.shape)
         self.napari_viewer.add_points(
             peaks,
             name=f"{self.image_layer_name}_Prediction",
@@ -1057,7 +1062,7 @@ class AnnotationWidgetv2(Container):
                 kdtree = KDTree(points_layer)
                 distance, closest_point_index = kdtree.query(self.mouse_position, k=1)
 
-                if distance > 12:
+                if distance > 10:
                     self.update_point_layer_2(self.mouse_position, 0, "add")
                 else:
                     self.update_point_layer_2(closest_point_index, 0, "update")
