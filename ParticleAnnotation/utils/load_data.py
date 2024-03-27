@@ -22,6 +22,12 @@ def downsample(img: np.ndarray, factor=8):
             scale_factor=factor,
             mode="trilinear",
         ).numpy()[0, 0, ...]
+    elif img.ndim == 4:
+        img = F.interpolate(
+            torch.Tensor(img.copy()).unsqueeze(0),
+            scale_factor=factor,
+            mode="trilinear",
+        ).numpy()[0, ...]
     else:
         y, x = img.shape
         y = int(y / (1 / factor))
