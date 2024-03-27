@@ -4,7 +4,7 @@ from ParticleAnnotation.utils.model.utils import correct_coord
 
 
 def draw_patch_and_scores(
-    img: np.ndarray, scores: np.ndarray, patch_corner: np.ndarray, patch_size: int
+    img: np.ndarray, scores: np.ndarray, patch_corner: np.ndarray, patch_size: int, tm_idx: int,
 ):
     patch = np.array(())
     tm_score = np.array(())
@@ -16,7 +16,7 @@ def draw_patch_and_scores(
     ]
 
     tm_score = scores[
-        :,
+        tm_idx,
         patch_corner[0] : patch_corner[0] + patch_size,
         patch_corner[1] : patch_corner[1] + patch_size,
         patch_corner[2] : patch_corner[2] + patch_size,
@@ -28,7 +28,7 @@ def draw_patch_and_scores(
 
         shape_ = patch.shape
         df_patch[: shape_[0], : shape_[1], : shape_[2]] = patch
-        df_tm_score[:, : shape_[0], : shape_[1], : shape_[2]] = tm_score
+        df_tm_score[: shape_[0], : shape_[1], : shape_[2]] = tm_score
 
         return df_patch, df_tm_score
 

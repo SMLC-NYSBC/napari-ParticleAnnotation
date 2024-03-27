@@ -366,7 +366,7 @@ class AnnotationWidget(Container):
         )
 
         patch, tm_score = draw_patch_and_scores(
-            self.img_process, self.tm_scores, self.patch_corner, patch_size
+            self.img_process, self.tm_scores, self.patch_corner, patch_size, self.tm_idx,
         )
         self.create_image_layer(patch, name="Tomogram_Patch")
         self.create_image_layer(
@@ -460,7 +460,7 @@ class AnnotationWidget(Container):
 
         # Display new patch and associated scores
         patch, tm_score = draw_patch_and_scores(
-            self.img_process, self.tm_scores, self.patch_corner, patch_size
+            self.img_process, self.tm_scores, self.patch_corner, patch_size, self.tm_idx,
         )
 
         # BLR training and model update
@@ -530,7 +530,7 @@ class AnnotationWidget(Container):
             tm_scores=self.tm_scores,
             model=self.model,
             offset=patch_size,
-            maximum_filter_size=15,
+            maximum_filter_size=15,  # Make it user parameter
         )
         order = np.argsort(peaks_confidence)
         peaks = peaks[order]
@@ -617,13 +617,13 @@ class AnnotationWidget(Container):
         patch_size = int(self.patch_size.value)
         if self.img_process is not None:
             patch, _ = draw_patch_and_scores(
-                self.img_process, self.tm_scores, self.patch_corner, patch_size
+                self.img_process, self.tm_scores, self.patch_corner, patch_size, self.tm_idx,
             )
             self.create_image_layer(patch, name="Tomogram_Patch")
 
         if self.tm_scores is not None:
             _, tm_score = draw_patch_and_scores(
-                self.img_process, self.tm_scores, self.patch_corner, patch_size
+                self.img_process, self.tm_scores, self.patch_corner, patch_size, self.tm_idx,
             )
             self.create_image_layer(
                 tm_score[self.tm_idx], name="TM_Scores", transparency=True
@@ -710,7 +710,7 @@ class AnnotationWidget(Container):
         box = int(self.box_size.value)
         if self.model is not None:
             patch, tm_score = draw_patch_and_scores(
-                self.img_process, self.tm_scores, self.patch_corner, patch_size
+                self.img_process, self.tm_scores, self.patch_corner, patch_size, self.tm_idx,
             )
             self.create_image_layer(patch, name="Tomogram_Patch")
             self.create_image_layer(
