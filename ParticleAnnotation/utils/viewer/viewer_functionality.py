@@ -42,6 +42,7 @@ def build_gird_with_particles(
     img_process: np.ndarray,
     tm_scores: np.ndarray,
     tm_idx: int,
+    box_size: int,
 ):
     # Particles are in self.patch_points, self.patch_label
     crop_particles = []
@@ -50,8 +51,9 @@ def build_gird_with_particles(
     grid_particle_points = np.zeros_like(patch_points)
     grid_particle_labels = patch_label.copy()
 
-    patch_size = 25
-    crop_size = 50
+    patch_size = box_size
+    crop_size = box_size * 2
+    gap_size = 2
 
     for i in patch_points:
         i = correct_coord(np.array(i), patch_corner, True)
@@ -83,20 +85,28 @@ def build_gird_with_particles(
 
     if len(patch_points) < (grid + 1):
         crop_grid_img = np.zeros(
-            (crop_size, crop_size, n_x * crop_size + n_x * 5),
+            (crop_size, crop_size, n_x * crop_size + n_x * gap_size),
             dtype=img_process.dtype,
         )
         crop_grid_tm_scores = np.zeros(
-            (crop_size, crop_size, n_x * crop_size + n_x * 5),
+            (crop_size, crop_size, n_x * crop_size + n_x * gap_size),
             dtype=tm_scores.dtype,
         )
     else:
         crop_grid_img = np.zeros(
-            (crop_size, n_y * crop_size + n_y * 5, n_x * crop_size + n_x * 5),
+            (
+                crop_size,
+                n_y * crop_size + n_y * gap_size,
+                n_x * crop_size + n_x * gap_size,
+            ),
             dtype=img_process.dtype,
         )
         crop_grid_tm_scores = np.zeros(
-            (crop_size, n_y * crop_size + n_y * 5, n_x * crop_size + n_x * 5),
+            (
+                crop_size,
+                n_y * crop_size + n_y * gap_size,
+                n_x * crop_size + n_x * gap_size,
+            ),
             dtype=tm_scores.dtype,
         )
 
@@ -113,20 +123,35 @@ def build_gird_with_particles(
 
         i_z, i_y, i_x = i.shape
         j_z, j_y, j_x = j.shape
-        if crop_grid_img.shape[1] == crop_size:
-            # Add crops
-            crop_grid_img[0:i_z, 0:i_y, x_min : x_min + i_x] = i
-            crop_grid_tm_scores[0:j_z, 0:j_y, x_min : x_min + j_x] = j
+        if i.shape[0] == crop_size:
+            if crop_grid_img.shape[1] == crop_size:
+                # Add crops
+                crop_grid_img[0:i_z, 0:i_y, x_min : x_min + i_x] = i
+                crop_grid_tm_scores[0:j_z, 0:j_y, x_min : x_min + j_x] = j
+            else:
+                # Add crops
+                crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
+                crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
         else:
-            # Add crops
-            crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
-            crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
+            z_offset = (crop_size - i.shape[0]) // 2
+            if crop_grid_img.shape[1] == crop_size:
+                # Add crops with z offset for centering
+                crop_grid_img[z_offset:i_z, 0:i_y, x_min : x_min + i_x] = i
+                crop_grid_tm_scores[z_offset:j_z, 0:j_y, x_min : x_min + j_x] = j
+            else:
+                # Add crops
+                crop_grid_img[
+                    z_offset:i_z, y_min : y_min + i_y, x_min : x_min + i_x
+                ] = i
+                crop_grid_tm_scores[
+                    z_offset:j_z, y_min : y_min + j_y, x_min : x_min + j_x
+                ] = j
 
         if (idx + 1) % grid == 0 and x_min != 0:
             x_min = 0
-            y_min += crop_size + 5
+            y_min += crop_size + gap_size
         else:
-            x_min += crop_size + 5
+            x_min += crop_size + gap_size
 
     return (
         crop_grid_img,

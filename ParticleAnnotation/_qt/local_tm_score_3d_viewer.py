@@ -19,7 +19,6 @@ import torch
 from ParticleAnnotation.utils.load_data import (
     load_template,
     load_coordinates,
-    load_tomogram,
 )
 from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
@@ -301,6 +300,12 @@ class AnnotationWidget(Container):
     def _select_particle_for_patches(
         self,
     ):
+        # Load and pre-process tm_scores data
+        self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
+        if self.tm_scores is None:
+            show_info(f'Please select template score for {self.pdb_id.value}')
+            return
+
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
@@ -308,8 +313,6 @@ class AnnotationWidget(Container):
             self.filename
         ) = self.napari_viewer.layers.selection.active.name
 
-        # Load and pre-process tm_scores data
-        self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
         self.create_image_layer(
             self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
         )
@@ -517,21 +520,6 @@ class AnnotationWidget(Container):
             return
 
         patch_size = int(self.patch_size.value)
-        pdb_id = str(self.pdb_id.value)
-
-        # Load data if not present
-        self.img_process, _, name = load_tomogram()
-        self.tm_scores, self.tm_idx = load_template(template=pdb_id)
-        self.shape = self.img_process.shape
-
-        self.img_process, _ = normalize(
-            self.img_process.copy(), method="affine", use_cuda=False
-        )
-
-        self.create_image_layer(self.img_process, name, False)
-        self.create_image_layer(
-            self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
-        )
 
         peaks, peaks_confidence, logits = predict_3d_with_AL(
             self.img_process,
@@ -664,6 +652,7 @@ class AnnotationWidget(Container):
             self.img_process,
             self.tm_scores,
             self.tm_idx,
+            int(self.box_size.value)
         )
 
         self.create_image_layer(crop_grid_img, name="Particles_crops")
@@ -695,6 +684,7 @@ class AnnotationWidget(Container):
             self.img_process,
             self.tm_scores,
             self.tm_idx,
+            int(self.box_size.value)
         )
 
         self.create_image_layer(crop_grid_img, name="Particles_crops")
@@ -767,7 +757,7 @@ class AnnotationWidget(Container):
         self.napari_viewer.layers.select_all()
         self.napari_viewer.layers.remove_selected()
 
-    def create_image_layer(self, image, name="TM_Scores", transparency=False):
+    def create_image_layer(self, image, name="TM_Scores", transparency=False, viability=True):
         """
         Create a image layer in napari.
 
@@ -781,12 +771,12 @@ class AnnotationWidget(Container):
         except Exception as e:
             show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
 
-        if not transparency:
-            self.napari_viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
-        else:
+        if transparency:
             self.napari_viewer.add_image(
-                image, name=name, colormap="viridis", opacity=0.25
+                image, name=name, colormap="viridis", opacity=0.5
             )
+        else:
+            self.napari_viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
 
         try:
             self.napari_viewer.layers[name].contrast_limits = (
@@ -796,7 +786,7 @@ class AnnotationWidget(Container):
         except Exception as e:
             show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
 
-        if not transparency:
+        if viability:
             # set layer as not visible
             self.napari_viewer.layers[name].visible = True
         else:

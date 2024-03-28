@@ -81,6 +81,8 @@ def predict_3d_with_AL(
                 x_start : x_start + offset,
             ] = logits
 
+    full_logits = torch.sigmoid(torch.from_numpy(full_logits)).detach().numpy()
+
     # Extract peaks
     max_filter = maximum_filter(
         full_logits.astype(np.float32), size=maximum_filter_size
