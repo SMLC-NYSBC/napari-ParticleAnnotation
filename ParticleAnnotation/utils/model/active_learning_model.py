@@ -82,8 +82,9 @@ def predict_3d_with_AL(
             ] = logits
 
     # Extract peaks
-    max_filter = maximum_filter(full_logits.astype(np.float32), 
-                                size=maximum_filter_size)
+    max_filter = maximum_filter(
+        full_logits.astype(np.float32), size=maximum_filter_size
+    )
     peaks = full_logits - max_filter
     peaks = np.where(peaks == 0)
     peaks = np.stack(peaks, axis=-1)

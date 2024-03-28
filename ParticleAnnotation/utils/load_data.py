@@ -146,10 +146,14 @@ def load_template(template: str = None):
         template_idx = 0
     else:
         template_score = []
-        template_idx = [id_ for id_, i in enumerate(root) if i[:-3].endswith(template)][0]
+        template_idx = [id_ for id_, i in enumerate(root) if i[:-3].endswith(template)][
+            0
+        ]
 
         for i in root:
-            template_score.append(torch.load(i, map_location=device_).type(torch.float16))
+            template_score.append(
+                torch.load(i, map_location=device_).type(torch.float16)
+            )
     template_score = torch.cat(template_score, 0)
 
     if device_ == "cpu":

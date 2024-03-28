@@ -39,7 +39,7 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
 )
 
 
-class AnnotationWidget(Container):
+class PredictionWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         """
         ToDo
@@ -47,8 +47,7 @@ class AnnotationWidget(Container):
             - marge initialize blr to re-train
             - make a clear gui
                 - Load data, Train, Predict, Utils
-            - normalized scores to 0-1 with sigmoid
-            - Redo the prediction to work on what is currently loaded
+            -
         """
         super().__init__(layout="vertical")
         self.napari_viewer = viewer_tm_score_3d
@@ -116,28 +115,6 @@ class AnnotationWidget(Container):
         self.patch_size = LineEdit(name="Patch", value="128")
         self.pdb_id = LineEdit(name="PDB", value="7A4M")
 
-        self.select_particle_for_patches = PushButton(name="Select particles")
-        self.select_particle_for_patches.clicked.connect(
-            self._select_particle_for_patches
-        )
-        self.initialize_BLR = PushButton(name="Start Training")
-        self.initialize_BLR.clicked.connect(self._initialize_BLR)
-
-        # ----------- Initialize Active learning model ------------
-        self.train_BLR_on_patch = PushButton(name="Re-train BLR model")
-        self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
-
-        self.show_patch = PushButton(name="Patch")
-        self.show_patch.clicked.connect(self._show_patch)
-        self.show_particle_patch_grid = PushButton(name="Particle")
-        self.show_particle_patch_grid.clicked.connect(self._show_particle_patch_grid)
-        self.show_particle_all_grid = PushButton(name="Particle All")
-        self.show_particle_all_grid.clicked.connect(self._show_particle_all_grid)
-        self.show_current_BLR_predictions = PushButton(name="BLR model")
-        self.show_current_BLR_predictions.clicked.connect(
-            self._show_current_BLR_predictions
-        )
-
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
 
@@ -173,17 +150,8 @@ class AnnotationWidget(Container):
                 ),
                 HBox(
                     widgets=(
-                        self.select_particle_for_patches,
-                        self.initialize_BLR,
-                    )
-                ),
-                HBox(widgets=(self.train_BLR_on_patch,)),
-                HBox(
-                    widgets=(
-                        self.show_patch,
-                        self.show_particle_patch_grid,
-                        self.show_particle_all_grid,
-                        self.show_current_BLR_predictions,
+                        self.save_model,
+                        self.load_model,
                     )
                 ),
                 HBox(widgets=(self.predict,)),
@@ -192,12 +160,6 @@ class AnnotationWidget(Container):
                     widgets=(
                         self.export_particles,
                         self.import_particles,
-                    )
-                ),
-                HBox(
-                    widgets=(
-                        self.save_model,
-                        self.load_model,
                     )
                 ),
             )
