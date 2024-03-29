@@ -133,18 +133,21 @@ def build_gird_with_particles(
                 crop_grid_img[0:i_z, y_min : y_min + i_y, x_min : x_min + i_x] = i
                 crop_grid_tm_scores[0:j_z, y_min : y_min + j_y, x_min : x_min + j_x] = j
         else:
-            z_offset = (crop_size - i.shape[0]) // 2
+            z_offset = int(np.floor((crop_size - i.shape[0]) / 2))
+
             if crop_grid_img.shape[1] == crop_size:
                 # Add crops with z offset for centering
-                crop_grid_img[z_offset:i_z, 0:i_y, x_min : x_min + i_x] = i
-                crop_grid_tm_scores[z_offset:j_z, 0:j_y, x_min : x_min + j_x] = j
+                crop_grid_img[z_offset : i_z + z_offset, 0:i_y, x_min : x_min + i_x] = i
+                crop_grid_tm_scores[
+                    z_offset : j_z + z_offset, 0:j_y, x_min : x_min + j_x
+                ] = j
             else:
                 # Add crops
                 crop_grid_img[
-                    z_offset:i_z, y_min : y_min + i_y, x_min : x_min + i_x
+                    z_offset : i_z + z_offset, y_min : y_min + i_y, x_min : x_min + i_x
                 ] = i
                 crop_grid_tm_scores[
-                    z_offset:j_z, y_min : y_min + j_y, x_min : x_min + j_x
+                    z_offset : j_z + z_offset, y_min : y_min + j_y, x_min : x_min + j_x
                 ] = j
 
         if (idx + 1) % grid == 0 and x_min != 0:

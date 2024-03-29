@@ -147,9 +147,9 @@ def load_template(template: str = None):
     else:
         template_score = []
         try:
-            template_idx = [id_ for id_, i in enumerate(root) if i[:-3].endswith(template)][
-                0
-            ]
+            template_idx = [
+                id_ for id_, i in enumerate(root) if i[:-3].endswith(template)
+            ][0]
         except IndexError:
             return None, None
 

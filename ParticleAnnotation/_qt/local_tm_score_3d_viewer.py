@@ -301,7 +301,7 @@ class AnnotationWidget(Container):
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
         if self.tm_scores is None:
-            show_info(f'Please select template score for {self.pdb_id.value}')
+            show_info(f"Please select template score for {self.pdb_id.value}")
             return
 
         # Restart user annotation storage
@@ -345,9 +345,6 @@ class AnnotationWidget(Container):
 
         - Wait for user correction and activation of _train_BLR_on_patch function
         """
-        self.activate_click = True
-        self.correct_positions = True
-
         # Collect particle selected by users
         try:
             # ToDo require positive and negative samples
@@ -358,6 +355,9 @@ class AnnotationWidget(Container):
         except AssertionError:
             show_info("Please choose at least 5 particles to initialize the model!")
             return
+
+        self.activate_click = True
+        self.correct_positions = True
 
         patch_size = int(self.patch_size.value)
         # Image dataset pre-process
@@ -650,7 +650,7 @@ class AnnotationWidget(Container):
             self.img_process,
             self.tm_scores,
             self.tm_idx,
-            int(self.box_size.value)
+            int(self.box_size.value),
         )
 
         self.create_image_layer(crop_grid_img, name="Particles_crops")
@@ -682,7 +682,7 @@ class AnnotationWidget(Container):
             self.img_process,
             self.tm_scores,
             self.tm_idx,
-            int(self.box_size.value)
+            int(self.box_size.value),
         )
 
         self.create_image_layer(crop_grid_img, name="Particles_crops")
@@ -755,7 +755,9 @@ class AnnotationWidget(Container):
         self.napari_viewer.layers.select_all()
         self.napari_viewer.layers.remove_selected()
 
-    def create_image_layer(self, image, name="TM_Scores", transparency=False, viability=True):
+    def create_image_layer(
+        self, image, name="TM_Scores", transparency=False, viability=True
+    ):
         """
         Create a image layer in napari.
 
