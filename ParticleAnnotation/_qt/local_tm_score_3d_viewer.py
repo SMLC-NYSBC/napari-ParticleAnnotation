@@ -42,12 +42,11 @@ class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         """
         ToDo
-            - centering of patches
+            - Patch over sized
+            - predicted particles changes colors
             - marge initialize blr to re-train
             - make a clear gui
                 - Load data, Train, Predict, Utils
-            - normalized scores to 0-1 with sigmoid
-            - Redo the prediction to work on what is currently loaded
         """
         super().__init__(layout="vertical")
         self.napari_viewer = viewer_tm_score_3d
@@ -111,7 +110,7 @@ class AnnotationWidget(Container):
         self.click_add_point_callback = None
 
         # ---------------- Initialize New Dataset -----------------
-        self.box_size = LineEdit(name="Box", value="5")
+        self.box_size = LineEdit(name="Box", value="10")
         self.patch_size = LineEdit(name="Patch", value="128")
         self.pdb_id = LineEdit(name="PDB", value="7A4M")
 
@@ -143,6 +142,7 @@ class AnnotationWidget(Container):
         # ------------ Visualize labels tool & export -------------
         self.filter_particle_by_confidence = FloatSlider(
             name="Filter Particle",
+            value=0.5,
             min=0,
             max=1,
         )
@@ -247,9 +247,7 @@ class AnnotationWidget(Container):
                     viewer.layers[name].selected_data = set()
                     viewer.layers[name].selected_data.add(closest_point_index)
             except Exception as e:
-                show_info(
-                    f"Warning: {e} error occurs while searching for {name} layer."
-                )
+                pass
 
     def key_event(self, viewer: Viewer, key: int):
         """
@@ -352,6 +350,7 @@ class AnnotationWidget(Container):
 
         # Collect particle selected by users
         try:
+            # ToDo require positive and negative samples
             patches = self.user_annotations.copy()
 
             assert len(patches) > 4
@@ -365,7 +364,6 @@ class AnnotationWidget(Container):
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
 
-        self.shape = self.img_process.shape
         self.img_process, _ = normalize(
             self.img_process.copy(), method="affine", use_cuda=False
         )
@@ -388,16 +386,18 @@ class AnnotationWidget(Container):
         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
         self.x = self.x.reshape(-1, self.x.shape[-1])
         self.shape = patch.shape
-        self.y = label_points_to_mask([], self.shape, self.box_size.value)
-        self.count = torch.where(
-            ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
-        )
 
         # Initialize model
         if self.model is None:
             self.model = BinaryLogisticRegression(
                 n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
             )
+
+        # Initialize with point from first patch
+        self.y = label_points_to_mask([], self.shape, self.box_size.value)
+        self.count = torch.where(
+            ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
+        )
 
         self.model.fit(
             self.x,
@@ -475,6 +475,7 @@ class AnnotationWidget(Container):
         )
 
         # BLR training and model update
+        self.shape = patch.shape
         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
         self.x = self.x.reshape(-1, self.x.shape[-1])
 
@@ -547,9 +548,6 @@ class AnnotationWidget(Container):
             symbol="disc",
             size=5,
         )
-
-        self.filter_particle_by_confidence.min = np.min(peaks_confidence)
-        self.filter_particle_by_confidence.max = np.max(peaks_confidence)
 
     """""" """""" """""" """""" """
     BLR Model helper functions
@@ -784,7 +782,7 @@ class AnnotationWidget(Container):
                 image.max(),
             )
         except Exception as e:
-            show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
+            pass
 
         if viability:
             # set layer as not visible
@@ -804,7 +802,7 @@ class AnnotationWidget(Container):
         try:
             self.napari_viewer.layers.remove(name)
         except Exception as e:
-            show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
+            pass
 
         if point.shape[0] > 0:
             self.napari_viewer.add_points(
@@ -815,6 +813,7 @@ class AnnotationWidget(Container):
                 edge_color="label",
                 edge_color_cycle=self.color_map_particle_classes,
                 edge_width=0.1,
+                face_contrast_limits=(0, 2),
                 symbol="square",
                 size=40,
             )
@@ -826,6 +825,7 @@ class AnnotationWidget(Container):
                 face_color="#00000000",  # Hex + alpha
                 edge_color_cycle=self.color_map_particle_classes,
                 edge_width=0.1,
+                face_contrast_limits=(0, 2),
                 symbol="square",
                 size=40,
             )
@@ -854,8 +854,9 @@ class AnnotationWidget(Container):
             idx = 0 in np.sum(idx.astype(np.float16), axis=1)
 
             if idx:  # Add point to self.user_annotation
-                idx = np.where(point in self.user_annotations[:, :3])[0][0]
-                self.user_annotations[idx, 3] = label
+                idx = np.where(point in self.user_annotations[:, :3])
+                if len(idx) > 0:
+                    self.user_annotations[idx[0][0], 3] = label
             else:  # Update point label in self.user_annotations
                 self.user_annotations = np.insert(
                     self.user_annotations,
@@ -886,7 +887,7 @@ class AnnotationWidget(Container):
             self.patch_points = point_layer.data
             self.patch_label = point_layer.properties["label"]
         except Exception as e:
-            show_info(f"Warning {e}: No Particle_BLR_is_Uncertain layer")
+            pass
 
         # Add point pointed by mouse
         if func == "add":
@@ -1067,11 +1068,12 @@ class AnnotationWidget(Container):
                 face_color="label",
                 face_colormap="viridis",
                 edge_width=0.1,
+                face_contrast_limits=(0, 1),
                 symbol="disc",
                 size=5,
             )
-        except:
-            show_info("No predicted particles to filter!")
+        except Exception as e:
+            pass
 
     def _export_particles(
         self,
@@ -1096,9 +1098,6 @@ class AnnotationWidget(Container):
             ].properties["label"]
         except:
             prediction_particle, prediction_labels = [], []
-
-        # Save only label == 1 from user annotations
-        pos_points = self.user_annotations[self.user_annotations[:, -1] == 1][:, :-1]
 
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
