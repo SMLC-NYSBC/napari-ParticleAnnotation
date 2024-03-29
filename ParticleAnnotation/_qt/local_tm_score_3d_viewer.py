@@ -4,6 +4,7 @@ from magicgui.widgets import (
     PushButton,
     LineEdit,
     FloatSlider,
+    Label,
     VBox,
     HBox,
 )
@@ -19,6 +20,7 @@ import torch
 from ParticleAnnotation.utils.load_data import (
     load_template,
     load_coordinates,
+    load_tomogram,
 )
 from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
@@ -54,6 +56,7 @@ class AnnotationWidget(Container):
         # Global
         self.image_name = ""
         self.filename = None
+        self.img_process, self.patch_corner = None, None
 
         # Particles selections
         self.cur_proposal_index, self.proposals = 0, []
@@ -109,37 +112,46 @@ class AnnotationWidget(Container):
         self.mouse_position = None
         self.click_add_point_callback = None
 
-        # ---------------- Initialize New Dataset -----------------
-        self.box_size = LineEdit(name="Box", value="10")
-        self.patch_size = LineEdit(name="Patch", value="128")
+        spacer_1 = Label(value="------------- Options -------------")
+        self.box_size = LineEdit(name="Mask Size", value="10")
+        self.filter_size = LineEdit(name="Filter Size", value="15")
+        self.patch_size = LineEdit(name="Patch size", value="128")
         self.pdb_id = LineEdit(name="PDB", value="7A4M")
 
-        self.select_particle_for_patches = PushButton(name="Select particles")
+        # ---------------- Import & Export modules ----------------
+        self.export_particles = PushButton(name="Save particles")
+        self.export_particles.clicked.connect(self._export_particles)
+        self.import_particles = PushButton(name="Load particles")
+        self.import_particles.clicked.connect(self._import_particles)
+
+        self.save_model = PushButton(name="Save Model")
+        self.save_model.clicked.connect(self._save_model)
+        self.load_model = PushButton(name="Load Model")
+        self.load_model.clicked.connect(self._load_model)
+
+        spacer_2 = Label(value="------------ Training -------------")
+        self.select_particle_for_patches = PushButton(name="Start Training")
         self.select_particle_for_patches.clicked.connect(
             self._select_particle_for_patches
         )
-        self.initialize_BLR = PushButton(name="Start Training")
-        self.initialize_BLR.clicked.connect(self._initialize_BLR)
-
-        # ----------- Initialize Active learning model ------------
-        self.train_BLR_on_patch = PushButton(name="Re-train BLR model")
+        self.train_BLR_on_patch = PushButton(name="Re-train model")
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
 
-        self.show_patch = PushButton(name="Patch")
+        spacer_4 = Label(value="---------- Viewing modes ----------")
+        self.show_patch = PushButton(name="Tomogram")
         self.show_patch.clicked.connect(self._show_patch)
-        self.show_particle_patch_grid = PushButton(name="Particle")
+        self.show_particle_patch_grid = PushButton(name="Correct Particle")
         self.show_particle_patch_grid.clicked.connect(self._show_particle_patch_grid)
-        self.show_particle_all_grid = PushButton(name="Particle All")
+        self.show_particle_all_grid = PushButton(name="All Particle")
         self.show_particle_all_grid.clicked.connect(self._show_particle_all_grid)
-        self.show_current_BLR_predictions = PushButton(name="BLR model")
-        self.show_current_BLR_predictions.clicked.connect(
-            self._show_current_BLR_predictions
-        )
+        # self.show_current_BLR_predictions = PushButton(name="BLR model")
+        # self.show_current_BLR_predictions.clicked.connect(
+        #     self._show_current_BLR_predictions
+        # )
 
+        spacer_3 = Label(value="------------ Predict --------------")
         self.predict = PushButton(name="Predict")
         self.predict.clicked.connect(self._predict)
-
-        # ------------ Visualize labels tool & export -------------
         self.filter_particle_by_confidence = FloatSlider(
             name="Filter Particle",
             value=0.5,
@@ -150,43 +162,21 @@ class AnnotationWidget(Container):
             self._filter_particle_by_confidence
         )
 
-        # ---------------- Import & Export modules ----------------
-        self.export_particles = PushButton(name="Save picks")
-        self.export_particles.clicked.connect(self._export_particles)
-        self.import_particles = PushButton(name="Load picks")
-        self.import_particles.clicked.connect(self._import_particles)
-
-        self.save_model = PushButton(name="Save Model")
-        self.save_model.clicked.connect(self._save_model)
-        self.load_model = PushButton(name="Load Model")
-        self.load_model.clicked.connect(self._load_model)
-
         widget = VBox(
             widgets=(
+                spacer_1,
+                HBox(
+                    widgets=(
+                        self.box_size,
+                        self.filter_size,
+                    )
+                ),
                 HBox(
                     widgets=(
                         self.pdb_id,
-                        self.box_size,
                         self.patch_size,
                     )
                 ),
-                HBox(
-                    widgets=(
-                        self.select_particle_for_patches,
-                        self.initialize_BLR,
-                    )
-                ),
-                HBox(widgets=(self.train_BLR_on_patch,)),
-                HBox(
-                    widgets=(
-                        self.show_patch,
-                        self.show_particle_patch_grid,
-                        self.show_particle_all_grid,
-                        self.show_current_BLR_predictions,
-                    )
-                ),
-                HBox(widgets=(self.predict,)),
-                HBox(widgets=(self.filter_particle_by_confidence,)),
                 HBox(
                     widgets=(
                         self.export_particles,
@@ -197,6 +187,25 @@ class AnnotationWidget(Container):
                     widgets=(
                         self.save_model,
                         self.load_model,
+                    )
+                ),
+                spacer_2,
+                HBox(
+                    widgets=(
+                        self.select_particle_for_patches,
+                        self.train_BLR_on_patch,
+                    )
+                ),
+                spacer_3,
+                HBox(widgets=(self.predict,)),
+                HBox(widgets=(self.filter_particle_by_confidence,)),
+                spacer_4,
+                HBox(
+                    widgets=(
+                        self.show_patch,
+                        self.show_particle_patch_grid,
+                        self.show_particle_all_grid,
+                        # self.show_current_BLR_predictions,
                     )
                 ),
             )
@@ -298,6 +307,26 @@ class AnnotationWidget(Container):
     def _select_particle_for_patches(
         self,
     ):
+        """
+        Starting function - for the plugin. Function is allowing user to label
+        particles of interest, and store them.
+        """
+        filter_size = int(self.filter_size.value)
+
+        # If image is not loaded, ask user to load it
+        if self.napari_viewer.layers.selection.active is None:
+            img, _, name = load_tomogram()
+            self.create_image_layer(img, name=name, transparency=False)
+
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
+        img = self.napari_viewer.layers[self.image_name]
+        self.img_process = img.data
+        self.img_process, _ = normalize(
+            self.img_process.copy(), method="affine", use_cuda=False
+        )
+
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
         if self.tm_scores is None:
@@ -307,79 +336,42 @@ class AnnotationWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
-
         self.create_image_layer(
             self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
         )
 
+        peaks, _ = find_peaks(self.tm_scores[self.tm_idx], filter_size, with_score=True)
+
+        peaks = np.concatenate((peaks[:10, :], peaks[-10:, :]))
+        peaks = np.hstack((peaks, np.zeros((20, 1))))
+        peaks[10:, 3] = 1
+        self.user_annotations = peaks
+
+        # Pre-select top 10 and lowest 10 as particle proposals
         self.create_point_layer(
-            np.array([]), np.array([]), name="Chosen_Particles_of_Interest"
+            peaks[:, :3], peaks[:, 3], name="Chosen_Particles_of_Interest"
         )
+        self._show_particle_all_grid()
         self.activate_click = True
 
-    def _initialize_BLR(
+    def _train_BLR_on_patch(
         self,
     ):
-        """
-        Main function which build BLR model and start first run of training
-
-        BLR initialization:
-        - Get coordinates of particles from Chosen_Particles_of_Interest
-            - Store it as new self.patches list from which we will pick patch centers
-
-        - Pre-process image and store it as self.image_preprocess
-
-        - Build BLR model as self.model class if self.model is not None
-            - If self.model is None is this mode and continue training or pre-trained model
-            - Draw first patch and pre-process
-            - Initialize model with model.fit
-            - Use model to predict particle pick
-            - Calculate entropy and select 10 particles with highest entropy
-
-        - Present particle to the user as a grid os thing to correct
-            - remove image as image layer
-            - Create new image layer with particles boxes in 3D, add button to show projections
-
-        - Wait for user correction and activation of _train_BLR_on_patch function
-        """
-        # Collect particle selected by users
-        try:
-            # ToDo require positive and negative samples
-            patches = self.user_annotations.copy()
-
-            assert len(patches) > 4
-            self.napari_viewer.layers.remove("Chosen_Particles_of_Interest")
-        except AssertionError:
-            show_info("Please choose at least 5 particles to initialize the model!")
-            return
-
-        self.activate_click = True
-        self.correct_positions = True
+        self.all_grid = False
+        self.grid_labeling_mode = False
 
         patch_size = int(self.patch_size.value)
-        # Image dataset pre-process
-        img = self.napari_viewer.layers[self.image_name]
-        self.img_process = img.data
+        """If Patch do not exist create one and drawn panicles"""
+        if self.patch_corner is None:
+            self.napari_viewer.layers.remove(self.image_name)
 
-        self.img_process, _ = normalize(
-            self.img_process.copy(), method="affine", use_cuda=False
-        )
-        self.napari_viewer.layers.remove(self.image_name)
+            self.patch_corner = get_random_patch(
+                self.img_process.shape, patch_size, self.user_annotations[:, :3]
+            )
 
-        # Select patch
-        self.patch_corner = get_random_patch(
-            self.img_process.shape, patch_size, self.user_annotations[:, :3]
-        )
-
+        self.clean_viewer()
         patch, tm_score = draw_patch_and_scores(
             self.img_process, self.tm_scores, self.patch_corner, patch_size
-        )
-        self.create_image_layer(patch, name="Tomogram_Patch")
-        self.create_image_layer(
-            tm_score[self.tm_idx], name="TM_Scores", transparency=True
         )
 
         # Initialized y (empty label mask) and count
@@ -387,55 +379,10 @@ class AnnotationWidget(Container):
         self.x = self.x.reshape(-1, self.x.shape[-1])
         self.shape = patch.shape
 
-        # Initialize model
         if self.model is None:
             self.model = BinaryLogisticRegression(
-                n_features=self.x.shape[1], l2=1.0, pi=0.01, pi_weight=1000
+                n_features=self.x.shape[0], l2=1.0, pi=0.01, pi_weight=1000
             )
-
-        # Initialize with point from first patch
-        self.y = label_points_to_mask([], self.shape, self.box_size.value)
-        self.count = torch.where(
-            ~torch.isnan(self.y), torch.ones_like(self.y), torch.zeros_like(self.y)
-        )
-
-        self.model.fit(
-            self.x,
-            self.y.ravel(),
-            weights=self.count.ravel(),
-            pre_train=self.AL_weights,
-        )
-
-        self.selected_particles_find_peaks, _ = find_peaks(
-            tm_score[self.tm_idx, :], 15, with_score=True
-        )
-
-        points = np.vstack(self.selected_particles_find_peaks[:10]).astype(np.float16)
-        labels = np.zeros((points.shape[0],))
-        labels[:] = 2
-
-        stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
-        point_indexes = np.all(
-            (stored_points >= 0) & (stored_points <= patch_size), axis=1
-        )
-        self.patch_points = np.vstack((points, stored_points[point_indexes]))
-        self.patch_label = np.hstack((labels, self.user_annotations[point_indexes, 3]))
-
-        self.create_point_layer(
-            self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
-        )
-
-        self._show_particle_patch_grid()
-        self.napari_viewer.reset_view()
-
-    def _train_BLR_on_patch(
-        self,
-    ):
-        self.all_grid = False
-        self.grid_labeling_mode = False
-        self.clean_viewer()
-
-        patch_size = int(self.patch_size.value)
 
         """Re-trained BLR model on user corrected particles"""
         # Retrive coordinate within patch
@@ -457,6 +404,7 @@ class AnnotationWidget(Container):
                 points[:, 2],
             )
         ).T
+        print(data)
         self.y = label_points_to_mask(data, self.shape, self.box_size.value)
         self.count = (~torch.isnan(self.y)).float()
 
@@ -543,11 +491,13 @@ class AnnotationWidget(Container):
             properties={"label": peaks_confidence},
             edge_color="black",
             face_color="label",
-            face_colormap="viridis",
+            face_colormap="Spectral",
+            edge_contrast_limits=(0, 1),
             edge_width=0.1,
             symbol="disc",
             size=5,
         )
+        self._filter_particle_by_confidence()
 
     """""" """""" """""" """""" """
     BLR Model helper functions
@@ -703,7 +653,6 @@ class AnnotationWidget(Container):
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
-        box = int(self.box_size.value)
         if self.model is not None:
             patch, tm_score = draw_patch_and_scores(
                 self.img_process, self.tm_scores, self.patch_corner, patch_size
@@ -736,7 +685,7 @@ class AnnotationWidget(Container):
                 properties={"label": blr_model_state_labels},
                 edge_color="black",
                 face_color="label",
-                face_colormap="viridis",
+                face_colormap="Spectral",
                 edge_width=0.1,
                 symbol="disc",
                 size=5,
@@ -773,7 +722,7 @@ class AnnotationWidget(Container):
 
         if transparency:
             self.napari_viewer.add_image(
-                image, name=name, colormap="viridis", opacity=0.5
+                image, name=name, colormap="Spectral", opacity=0.5
             )
         else:
             self.napari_viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
@@ -1068,7 +1017,7 @@ class AnnotationWidget(Container):
                 properties={"label": confidence_filter},
                 edge_color="black",
                 face_color="label",
-                face_colormap="viridis",
+                face_colormap="Spectral",
                 edge_width=0.1,
                 face_contrast_limits=(0, 1),
                 symbol="disc",
@@ -1155,7 +1104,7 @@ class AnnotationWidget(Container):
             properties={"label": labels},
             edge_color="black",
             face_color="label",
-            face_colormap="viridis",
+            face_colormap="Spectral",
             edge_width=0.1,
             symbol="disc",
             size=5,
