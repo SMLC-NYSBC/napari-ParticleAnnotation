@@ -233,9 +233,9 @@ class AnnotationWidget(Container):
             img, _, name = load_tomogram()
             self.create_image_layer(img, name=name, transparency=False)
 
-        self.image_name = self.filename = (
-            self.napari_viewer.layers.selection.active.name
-        )
+        self.image_name = (
+            self.filename
+        ) = self.napari_viewer.layers.selection.active.name
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
         self.img_process, _ = normalize(
