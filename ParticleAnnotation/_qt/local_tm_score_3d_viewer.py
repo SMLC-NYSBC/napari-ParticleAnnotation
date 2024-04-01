@@ -12,7 +12,7 @@ from napari import Viewer
 from napari.utils.notifications import show_info
 from sklearn.neighbors import KDTree
 from qtpy.QtWidgets import QFileDialog
-import tifffile.tifffile as tif
+from napari_bbox import BoundingBoxLayer
 
 from topaz.stats import normalize
 import torch
@@ -38,6 +38,8 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
+
+colormap_for_display = "Spectral"
 
 
 class AnnotationWidget(Container):
@@ -138,16 +140,12 @@ class AnnotationWidget(Container):
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
 
         spacer_4 = Label(value="---------- Viewing modes ----------")
-        self.show_patch = PushButton(name="Tomogram")
-        self.show_patch.clicked.connect(self._show_patch)
-        self.show_particle_patch_grid = PushButton(name="Correct Particle")
-        self.show_particle_patch_grid.clicked.connect(self._show_particle_patch_grid)
-        self.show_particle_all_grid = PushButton(name="All Particle")
-        self.show_particle_all_grid.clicked.connect(self._show_particle_all_grid)
-        # self.show_current_BLR_predictions = PushButton(name="BLR model")
-        # self.show_current_BLR_predictions.clicked.connect(
-        #     self._show_current_BLR_predictions
-        # )
+        self.show_tomogram = PushButton(name="Tomogram")
+        self.show_tomogram.clicked.connect(self._show_tomogram)
+        self.show_active_learning_grid = PushButton(name="Active-Learning")
+        self.show_active_learning_grid.clicked.connect(self._show_active_learning_grid)
+        self.show_particle_grid = PushButton(name="Particle")
+        self.show_particle_grid.clicked.connect(self._show_particle_grid)
 
         spacer_3 = Label(value="------------ Predict --------------")
         self.predict = PushButton(name="Predict")
@@ -202,10 +200,9 @@ class AnnotationWidget(Container):
                 spacer_4,
                 HBox(
                     widgets=(
-                        self.show_patch,
-                        self.show_particle_patch_grid,
-                        self.show_particle_all_grid,
-                        # self.show_current_BLR_predictions,
+                        self.show_tomogram,
+                        self.show_active_learning_grid,
+                        self.show_particle_grid,
                     )
                 ),
             )
@@ -215,90 +212,6 @@ class AnnotationWidget(Container):
 
         self.device_ = get_device()
         show_info(f"Active learning model runs on: {self.device_}")
-
-    """""" """""" """""" """""
-    Mouse and keys bindings
-    """ """""" """""" """""" ""
-
-    def track_mouse_position(self, viewer: Viewer, event):
-        """
-        Mouse binding helper function to update stored mouse position when it moves
-        """
-        self.mouse_position = event.position
-
-    def selected_point_near_mouse(self, viewer: Viewer, event):
-        """
-        Mouse binding helper function to select point near the mouse pointer
-        """
-        if self.activate_click:
-            name = self.napari_viewer.layers.selection.active.name
-
-            try:
-                # if self.activate_click:
-                points_layer = viewer.layers[name].data
-
-                # Filter points_layer and search only for points withing radius
-                # Just in case we have thousands or millions of points issue
-                points_layer = points_layer[
-                    np.where(
-                        np.linalg.norm(points_layer - self.mouse_position, axis=1) < 10
-                    )
-                ]
-
-                # Calculate the distance between the mouse position and all points
-                distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
-                closest_point_index = distances.argmin()
-
-                # Clear the current selection and Select the closest point
-                if self.selected_particle_id != closest_point_index:
-                    self.selected_particle_id = closest_point_index
-
-                    viewer.layers[name].selected_data = set()
-                    viewer.layers[name].selected_data.add(closest_point_index)
-            except Exception as e:
-                pass
-
-    def key_event(self, viewer: Viewer, key: int):
-        """
-        Main key event definition.
-
-        Args:
-            key (int): Key definition of an action.
-        """
-        if self.activate_click:
-            name = self.napari_viewer.layers.selection.active.name
-            points_layer = viewer.layers[name].data
-
-            mouse_position = np.asarray(self.mouse_position).reshape(1, -1)
-            if points_layer.shape[0] == 0:
-                self.update_point_layer(None, key, "add")
-            else:
-                kdtree = KDTree(points_layer)
-                distance, closest_point = kdtree.query(mouse_position, k=1)
-
-                if not self.grid_labeling_mode:
-                    if key == 2:
-                        if distance[0] < 10:
-                            self.update_point_layer(closest_point[0], 0, "remove")
-                    else:
-                        if distance[0] > 10:
-                            self.update_point_layer(None, key, "add")
-                        else:
-                            self.update_point_layer(closest_point[0], key, "update")
-                else:
-                    if key in [0, 1]:
-                        self.update_point_grid(closest_point[0], key, "update")
-                    else:
-                        self.update_point_grid(closest_point[0], key, "remove")
-
-    def ZEvent(self, viewer):
-        self.key_event(viewer, 0)
-
-    def XEvent(self, viewer):
-        self.key_event(viewer, 1)
-
-    def CEvent(self, viewer):
-        self.key_event(viewer, 2)
 
     """""" """""" """""" """
     Main triggers for GUI
@@ -311,6 +224,8 @@ class AnnotationWidget(Container):
         Starting function - for the plugin. Function is allowing user to label
         particles of interest, and store them.
         """
+        self.all_grid = False
+        self.grid_labeling_mode = False
         filter_size = int(self.filter_size.value)
 
         # If image is not loaded, ask user to load it
@@ -346,12 +261,14 @@ class AnnotationWidget(Container):
         peaks = np.hstack((peaks, np.zeros((20, 1))))
         peaks[10:, 3] = 1
         self.user_annotations = peaks
+        self.patch_points = peaks[:, :3]
+        self.patch_label = peaks[:, 3]
 
         # Pre-select top 10 and lowest 10 as particle proposals
         self.create_point_layer(
             peaks[:, :3], peaks[:, 3], name="Chosen_Particles_of_Interest"
         )
-        self._show_particle_all_grid()
+        self._show_particle_grid()
         self.activate_click = True
 
     def _train_BLR_on_patch(
@@ -361,10 +278,9 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = False
 
         patch_size = int(self.patch_size.value)
+
         """If Patch do not exist create one and drawn panicles"""
         if self.patch_corner is None:
-            self.napari_viewer.layers.remove(self.image_name)
-
             self.patch_corner = get_random_patch(
                 self.img_process.shape, patch_size, self.user_annotations[:, :3]
             )
@@ -404,7 +320,6 @@ class AnnotationWidget(Container):
                 points[:, 2],
             )
         ).T
-        print(data)
         self.y = label_points_to_mask(data, self.shape, self.box_size.value)
         self.count = (~torch.isnan(self.y)).float()
 
@@ -441,10 +356,10 @@ class AnnotationWidget(Container):
         point_indexes = np.all(
             (stored_points >= 0) & (stored_points <= patch_size), axis=1
         )
-        self.patch_points = np.vstack((self.patch_points, stored_points[point_indexes]))
-        self.patch_label = np.hstack(
-            (self.patch_label, self.user_annotations[point_indexes, 3])
-        )
+        # self.patch_points = np.vstack((self.patch_points, stored_points[point_indexes]))
+        # self.patch_label = np.hstack(
+        #     (self.patch_label, self.user_annotations[point_indexes, 3])
+        # )
 
         """Display new particles and image layers"""
         self.create_image_layer(patch, name="Tomogram_Patch")
@@ -455,7 +370,7 @@ class AnnotationWidget(Container):
             self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
         )
 
-        self._show_particle_patch_grid()
+        self._show_active_learning_grid()
         self.napari_viewer.reset_view()
 
     def _predict(
@@ -475,15 +390,13 @@ class AnnotationWidget(Container):
             tm_scores=self.tm_scores,
             model=self.model,
             offset=patch_size,
-            maximum_filter_size=15,  # Make it user parameter
+            maximum_filter_size=int(self.filter_size.value),
         )
         order = np.argsort(peaks_confidence)
         peaks = peaks[order]
         peaks_confidence = peaks_confidence[order]
 
         self.create_image_layer(logits, "Logits", transparency=True)
-        tif.imwrite("logits.tif", logits)
-        tif.imwrite("tm_scores.tif", self.tm_scores[self.tm_idx])
 
         self.napari_viewer.add_points(
             peaks,
@@ -491,7 +404,7 @@ class AnnotationWidget(Container):
             properties={"label": peaks_confidence},
             edge_color="black",
             face_color="label",
-            face_colormap="Spectral",
+            face_colormap=colormap_for_display,
             edge_contrast_limits=(0, 1),
             edge_width=0.1,
             symbol="disc",
@@ -499,122 +412,168 @@ class AnnotationWidget(Container):
         )
         self._filter_particle_by_confidence()
 
-    """""" """""" """""" """""" """
-    BLR Model helper functions
-    """ """""" """""" """""" """"""
-
-    def _save_model(
-        self,
-    ):
-        """
-        Function to fetch self.AL_weights which is a list [self.weight, self.bias]
-        and save it as a pickle torch .pt file
-        """
-        if self.model is not None:
-            filename, _ = QFileDialog.getSaveFileName(
-                caption="Save File", directory="Active_learn_model.pt"
-            )
-
-            # Check for AL_weights
-            if (
-                self.AL_weights is None
-            ):  # Hard-fix in case self.AL_weights is not save yet
-                self.AL_weights = [self.model.weights, self.model.bias]
-
-            torch.save(self.AL_weights, filename)
-
-    def _load_model(
-        self,
-    ):
-        """
-        Function to load and update self.AL_weights which is a list [self.weight, self.bias]
-        expected as a pickle torch .pt file.
-
-        If self.model is not None, update model weights. Else create self.model with
-        this weights.
-        """
-        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
-        self.AL_weights = torch.load(f"{self.filename}")
-
-        if self.model is not None:
-            self.model.fit(pre_train=self.AL_weights)
-        else:
-            self.model = BinaryLogisticRegression(
-                n_features=self.AL_weights[0].shape[0], l2=1.0, pi=0.01, pi_weight=1000
-            )
-            self.model.fit(pre_train=self.AL_weights)
-
-        self.AL_weights = None  # Reset to allow re-training
-
     """""" """""" """""" """
     Viewer functionality
     """ """""" """""" """"""
 
-    def _show_patch(self):
+    def _show_tomogram(self):
         """
-        Viewer function to display a current patch and all particles in it.
+        Viewer function to display a tomogram and all particles in it.
         """
         self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
-        if self.img_process is not None:
-            patch, _ = draw_patch_and_scores(
-                self.img_process, self.tm_scores, self.patch_corner, patch_size
-            )
-            self.create_image_layer(patch, name="Tomogram_Patch")
+        # if self.img_process is not None:
+        #     patch, _ = draw_patch_and_scores(
+        #         self.img_process, self.tm_scores, self.patch_corner, patch_size
+        #     )
+        #     self.create_image_layer(patch, name="Tomogram_Patch")
+        self.create_image_layer(self.img_process, name="Tomogram_Patch")
 
-        if self.tm_scores is not None:
-            _, tm_score = draw_patch_and_scores(
-                self.img_process, self.tm_scores, self.patch_corner, patch_size
-            )
-            self.create_image_layer(
-                tm_score[self.tm_idx], name="TM_Scores", transparency=True
-            )
+        # if self.tm_scores is not None:
+        #     _, tm_score = draw_patch_and_scores(
+        #         self.img_process, self.tm_scores, self.patch_corner, patch_size
+        #     )
+        #     self.create_image_layer(
+        #         tm_score[self.tm_idx], name="TM_Scores", transparency=True
+        #     )
+        self.create_image_layer(
+            self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
+        )
 
         if self.patch_points is not None:
             self.create_point_layer(
-                self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
+                self.patch_points,
+                self.patch_label,
+                name="Particle_BLR_is_Uncertain",
+            )
+        else:
+            self.create_point_layer(
+                self.user_annotations[:, :3],
+                self.user_annotations[:, 3],
+                name="Initial_Particle_Selection",
+            )
+        if self.patch_corner is not None:
+            all_vertices = np.array(
+                [
+                    [self.patch_corner[0], self.patch_corner[1], self.patch_corner[2]],
+                    [
+                        self.patch_corner[0],
+                        self.patch_corner[1],
+                        self.patch_corner[2] + patch_size,
+                    ],
+                    [
+                        self.patch_corner[0],
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0],
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2] + patch_size,
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1],
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1],
+                        self.patch_corner[2] + patch_size,
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2] + patch_size,
+                    ],
+                ]
+            ).squeeze()
+            bb_layer = BoundingBoxLayer(ndim=3, edge_color="green")
+            bb_layer.add(all_vertices)
+            self.napari_viewer.add_layer(bb_layer)
+
+        if self.model is not None:
+            patch_size = int(self.patch_size.value)
+
+            peaks, peaks_confidence, _ = predict_3d_with_AL(
+                self.img_process,
+                tm_scores=self.tm_scores,
+                model=self.model,
+                offset=patch_size,
+                maximum_filter_size=int(self.filter_size.value),
+            )
+            order = np.argsort(peaks_confidence)
+            peaks = peaks[order]
+            peaks_confidence = peaks_confidence[order]
+
+            peaks = peaks[-100:, :]
+            peaks_confidence = peaks_confidence[-100:]
+
+            self.napari_viewer.add_points(
+                peaks,
+                name="Particle_top_100",
+                properties={"label": peaks_confidence},
+                edge_color="black",
+                face_color="label",
+                face_colormap=colormap_for_display,
+                edge_contrast_limits=(0, 1),
+                edge_width=0.1,
+                symbol="disc",
+                size=5,
             )
 
-    def _show_particle_patch_grid(self):
+    def _show_active_learning_grid(self):
         """
         Viewer function to show all stored particles in current patch based on
         self.user_annotation and particle_layer. Particles are shown as a grid
         with particle in the center.
         """
-        self.all_grid = False
-        self.grid_labeling_mode = True
-        self.clean_viewer()
+        if self.patch_corner is not None:
+            self.all_grid = False
+            self.grid_labeling_mode = True
+            self.clean_viewer()
 
-        (
-            crop_grid_img,
-            crop_grid_tm_scores,
-            grid_particle_points,
-            grid_particle_labels,
-        ) = build_gird_with_particles(
-            self.patch_points,
-            self.patch_label,
-            self.patch_corner,
-            self.img_process,
-            self.tm_scores,
-            self.tm_idx,
-            int(self.box_size.value),
-        )
+            (
+                crop_grid_img,
+                crop_grid_tm_scores,
+                grid_particle_points,
+                grid_particle_labels,
+            ) = build_gird_with_particles(
+                self.patch_points,
+                self.patch_label,
+                self.patch_corner,
+                self.img_process,
+                self.tm_scores,
+                self.tm_idx,
+                int(self.box_size.value),
+            )
 
-        self.create_image_layer(crop_grid_img, name="Particles_crops")
-        self.create_image_layer(
-            crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
-        )
-        self.create_point_layer(
-            grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
-        )
+            self.create_image_layer(crop_grid_img, name="Particles_crops")
+            self.create_image_layer(
+                crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
+            )
+            self.create_point_layer(
+                grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
+            )
+        else:
+            return
 
-    def _show_particle_all_grid(self):
+    def _show_particle_grid(self):
         """
         Viewer function to show all stored particles on self.user_annotation
         and particle_layer. Particles are shown as a grid with particle in the center.
+
+        ToDo:
+            - Show all particle in a grid from self.user_annotation
+            - If prediction present show prediction
         """
         self.all_grid = True
         self.grid_labeling_mode = True
@@ -643,56 +602,58 @@ class AnnotationWidget(Container):
             grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
         )
 
-    def _show_current_BLR_predictions(self):
-        """
-        Viewer function to run current BLR model and show predicted particles on
-        the current patch.
-        """
-        self.all_grid = False
-        self.grid_labeling_mode = False
-        self.clean_viewer()
+    # def _show_current_BLR_predictions(self):
+    #     """
+    #     !!Depreciated!!
 
-        patch_size = int(self.patch_size.value)
-        if self.model is not None:
-            patch, tm_score = draw_patch_and_scores(
-                self.img_process, self.tm_scores, self.patch_corner, patch_size
-            )
-            self.create_image_layer(patch, name="Tomogram_Patch")
-            self.create_image_layer(
-                tm_score[self.tm_idx], name="TM_Scores", transparency=True
-            )
+    #     Viewer function to run current BLR model and show predicted particles on
+    #     the current patch.
+    #     """
+    #     self.all_grid = False
+    #     self.grid_labeling_mode = False
+    #     self.clean_viewer()
 
-            # Features from current patch
-            self.shape = patch.shape
-            self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
-            self.x = self.x.reshape(-1, self.x.shape[-1])
+    #     patch_size = int(self.patch_size.value)
+    #     if self.model is not None:
+    #         patch, tm_score = draw_patch_and_scores(
+    #             self.img_process, self.tm_scores, self.patch_corner, patch_size
+    #         )
+    #         self.create_image_layer(patch, name="Tomogram_Patch")
+    #         self.create_image_layer(
+    #             tm_score[self.tm_idx], name="TM_Scores", transparency=True
+    #         )
 
-            with torch.no_grad():
-                logits = self.model(self.x).reshape(*self.shape)
-                logits = logits.cpu().detach().numpy()
+    #         # Features from current patch
+    #         self.shape = patch.shape
+    #         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
+    #         self.x = self.x.reshape(-1, self.x.shape[-1])
 
-            self.create_image_layer(logits, "Logits", True)
+    #         with torch.no_grad():
+    #             logits = self.model(self.x).reshape(*self.shape)
+    #             logits = logits.cpu().detach().numpy()
 
-            blr_model_state_points, blr_model_state_labels = find_peaks(
-                logits, 15, True
-            )
+    #         self.create_image_layer(logits, "Logits", True)
 
-            blr_model_state_points = blr_model_state_points[-25:, :]
-            blr_model_state_labels = blr_model_state_labels[-25:, :].flatten()
-            self.napari_viewer.add_points(
-                blr_model_state_points,
-                name="BLR_prediction",
-                properties={"label": blr_model_state_labels},
-                edge_color="black",
-                face_color="label",
-                face_colormap="Spectral",
-                edge_width=0.1,
-                symbol="disc",
-                size=5,
-            )
-        else:
-            self._show_patch()
-            show_info("Warning No BLR model load!")
+    #         blr_model_state_points, blr_model_state_labels = find_peaks(
+    #             logits, 15, True
+    #         )
+
+    #         blr_model_state_points = blr_model_state_points[-25:, :]
+    #         blr_model_state_labels = blr_model_state_labels[-25:, :].flatten()
+    #         self.napari_viewer.add_points(
+    #             blr_model_state_points,
+    #             name="BLR_prediction",
+    #             properties={"label": blr_model_state_labels},
+    #             edge_color="black",
+    #             face_color="label",
+    #             face_colormap=colormap_for_display,
+    #             edge_width=0.1,
+    #             symbol="disc",
+    #             size=5,
+    #         )
+    #     else:
+    #         self._show_patch()
+    #         show_info("Warning No BLR model load!")
 
     """""" """""" """""" """""" """
     Viewer helper functionality
@@ -718,11 +679,11 @@ class AnnotationWidget(Container):
         try:
             self.napari_viewer.layers.remove(name)
         except Exception as e:
-            show_info(f"Warning: {e}. Layer {name} does not exist, creating new one.")
+            pass
 
         if transparency:
             self.napari_viewer.add_image(
-                image, name=name, colormap="Spectral", opacity=0.5
+                image, name=name, colormap=colormap_for_display, opacity=0.5
             )
         else:
             self.napari_viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
@@ -768,7 +729,6 @@ class AnnotationWidget(Container):
                 symbol="square",
                 size=40,
             )
-            self.napari_viewer.layers[name].mode = "select"
         else:  # Create empty layer
             self.napari_viewer.add_points(
                 point,
@@ -780,7 +740,231 @@ class AnnotationWidget(Container):
                 symbol="square",
                 size=40,
             )
-            self.napari_viewer.layers[name].mode = "select"
+
+        self.napari_viewer.layers[name].mode = "select"
+
+    """""" """""" """""" """""
+    Global helper functions
+    """ """""" """""" """""" ""
+
+    def _filter_particle_by_confidence(
+        self,
+    ):
+        """
+        Function to fetch
+        self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
+        and filter particle based on the confidence scored given from
+        self.filter_particle_by_confidence.value
+
+        Function updated ..._Prediction_Filtered Points layer.
+        """
+        try:
+            self.napari_viewer.layers["Particle_Prediction"].visible = False
+            particles_all = self.napari_viewer.layers["Particle_Prediction"].data
+            confidence_all = self.napari_viewer.layers[
+                "Particle_Prediction"
+            ].properties["label"]
+
+            if len(particles_all) == 0:
+                show_info("No predicted particles to filter!")
+                return
+
+            keep_id = np.where(
+                confidence_all >= self.filter_particle_by_confidence.value
+            )
+            particles_filter = particles_all[keep_id[0], :]
+            confidence_filter = confidence_all[keep_id[0]]
+
+            try:
+                self.napari_viewer.layers.remove("Particle_Prediction_Filtered")
+            except:
+                pass
+
+            if len(particles_filter) > 0:
+                self.napari_viewer.add_points(
+                    particles_filter,
+                    name="Particle_Prediction_Filtered",
+                    properties={"label": confidence_filter},
+                    edge_color="black",
+                    face_color="label",
+                    face_colormap=colormap_for_display,
+                    edge_width=0.1,
+                    face_contrast_limits=(0, 1),
+                    symbol="disc",
+                    size=5,
+                )
+        except Exception as e:
+            pass
+
+    def _export_particles(
+        self,
+    ):
+        """
+        Fetch all positive and negative particle, and export it as .csv file
+        with header [Z, Y, X, Score].
+
+        Fetched points should be from all already labels by user or predicted.
+        If positive is present score is 1 or max. confidence score from prediction
+        if present. For negative prediction it should be -1 or min. confidence
+        score from prediction if present.
+
+        Export self.user_annotations [n, 4] organized Z, Y, X, ID
+        """
+        user_annotations = self.user_annotations.copy()
+
+        try:
+            prediction_particle = self.napari_viewer.layers["Particle_Prediction"].data
+            prediction_labels = self.napari_viewer.layers[
+                "Particle_Prediction"
+            ].properties["label"]
+        except:
+            prediction_particle, prediction_labels = [], []
+
+        # Save only user annotations (positive labels)
+        filename, _ = QFileDialog.getSaveFileName(
+            caption="Save File", directory="user_annotations.csv"
+        )
+
+        if len(prediction_particle) == 0:
+            data = user_annotations
+        else:
+            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
+            min_, max_ = np.min(prediction_labels), np.max(prediction_labels)
+
+        user_annotations[user_annotations[:, 3] == 0, 3] = min_
+        user_annotations[user_annotations[:, 3] == 1, 3] = max_
+        data = np.concatenate((user_annotations, prediction))
+
+        np.savetxt(
+            filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
+        )
+
+    def _import_particles(
+        self,
+    ):
+        """
+        Import file with coordinates. Expect that files contains point in XYZ order,
+        with optional confidence scores.
+        Use "viridis" colormap them for the scores. If score are not present,
+        assign all with score 0.
+
+        Allow for [n, 3] or [n, 4]
+        if napari binder save
+        df = [n, 3 or 4] read it as [1:, 1:] [ZYX]
+        """
+        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
+        data, labels = load_coordinates(self.filename)
+
+        # try:
+        # Update user annotation storage
+        self.user_annotations = np.concatenate(
+            (self.user_annotations, np.hstack((data, labels[:, None])))
+        )
+        self.user_annotations = np.vstack(tuple(set(map(tuple, self.user_annotations))))
+
+        # add imported points to the layer
+        try:
+            self.napari_viewer.layers.remove("Imported_Particles")
+        except:
+            pass
+
+        self.napari_viewer.add_points(
+            data,
+            name="Imported_Particles",
+            properties={"label": labels},
+            edge_color="black",
+            face_color="label",
+            face_colormap=colormap_for_display,
+            edge_width=0.1,
+            symbol="disc",
+            size=5,
+        )
+        show_info(f"Imported {data.shape[0]} particles!")
+
+    def _save_model(
+        self,
+    ):
+        """
+        Function to fetch self.AL_weights which is a list [self.weight, self.bias]
+        and save it as a pickle torch .pt file
+        """
+        if self.model is not None:
+            filename, _ = QFileDialog.getSaveFileName(
+                caption="Save File", directory="Active_learn_model.pt"
+            )
+
+            # Check for AL_weights
+            if (
+                self.AL_weights is None
+            ):  # Hard-fix in case self.AL_weights is not save yet
+                self.AL_weights = [self.model.weights, self.model.bias]
+
+            torch.save(self.AL_weights, filename)
+
+    def _load_model(
+        self,
+    ):
+        """
+        Function to load and update self.AL_weights which is a list [self.weight, self.bias]
+        expected as a pickle torch .pt file.
+
+        If self.model is not None, update model weights. Else create self.model with
+        this weights.
+        """
+        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
+        self.AL_weights = torch.load(f"{self.filename}")
+
+        if self.model is not None:
+            self.model.fit(pre_train=self.AL_weights)
+        else:
+            self.model = BinaryLogisticRegression(
+                n_features=self.AL_weights[0].shape[0], l2=1.0, pi=0.01, pi_weight=1000
+            )
+            self.model.fit(pre_train=self.AL_weights)
+
+        self.AL_weights = None  # Reset to allow re-training
+
+    """""" """""" """""" """""
+    Mouse and keys bindings
+    """ """""" """""" """""" ""
+
+    def track_mouse_position(self, viewer: Viewer, event):
+        """
+        Mouse binding helper function to update stored mouse position when it moves
+        """
+        self.mouse_position = event.position
+
+    def selected_point_near_mouse(self, viewer: Viewer, event):
+        """
+        Mouse binding helper function to select point near the mouse pointer
+        """
+        if self.activate_click:
+            name = viewer.layers.selection.active.name
+
+            try:
+                # if self.activate_click:
+                points_layer = viewer.layers[name].data
+
+                # Filter points_layer and search only for points withing radius
+                # Just in case we have thousands or millions of points issue
+                points_layer = points_layer[
+                    np.where(
+                        np.linalg.norm(points_layer - self.mouse_position, axis=1) < 10
+                    )
+                ]
+
+                # Calculate the distance between the mouse position and all points
+                distances = np.linalg.norm(points_layer - self.mouse_position, axis=1)
+                closest_point_index = distances.argmin()
+
+                # Clear the current selection and Select the closest point
+                if self.selected_particle_id != closest_point_index:
+                    self.selected_particle_id = closest_point_index
+
+                    viewer.layers[name].selected_data = set()
+                    viewer.layers[name].selected_data.add(closest_point_index)
+            except Exception as e:
+                pass
 
     def update_point_grid(self, index=None, label=0, func="update"):
         point_layer = self.napari_viewer.layers["Particle_BLR_is_Uncertain"]
@@ -974,139 +1158,44 @@ class AnnotationWidget(Container):
 
         point_layer.edge_color_cycle = self.color_map_particle_classes
 
-    """""" """""" """""" """""
-    Global helper functions
-    """ """""" """""" """""" ""
-
-    def _filter_particle_by_confidence(
-        self,
-    ):
+    def key_event(self, viewer: Viewer, key: int):
         """
-        Function to fetch
-        self.napari_viewer.layers.selection.active.name["Prediction_Filtered"]
-        and filter particle based on the confidence scored given from
-        self.filter_particle_by_confidence.value
+        Main key event definition.
 
-        Function updated ..._Prediction_Filtered Points layer.
+        Args:
+            key (int): Key definition of an action.
         """
-        try:
-            self.napari_viewer.layers["Particle_Prediction"].visible = False
-            particles_all = self.napari_viewer.layers["Particle_Prediction"].data
-            confidence_all = self.napari_viewer.layers[
-                "Particle_Prediction"
-            ].properties["label"]
+        if self.activate_click:
+            name = viewer.layers.selection.active.name
+            points_layer = viewer.layers[name].data
 
-            if len(particles_all) == 0:
-                show_info("No predicted particles to filter!")
-                return
+            mouse_position = np.asarray(self.mouse_position).reshape(1, -1)
+            if points_layer.shape[0] == 0:
+                self.update_point_layer(None, key, "add")
+            else:
+                kdtree = KDTree(points_layer)
+                distance, closest_point = kdtree.query(mouse_position, k=1)
 
-            keep_id = np.where(
-                confidence_all >= self.filter_particle_by_confidence.value
-            )
-            particles_filter = particles_all[keep_id[0], :]
-            confidence_filter = confidence_all[keep_id[0]]
+                if not self.grid_labeling_mode:
+                    if key == 2:
+                        if distance[0] < 10:
+                            self.update_point_layer(closest_point[0], 0, "remove")
+                    else:
+                        if distance[0] > 10:
+                            self.update_point_layer(None, key, "add")
+                        else:
+                            self.update_point_layer(closest_point[0], key, "update")
+                else:
+                    if key in [0, 1]:
+                        self.update_point_grid(closest_point[0], key, "update")
+                    else:
+                        self.update_point_grid(closest_point[0], key, "remove")
 
-            try:
-                self.napari_viewer.layers.remove("Particle_Prediction_Filtered")
-            except:
-                pass
+    def ZEvent(self, viewer):
+        self.key_event(viewer, 0)
 
-            self.napari_viewer.add_points(
-                particles_filter,
-                name="Particle_Prediction_Filtered",
-                properties={"label": confidence_filter},
-                edge_color="black",
-                face_color="label",
-                face_colormap="Spectral",
-                edge_width=0.1,
-                face_contrast_limits=(0, 1),
-                symbol="disc",
-                size=5,
-            )
-        except Exception as e:
-            pass
+    def XEvent(self, viewer):
+        self.key_event(viewer, 1)
 
-    def _export_particles(
-        self,
-    ):
-        """
-        Fetch all positive and negative particle, and export it as .csv file
-        with header [Z, Y, X, Score].
-
-        Fetched points should be from all already labels by user or predicted.
-        If positive is present score is 1 or max. confidence score from prediction
-        if present. For negative prediction it should be -1 or min. confidence
-        score from prediction if present.
-
-        Export self.user_annotations [n, 4] organized Z, Y, X, ID
-        """
-        user_annotations = self.user_annotations.copy()
-
-        try:
-            prediction_particle = self.napari_viewer.layers["Particle_Prediction"].data
-            prediction_labels = self.napari_viewer.layers[
-                "Particle_Prediction"
-            ].properties["label"]
-        except:
-            prediction_particle, prediction_labels = [], []
-
-        # Save only user annotations (positive labels)
-        filename, _ = QFileDialog.getSaveFileName(
-            caption="Save File", directory="user_annotations.csv"
-        )
-
-        if len(prediction_particle) == 0:
-            data = user_annotations
-        else:
-            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
-            min_, max_ = np.min(prediction_labels), np.max(prediction_labels)
-
-        user_annotations[user_annotations[:, 3] == 0, 3] = min_
-        user_annotations[user_annotations[:, 3] == 1, 3] = max_
-        data = np.concatenate((user_annotations, prediction))
-
-        np.savetxt(
-            filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
-        )
-
-    def _import_particles(
-        self,
-    ):
-        """
-        Import file with coordinates. Expect that files contains point in XYZ order,
-        with optional confidence scores.
-        Use "viridis" colormap them for the scores. If score are not present,
-        assign all with score 0.
-
-        Allow for [n, 3] or [n, 4]
-        if napari binder save
-        df = [n, 3 or 4] read it as [1:, 1:] [ZYX]
-        """
-        self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
-        data, labels = load_coordinates(self.filename)
-
-        # try:
-        # Update user annotation storage
-        self.user_annotations = np.concatenate(
-            (self.user_annotations, np.hstack((data, labels[:, None])))
-        )
-        self.user_annotations = np.vstack(tuple(set(map(tuple, self.user_annotations))))
-
-        # add imported points to the layer
-        try:
-            self.napari_viewer.layers.remove("Imported_Particles")
-        except:
-            pass
-
-        self.napari_viewer.add_points(
-            data,
-            name="Imported_Particles",
-            properties={"label": labels},
-            edge_color="black",
-            face_color="label",
-            face_colormap="Spectral",
-            edge_width=0.1,
-            symbol="disc",
-            size=5,
-        )
-        show_info(f"Imported {data.shape[0]} particles!")
+    def CEvent(self, viewer):
+        self.key_event(viewer, 2)

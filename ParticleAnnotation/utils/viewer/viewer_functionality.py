@@ -115,15 +115,16 @@ def build_gird_with_particles(
     y_min = 0
     for idx, (i, j) in enumerate(zip(crop_particles, crop_tm_scores)):
         # Draw particles and place them in the right positions
-        particle = np.asarray(i.shape) / 2
+        particle = np.asarray([patch_size, patch_size, patch_size])
         particle[0] -= 1
         particle[1] += y_min
         particle[2] += x_min
         grid_particle_points[idx, :] = particle
 
+        # Draw image patches and place them in the right positions
         i_z, i_y, i_x = i.shape
         j_z, j_y, j_x = j.shape
-        if i.shape[0] == crop_size:
+        if i.shape == (crop_size, crop_size, crop_size):
             if crop_grid_img.shape[1] == crop_size:
                 # Add crops
                 crop_grid_img[0:i_z, 0:i_y, x_min : x_min + i_x] = i
