@@ -233,9 +233,9 @@ class AnnotationWidget(Container):
             img, _, name = load_tomogram()
             self.create_image_layer(img, name=name, transparency=False)
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
         self.img_process, _ = normalize(
@@ -444,8 +444,9 @@ class AnnotationWidget(Container):
         )
 
         if self.patch_points is not None:
+            corrected_points = correct_coord(self.patch_points, self.patch_corner, True)
             self.create_point_layer(
-                self.patch_points,
+                corrected_points,
                 self.patch_label,
                 name="Particle_BLR_is_Uncertain",
             )
@@ -455,6 +456,7 @@ class AnnotationWidget(Container):
                 self.user_annotations[:, 3],
                 name="Initial_Particle_Selection",
             )
+
         if self.patch_corner is not None:
             all_vertices = np.array(
                 [
