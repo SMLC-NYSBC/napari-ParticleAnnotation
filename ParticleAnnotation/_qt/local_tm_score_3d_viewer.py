@@ -233,9 +233,9 @@ class AnnotationWidget(Container):
             img, _, name = load_tomogram()
             self.create_image_layer(img, name=name, transparency=False)
 
-        self.image_name = self.filename = (
-            self.napari_viewer.layers.selection.active.name
-        )
+        self.image_name = (
+            self.filename
+        ) = self.napari_viewer.layers.selection.active.name
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
         self.img_process, _ = normalize(
@@ -443,20 +443,6 @@ class AnnotationWidget(Container):
             self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
         )
 
-        if self.patch_points is not None:
-            corrected_points = correct_coord(self.patch_points, self.patch_corner, True)
-            self.create_point_layer(
-                corrected_points,
-                self.patch_label,
-                name="Particle_BLR_is_Uncertain",
-            )
-        else:
-            self.create_point_layer(
-                self.user_annotations[:, :3],
-                self.user_annotations[:, 3],
-                name="Initial_Particle_Selection",
-            )
-
         if self.patch_corner is not None:
             all_vertices = np.array(
                 [
@@ -498,7 +484,7 @@ class AnnotationWidget(Container):
                     ],
                 ]
             ).squeeze()
-            bb_layer = BoundingBoxLayer(ndim=3, edge_color="green")
+            bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
             bb_layer.add(all_vertices)
             self.napari_viewer.add_layer(bb_layer)
 
@@ -530,6 +516,33 @@ class AnnotationWidget(Container):
                 edge_width=0.1,
                 symbol="disc",
                 size=5,
+            )
+
+        self.create_point_layer(
+            self.user_annotations[:, :3],
+            self.user_annotations[:, 3],
+            name="All_labels",
+            visible=False,
+        )
+
+        if self.patch_points is not None:
+            if self.patch_corner is not None:
+                corrected_points = correct_coord(
+                    self.patch_points, self.patch_corner, True
+                )
+            else:
+                corrected_points = self.patch_points.copy()
+
+            self.create_point_layer(
+                corrected_points,
+                self.patch_label,
+                name="Particle_BLR_is_Uncertain",
+            )
+        else:
+            self.create_point_layer(
+                self.user_annotations[:, :3],
+                self.user_annotations[:, 3],
+                name="Initial_Particle_Selection",
             )
 
     def _show_active_learning_grid(self):
@@ -705,7 +718,7 @@ class AnnotationWidget(Container):
             self.napari_viewer.layers[name].visible = False
 
     def create_point_layer(
-        self, point: np.ndarray, label: np.ndarray, name="Initial_Labels"
+        self, point: np.ndarray, label: np.ndarray, name="Initial_Labels", visible=True
     ):
         """
         Create a point layer in napari with 2D/3D points and associated labels.
@@ -744,6 +757,7 @@ class AnnotationWidget(Container):
             )
 
         self.napari_viewer.layers[name].mode = "select"
+        self.napari_viewer.layers[name].visible = visible
 
     """""" """""" """""" """""
     Global helper functions
@@ -974,7 +988,7 @@ class AnnotationWidget(Container):
         labels = point_layer.properties["label"]
 
         if self.all_grid:
-            point = correct_coord(self.patch_points[index], (0, 0, 0), True)
+            point = self.patch_points[index]
         else:
             point = correct_coord(self.patch_points[index], self.patch_corner, True)
 
@@ -988,10 +1002,11 @@ class AnnotationWidget(Container):
             # Check if point index from self.point_layer is already in self.user_annotations
             # Add and/or update point label in self.user_annotations
             idx = self.user_annotations[:, :3] - point
-            idx = 0 in np.sum(idx.astype(np.float16), axis=1)
+            idx_bool = 0 in np.sum(idx.astype(np.float16), axis=1)
 
-            if idx:  # Add point to self.user_annotation
-                idx = np.where(point in self.user_annotations[:, :3])
+            if idx_bool:  # Add point to self.user_annotation
+                idx = np.where(np.sum(idx.astype(np.float16), axis=1) == 0)
+
                 if len(idx) > 0:
                     self.user_annotations[idx[0][0], 3] = label
             else:  # Update point label in self.user_annotations
