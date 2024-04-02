@@ -233,9 +233,9 @@ class AnnotationWidget(Container):
             img, _, name = load_tomogram()
             self.create_image_layer(img, name=name, transparency=False)
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
         img = self.napari_viewer.layers[self.image_name]
         self.img_process = img.data
         self.img_process, _ = normalize(
@@ -398,6 +398,13 @@ class AnnotationWidget(Container):
 
         self.create_image_layer(logits, "Logits", transparency=True)
 
+        self.create_point_layer(
+            self.user_annotations[:, :3],
+            self.user_annotations[:, 3],
+            name="All_labels",
+            visible=False,
+        )
+
         self.napari_viewer.add_points(
             peaks,
             name="Particle_Prediction",
@@ -405,7 +412,7 @@ class AnnotationWidget(Container):
             edge_color="black",
             face_color="label",
             face_colormap=colormap_for_display,
-            edge_contrast_limits=(0, 1),
+            face_contrast_limits=(0, 1),
             edge_width=0.1,
             symbol="disc",
             size=5,
@@ -512,7 +519,7 @@ class AnnotationWidget(Container):
                 edge_color="black",
                 face_color="label",
                 face_colormap=colormap_for_display,
-                edge_contrast_limits=(0, 1),
+                face_contrast_limits=(0, 1),
                 edge_width=0.1,
                 symbol="disc",
                 size=5,
@@ -592,30 +599,66 @@ class AnnotationWidget(Container):
         """
         self.all_grid = True
         self.grid_labeling_mode = True
+
+        try:
+            prediction_present = (
+                self.napari_viewer.layers.selection.active.name
+                == "Particle_Prediction_Filtered"
+            )
+        except AttributeError:
+            prediction_present = False
+
+        if prediction_present:
+            particles_filter_predict = self.napari_viewer.layers[
+                "Particle_Prediction_Filtered"
+            ].data
+            labels_filter_predict = self.napari_viewer.layers[
+                "Particle_Prediction_Filtered"
+            ].properties["label"]
+
+            (
+                crop_grid_img,
+                crop_grid_tm_scores,
+                grid_particle_points,
+                grid_particle_labels,
+            ) = build_gird_with_particles(
+                particles_filter_predict,
+                labels_filter_predict,
+                (0, 0, 0),
+                self.img_process,
+                self.tm_scores,
+                self.tm_idx,
+                int(self.box_size.value),
+            )
+        else:
+            (
+                crop_grid_img,
+                crop_grid_tm_scores,
+                grid_particle_points,
+                grid_particle_labels,
+            ) = build_gird_with_particles(
+                self.user_annotations[:, :3],
+                self.user_annotations[:, 3],
+                (0, 0, 0),
+                self.img_process,
+                self.tm_scores,
+                self.tm_idx,
+                int(self.box_size.value),
+            )
+
         self.clean_viewer()
-
-        (
-            crop_grid_img,
-            crop_grid_tm_scores,
-            grid_particle_points,
-            grid_particle_labels,
-        ) = build_gird_with_particles(
-            self.user_annotations[:, :3],
-            self.user_annotations[:, 3],
-            (0, 0, 0),
-            self.img_process,
-            self.tm_scores,
-            self.tm_idx,
-            int(self.box_size.value),
-        )
-
         self.create_image_layer(crop_grid_img, name="Particles_crops")
         self.create_image_layer(
             crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
         )
-        self.create_point_layer(
-            grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
-        )
+        if prediction_present:
+            self.create_point_layer(
+                grid_particle_points, grid_particle_labels, "Particle_Prediction"
+            )
+        else:
+            self.create_point_layer(
+                grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
+            )
 
     # def _show_current_BLR_predictions(self):
     #     """
@@ -1017,9 +1060,9 @@ class AnnotationWidget(Container):
                     axis=0,
                 )
         elif func == "remove":
-            points = np.delete(self.patch_points, index, axis=0)
             self.patch_points = np.delete(self.patch_points, index, axis=0)
             self.patch_label = np.delete(self.patch_label, index, axis=0)
+            points = np.delete(self.patch_points, index, axis=0)
             labels = np.delete(self.patch_points, index, axis=0)
 
             idx = point in self.user_annotations[:, :3]
