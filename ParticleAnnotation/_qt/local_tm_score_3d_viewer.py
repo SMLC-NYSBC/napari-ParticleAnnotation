@@ -44,14 +44,6 @@ colormap_for_display = "Spectral"
 
 class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
-        """
-        ToDo
-            - Patch over sized
-            - predicted particles changes colors
-            - marge initialize blr to re-train
-            - make a clear gui
-                - Load data, Train, Predict, Utils
-        """
         super().__init__(layout="vertical")
         self.napari_viewer = viewer_tm_score_3d
 
@@ -74,6 +66,7 @@ class AnnotationWidget(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init = False
         self.AL_weights = None
+        self.logits = None
 
         # Viewer
         self.color_map_particle_classes = {
@@ -115,9 +108,9 @@ class AnnotationWidget(Container):
         self.click_add_point_callback = None
 
         spacer_1 = Label(value="------------- Options -------------")
-        self.box_size = LineEdit(name="Mask Size", value="10")
-        self.filter_size = LineEdit(name="Filter Size", value="15")
-        self.patch_size = LineEdit(name="Patch size", value="128")
+        self.box_size = LineEdit(name="Model Mask Size [px]", value="10")
+        self.filter_size = LineEdit(name="Particle size [px]", value="15")
+        self.patch_size = LineEdit(name="Region size", value="128")
         self.pdb_id = LineEdit(name="PDB", value="7A4M")
 
         # ---------------- Import & Export modules ----------------
@@ -159,6 +152,11 @@ class AnnotationWidget(Container):
         self.filter_particle_by_confidence.changed.connect(
             self._filter_particle_by_confidence
         )
+        # ToDo button to select number of particles
+        # ToDo check if possible and add distribution of scores
+        # ToDo button to restart the session
+        # ToDo allow relabel the predictions
+        # ToDo dropdown for the pdbs - ice_scores
 
         widget = VBox(
             widgets=(
@@ -183,7 +181,7 @@ class AnnotationWidget(Container):
                 ),
                 HBox(
                     widgets=(
-                        self.save_model,
+                        self.save_model,  # ToDo add 3 buttons to save each layer
                         self.load_model,
                     )
                 ),
@@ -208,7 +206,8 @@ class AnnotationWidget(Container):
             )
         )
 
-        self.napari_viewer.window.add_dock_widget(widget, area="left")
+        widget.max_width = 350
+        self.napari_viewer.window.add_dock_widget(widget, area="right")
 
         self.device_ = get_device()
         show_info(f"Active learning model runs on: {self.device_}")
@@ -243,6 +242,10 @@ class AnnotationWidget(Container):
         )
 
         # Load and pre-process tm_scores data
+        # ToDo 1 add regularizer for pushing the negative weights towards ice scores
+        # add fantom data which will push the scores down. Fore each label negative array
+        # ToDo 2: randome feature expansion with furier for all scores
+        # Option Gaussian model
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
         if self.tm_scores is None:
             show_info(f"Please select template score for {self.pdb_id.value}")
@@ -295,6 +298,7 @@ class AnnotationWidget(Container):
         self.x = self.x.reshape(-1, self.x.shape[-1])
         self.shape = patch.shape
 
+        # Take all particle crops for the training, not just a patch
         if self.model is None:
             self.model = BinaryLogisticRegression(
                 n_features=self.x.shape[0], l2=1.0, pi=0.01, pi_weight=1000
@@ -344,6 +348,7 @@ class AnnotationWidget(Container):
 
         with torch.no_grad():
             logits = self.model(self.x).reshape(*self.shape)
+            self.logits = torch.sigmoid(logits).cpu().detach().numpy()
             logits = logits.cpu().detach()
 
         # Draw 10 coordinates with lowest entropy
@@ -355,19 +360,6 @@ class AnnotationWidget(Container):
         stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
         point_indexes = np.all(
             (stored_points >= 0) & (stored_points <= patch_size), axis=1
-        )
-        # self.patch_points = np.vstack((self.patch_points, stored_points[point_indexes]))
-        # self.patch_label = np.hstack(
-        #     (self.patch_label, self.user_annotations[point_indexes, 3])
-        # )
-
-        """Display new particles and image layers"""
-        self.create_image_layer(patch, name="Tomogram_Patch")
-        self.create_image_layer(
-            tm_score[self.tm_idx], name="TM_Scores", transparency=True
-        )
-        self.create_point_layer(
-            self.patch_points, self.patch_label, name="Particle_BLR_is_Uncertain"
         )
 
         self._show_active_learning_grid()
@@ -385,7 +377,7 @@ class AnnotationWidget(Container):
 
         patch_size = int(self.patch_size.value)
 
-        peaks, peaks_confidence, logits = predict_3d_with_AL(
+        peaks, peaks_confidence, self.logits = predict_3d_with_AL(
             self.img_process,
             tm_scores=self.tm_scores,
             model=self.model,
@@ -396,7 +388,13 @@ class AnnotationWidget(Container):
         peaks = peaks[order]
         peaks_confidence = peaks_confidence[order]
 
-        self.create_image_layer(logits, "Logits", transparency=True)
+        self.create_image_layer(self.img_process, self.filename)
+        self.create_image_layer(
+            self.tm_scores[self.tm_idx], "TM_Score", transparency=True, visibility=False
+        )
+        self.create_image_layer(
+            self.logits, "Sigmoid", transparency=True, range_=(0, 1)
+        )
 
         self.create_point_layer(
             self.user_annotations[:, :3],
@@ -432,23 +430,7 @@ class AnnotationWidget(Container):
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
-        # if self.img_process is not None:
-        #     patch, _ = draw_patch_and_scores(
-        #         self.img_process, self.tm_scores, self.patch_corner, patch_size
-        #     )
-        #     self.create_image_layer(patch, name="Tomogram_Patch")
         self.create_image_layer(self.img_process, name="Tomogram_Patch")
-
-        # if self.tm_scores is not None:
-        #     _, tm_score = draw_patch_and_scores(
-        #         self.img_process, self.tm_scores, self.patch_corner, patch_size
-        #     )
-        #     self.create_image_layer(
-        #         tm_score[self.tm_idx], name="TM_Scores", transparency=True
-        #     )
-        self.create_image_layer(
-            self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
-        )
 
         if self.patch_corner is not None:
             all_vertices = np.array(
@@ -498,7 +480,7 @@ class AnnotationWidget(Container):
         if self.model is not None:
             patch_size = int(self.patch_size.value)
 
-            peaks, peaks_confidence, _ = predict_3d_with_AL(
+            peaks, peaks_confidence, self.logits = predict_3d_with_AL(
                 self.img_process,
                 tm_scores=self.tm_scores,
                 model=self.model,
@@ -512,6 +494,18 @@ class AnnotationWidget(Container):
             peaks = peaks[-100:, :]
             peaks_confidence = peaks_confidence[-100:]
 
+        self.create_image_layer(
+            self.tm_scores[self.tm_idx],
+            name="TM_Scores",
+            transparency=True,
+            visibility=False,
+        )
+        if self.logits is not None:
+            self.create_image_layer(
+                self.logits, name="Sigmoid", transparency=True, visibility=False
+            )
+
+        if self.model is not None:
             self.napari_viewer.add_points(
                 peaks,
                 name="Particle_top_100",
@@ -573,14 +567,18 @@ class AnnotationWidget(Container):
                 self.patch_label,
                 self.patch_corner,
                 self.img_process,
-                self.tm_scores,
-                self.tm_idx,
+                self.tm_scores if self.logits is None else self.logits[None, ...],
+                self.tm_idx if self.logits is None else 0,
                 int(self.box_size.value),
             )
 
             self.create_image_layer(crop_grid_img, name="Particles_crops")
             self.create_image_layer(
-                crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
+                crop_grid_tm_scores,
+                name="Particles_crops_scores",
+                transparency=True,
+                visibility=False,
+                range_=(0, 1) if self.logits is not None else None,
             )
             self.create_point_layer(
                 grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
@@ -592,10 +590,6 @@ class AnnotationWidget(Container):
         """
         Viewer function to show all stored particles on self.user_annotation
         and particle_layer. Particles are shown as a grid with particle in the center.
-
-        ToDo:
-            - Show all particle in a grid from self.user_annotation
-            - If prediction present show prediction
         """
         self.all_grid = True
         self.grid_labeling_mode = True
@@ -626,8 +620,8 @@ class AnnotationWidget(Container):
                 labels_filter_predict,
                 (0, 0, 0),
                 self.img_process,
-                self.tm_scores,
-                self.tm_idx,
+                self.tm_scores if self.logits is None else self.logits[None, ...],
+                self.tm_idx if self.logits is None else 0,
                 int(self.box_size.value),
             )
         else:
@@ -641,19 +635,32 @@ class AnnotationWidget(Container):
                 self.user_annotations[:, 3],
                 (0, 0, 0),
                 self.img_process,
-                self.tm_scores,
-                self.tm_idx,
+                self.tm_scores if self.logits is None else self.logits[None, ...],
+                self.tm_idx if self.logits is None else 0,
                 int(self.box_size.value),
             )
 
         self.clean_viewer()
         self.create_image_layer(crop_grid_img, name="Particles_crops")
         self.create_image_layer(
-            crop_grid_tm_scores, name="Particles_crops_scores", transparency=True
+            crop_grid_tm_scores,
+            name="Particles_crops_scores",
+            transparency=True,
+            visibility=False,
+            range_=(0, 1) if self.logits is not None else None,
         )
         if prediction_present:
-            self.create_point_layer(
-                grid_particle_points, grid_particle_labels, "Particle_Prediction"
+            self.napari_viewer.add_points(
+                grid_particle_points,
+                name="Particle_Prediction",
+                properties={"label": grid_particle_labels},
+                edge_color="black",
+                face_color="label",
+                face_colormap=colormap_for_display,
+                face_contrast_limits=(0, 1),
+                edge_width=0.1,
+                symbol="disc",
+                size=5,
             )
         else:
             self.create_point_layer(
@@ -724,7 +731,7 @@ class AnnotationWidget(Container):
         self.napari_viewer.layers.remove_selected()
 
     def create_image_layer(
-        self, image, name="TM_Scores", transparency=False, viability=True
+        self, image, name="TM_Scores", transparency=False, visibility=True, range_=None
     ):
         """
         Create a image layer in napari.
@@ -746,15 +753,24 @@ class AnnotationWidget(Container):
         else:
             self.napari_viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
 
-        try:
-            self.napari_viewer.layers[name].contrast_limits = (
-                image.min(),
-                image.max(),
-            )
-        except Exception as e:
-            pass
+        if range_ is not None:
+            try:
+                self.napari_viewer.layers[name].contrast_limits = (
+                    range_[0],
+                    range_[1],
+                )
+            except Exception as e:
+                pass
+        else:
+            try:
+                self.napari_viewer.layers[name].contrast_limits = (
+                    image.min(),
+                    image.max(),
+                )
+            except Exception as e:
+                pass
 
-        if viability:
+        if visibility:
             # set layer as not visible
             self.napari_viewer.layers[name].visible = True
         else:

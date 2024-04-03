@@ -287,6 +287,8 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
 
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
+        # -1 for scores with ICE
+
         self.device = get_device()
         self.weights = torch.zeros(n_features, device=self.device)
         # random initialization
@@ -314,6 +316,9 @@ class BinaryLogisticRegression:
         # L2 regularizer on the weights
         loss_reg_l2 = self.l2 * torch.sum(self.weights**2) / 2
 
+        # Penalty for negative weights on ice scores
+        # negative_weights_penalty = torch.sum(torch.relu(-self.weights[-1]))  # Penalize negative weights on ice scores
+
         # Penalty on the expected pi
         log_p = torch.logsumexp(F.logsigmoid(logits), dim=0) - np.log(len(logits))
         log_np = torch.logsumexp(F.logsigmoid(-logits), dim=0) - np.log(len(logits))
@@ -321,6 +326,7 @@ class BinaryLogisticRegression:
         loss_pi = self.pi_weight * (logit_expect - self.pi_logit) ** 2
 
         loss = (loss_binary + loss_reg_l2 + loss_pi) / n
+        # loss = (loss_binary + loss_reg_l2 + loss_pi + negative_weights_penalty) / n
 
         return loss
 

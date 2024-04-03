@@ -51,8 +51,9 @@ def build_gird_with_particles(
     grid_particle_points = np.zeros_like(patch_points)
     grid_particle_labels = patch_label.copy()
 
-    patch_size = box_size
-    crop_size = box_size * 2
+    # ToDo 
+    patch_size = box_size * 2
+    crop_size = box_size * 4
     gap_size = 2
 
     for i in patch_points:

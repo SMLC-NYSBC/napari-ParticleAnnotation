@@ -140,6 +140,12 @@ def load_template(template: str = None):
     root = QFileDialog.getOpenFileNames(
         None, "Select a template score files", filter="Pytorch(*.pt)"
     )[0]
+    ice_ = [True if i.endswith('scores_ice.pt') else False for i in root]
+
+    if sum([True if i.endswith('scores_ice.pt') else False for i in root]) > 0:
+        ice_ = root[np.where(ice_)[0][0]]
+        root.remove(ice_)
+        root.append(ice_)
 
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
