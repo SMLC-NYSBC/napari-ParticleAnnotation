@@ -26,6 +26,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
     predict_3d_with_AL,
+    stack_all_labels,
 )
 from ParticleAnnotation.utils.model.utils import (
     correct_coord,
@@ -66,7 +67,6 @@ class AnnotationWidget(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init = False
         self.AL_weights = None
-        self.logits = None
 
         # Viewer
         self.color_map_particle_classes = {
@@ -206,11 +206,12 @@ class AnnotationWidget(Container):
             )
         )
 
-        widget.max_width = 350
+        widget.max_width = 400
         self.napari_viewer.window.add_dock_widget(widget, area="right")
 
         self.device_ = get_device()
         show_info(f"Active learning model runs on: {self.device_}")
+        self._reset_views()
 
     """""" """""" """""" """
     Main triggers for GUI
@@ -281,6 +282,7 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = False
 
         patch_size = int(self.patch_size.value)
+        box_size = int(self.box_size.value)
 
         """If Patch do not exist create one and drawn panicles"""
         if self.patch_corner is None:
@@ -324,11 +326,46 @@ class AnnotationWidget(Container):
                 points[:, 2],
             )
         ).T
-        self.y = label_points_to_mask(data, self.shape, self.box_size.value)
+        self.y = label_points_to_mask(data, self.shape, box_size)
         self.count = (~torch.isnan(self.y)).float()
 
+        data = np.hstack((self.user_annotations[:, 3][:, None], self.user_annotations[:, :3]))
+        self.all_labels = stack_all_labels(self.tm_scores, data, box_size)
+
+        if len(self.all_labels[0][0]) > 0:
+            all_scores_pos = self.tm_scores[
+                :, self.all_labels[0][0], self.all_labels[1][0], self.all_labels[2][0]
+            ]
+        else:
+            all_scores_pos = np.ones((self.tm_scores.shape[0], 0))
+
+        if len(self.all_labels[0][1]) > 0:
+            all_scores_neg = self.tm_scores[
+                :, self.all_labels[0][1], self.all_labels[1][1], self.all_labels[2][1]
+            ]
+        else:
+            all_scores_neg = np.zeros((self.tm_scores.shape[0], 0))
+
+        all_label_pos = np.ones(all_scores_pos.shape[1])
+        all_label_neg = np.zeros(all_scores_neg.shape[1])
+
+        if all_scores_pos.shape[1] == 0 and all_scores_neg.shape[1] == 0:
+            all_scores, all_labels = None, None
+        else:
+            all_scores = (
+                torch.from_numpy(np.hstack((all_scores_pos, all_scores_neg)))
+                .float()
+                .permute(1, 0)
+            )
+            all_labels = torch.from_numpy(np.concatenate((all_label_pos, all_label_neg))).float()
+
         # Re-trained BLR model
-        self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
+        self.model.fit(
+            self.x,
+            self.y.ravel(),
+            weights=self.count.ravel(),
+            all_labels=[all_scores, all_labels],
+        )
 
         """Draw new patch and find new particle for user to label"""
         # Select patch
@@ -348,7 +385,7 @@ class AnnotationWidget(Container):
 
         with torch.no_grad():
             logits = self.model(self.x).reshape(*self.shape)
-            self.logits = torch.sigmoid(logits).cpu().detach().numpy()
+            self.logits_patch = torch.sigmoid(logits).cpu().detach().numpy()
             logits = logits.cpu().detach()
 
         # Draw 10 coordinates with lowest entropy
@@ -362,8 +399,8 @@ class AnnotationWidget(Container):
             (stored_points >= 0) & (stored_points <= patch_size), axis=1
         )
 
+        self._reset_views()
         self._show_active_learning_grid()
-        self.napari_viewer.reset_view()
 
     def _predict(
         self,
@@ -371,13 +408,14 @@ class AnnotationWidget(Container):
         self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
+        self._reset_views()
 
         if self.model is None:
             return
 
         patch_size = int(self.patch_size.value)
 
-        peaks, peaks_confidence, self.logits = predict_3d_with_AL(
+        peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
             self.img_process,
             tm_scores=self.tm_scores,
             model=self.model,
@@ -385,15 +423,15 @@ class AnnotationWidget(Container):
             maximum_filter_size=int(self.filter_size.value),
         )
         order = np.argsort(peaks_confidence)
-        peaks = peaks[order]
-        peaks_confidence = peaks_confidence[order]
+        self.peaks_full = peaks[order]
+        self.peaks_confidence_full = peaks_confidence[order]
 
         self.create_image_layer(self.img_process, self.filename)
         self.create_image_layer(
             self.tm_scores[self.tm_idx], "TM_Score", transparency=True, visibility=False
         )
         self.create_image_layer(
-            self.logits, "Sigmoid", transparency=True, range_=(0, 1)
+            self.logits_full, "Sigmoid", transparency=True, range_=(0, 1)
         )
 
         self.create_point_layer(
@@ -404,9 +442,9 @@ class AnnotationWidget(Container):
         )
 
         self.napari_viewer.add_points(
-            peaks,
+            self.peaks_full,
             name="Particle_Prediction",
-            properties={"label": peaks_confidence},
+            properties={"label": self.peaks_confidence_full},
             edge_color="black",
             face_color="label",
             face_colormap=colormap_for_display,
@@ -416,10 +454,44 @@ class AnnotationWidget(Container):
             size=5,
         )
         self._filter_particle_by_confidence()
+        self.is_prediction = True
 
     """""" """""" """""" """
     Viewer functionality
     """ """""" """""" """"""
+
+    def _reset_views(self):
+        self.peaks_full = None
+        self.peaks_confidence_full = None
+        self.logits_full = None
+        self.logits_patch = None
+
+        (
+            self.crop_grid_img_al,
+            self.crop_grid_tm_scores_al,
+            self.grid_particle_points_al,
+            self.grid_particle_labels_al,
+        ) = (
+            None,
+            None,
+            None,
+            None,
+        )
+
+        (
+            self.crop_grid_img,
+            self.crop_grid_tm_scores,
+            self.grid_particle_points,
+            self.grid_particle_labels,
+        ) = (
+            None,
+            None,
+            None,
+            None,
+        )
+
+        self.is_prediction = False
+        self.napari_viewer.reset_view()
 
     def _show_tomogram(self):
         """
@@ -430,69 +502,72 @@ class AnnotationWidget(Container):
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
+
+        if self.logits_full is None:
+            if self.patch_corner is not None:
+                all_vertices = np.array(
+                    [
+                        [
+                            self.patch_corner[0],
+                            self.patch_corner[1],
+                            self.patch_corner[2],
+                        ],
+                        [
+                            self.patch_corner[0],
+                            self.patch_corner[1],
+                            self.patch_corner[2] + patch_size,
+                        ],
+                        [
+                            self.patch_corner[0],
+                            self.patch_corner[1] + patch_size,
+                            self.patch_corner[2],
+                        ],
+                        [
+                            self.patch_corner[0],
+                            self.patch_corner[1] + patch_size,
+                            self.patch_corner[2] + patch_size,
+                        ],
+                        [
+                            self.patch_corner[0] + patch_size,
+                            self.patch_corner[1],
+                            self.patch_corner[2],
+                        ],
+                        [
+                            self.patch_corner[0] + patch_size,
+                            self.patch_corner[1],
+                            self.patch_corner[2] + patch_size,
+                        ],
+                        [
+                            self.patch_corner[0] + patch_size,
+                            self.patch_corner[1] + patch_size,
+                            self.patch_corner[2],
+                        ],
+                        [
+                            self.patch_corner[0] + patch_size,
+                            self.patch_corner[1] + patch_size,
+                            self.patch_corner[2] + patch_size,
+                        ],
+                    ]
+                ).squeeze()
+
+            if self.model is not None:
+                patch_size = int(self.patch_size.value)
+
+                peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
+                    self.img_process,
+                    tm_scores=self.tm_scores,
+                    model=self.model,
+                    offset=patch_size,
+                    maximum_filter_size=int(self.filter_size.value),
+                )
+                order = np.argsort(peaks_confidence)
+                peaks = peaks[order]
+                peaks_confidence = peaks_confidence[order]
+
+                self.peaks_full = peaks[-100:, :]
+                self.peaks_confidence_full = peaks_confidence[-100:]
+
         self.create_image_layer(self.img_process, name="Tomogram_Patch")
-
-        if self.patch_corner is not None:
-            all_vertices = np.array(
-                [
-                    [self.patch_corner[0], self.patch_corner[1], self.patch_corner[2]],
-                    [
-                        self.patch_corner[0],
-                        self.patch_corner[1],
-                        self.patch_corner[2] + patch_size,
-                    ],
-                    [
-                        self.patch_corner[0],
-                        self.patch_corner[1] + patch_size,
-                        self.patch_corner[2],
-                    ],
-                    [
-                        self.patch_corner[0],
-                        self.patch_corner[1] + patch_size,
-                        self.patch_corner[2] + patch_size,
-                    ],
-                    [
-                        self.patch_corner[0] + patch_size,
-                        self.patch_corner[1],
-                        self.patch_corner[2],
-                    ],
-                    [
-                        self.patch_corner[0] + patch_size,
-                        self.patch_corner[1],
-                        self.patch_corner[2] + patch_size,
-                    ],
-                    [
-                        self.patch_corner[0] + patch_size,
-                        self.patch_corner[1] + patch_size,
-                        self.patch_corner[2],
-                    ],
-                    [
-                        self.patch_corner[0] + patch_size,
-                        self.patch_corner[1] + patch_size,
-                        self.patch_corner[2] + patch_size,
-                    ],
-                ]
-            ).squeeze()
-            bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
-            bb_layer.add(all_vertices)
-            self.napari_viewer.add_layer(bb_layer)
-
-        if self.model is not None:
-            patch_size = int(self.patch_size.value)
-
-            peaks, peaks_confidence, self.logits = predict_3d_with_AL(
-                self.img_process,
-                tm_scores=self.tm_scores,
-                model=self.model,
-                offset=patch_size,
-                maximum_filter_size=int(self.filter_size.value),
-            )
-            order = np.argsort(peaks_confidence)
-            peaks = peaks[order]
-            peaks_confidence = peaks_confidence[order]
-
-            peaks = peaks[-100:, :]
-            peaks_confidence = peaks_confidence[-100:]
 
         self.create_image_layer(
             self.tm_scores[self.tm_idx],
@@ -500,16 +575,21 @@ class AnnotationWidget(Container):
             transparency=True,
             visibility=False,
         )
-        if self.logits is not None:
+        if self.logits_full is not None:
             self.create_image_layer(
-                self.logits, name="Sigmoid", transparency=True, visibility=False
+                self.logits_full, name="Sigmoid", transparency=True, visibility=False
             )
+
+        if self.patch_corner is not None:
+            bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
+            bb_layer.add(all_vertices)
+            self.napari_viewer.add_layer(bb_layer)
 
         if self.model is not None:
             self.napari_viewer.add_points(
-                peaks,
+                self.peaks_full,
                 name="Particle_top_100",
-                properties={"label": peaks_confidence},
+                properties={"label": self.peaks_confidence_full},
                 edge_color="black",
                 face_color="label",
                 face_colormap=colormap_for_display,
@@ -526,25 +606,29 @@ class AnnotationWidget(Container):
             visible=False,
         )
 
-        if self.patch_points is not None:
-            if self.patch_corner is not None:
-                corrected_points = correct_coord(
-                    self.patch_points, self.patch_corner, True
+        if self.is_prediction:
+            self._filter_particle_by_confidence()
+        else:
+            if self.patch_points is not None and self.logits_full is not None:
+                if self.patch_corner is not None:
+                    corrected_points = correct_coord(
+                        self.patch_points, self.patch_corner, True
+                    )
+                else:
+                    corrected_points = self.patch_points.copy()
+
+                self.create_point_layer(
+                    corrected_points,
+                    self.patch_label,
+                    name="Particle_BLR_is_Uncertain",
                 )
             else:
-                corrected_points = self.patch_points.copy()
-
-            self.create_point_layer(
-                corrected_points,
-                self.patch_label,
-                name="Particle_BLR_is_Uncertain",
-            )
-        else:
-            self.create_point_layer(
-                self.user_annotations[:, :3],
-                self.user_annotations[:, 3],
-                name="Initial_Particle_Selection",
-            )
+                self.create_point_layer(
+                    self.user_annotations[:, :3],
+                    self.user_annotations[:, 3],
+                    name="Initial_Particle_Selection",
+                )
+        self.napari_viewer.reset_view()
 
     def _show_active_learning_grid(self):
         """
@@ -558,30 +642,36 @@ class AnnotationWidget(Container):
             self.clean_viewer()
 
             (
-                crop_grid_img,
-                crop_grid_tm_scores,
-                grid_particle_points,
-                grid_particle_labels,
+                self.crop_grid_img_al,
+                self.crop_grid_tm_scores_al,
+                self.grid_particle_points_al,
+                self.grid_particle_labels_al,
             ) = build_gird_with_particles(
                 self.patch_points,
                 self.patch_label,
                 self.patch_corner,
                 self.img_process,
-                self.tm_scores if self.logits is None else self.logits[None, ...],
-                self.tm_idx if self.logits is None else 0,
+                (
+                    self.tm_scores
+                    if self.logits_patch is None
+                    else self.logits_patch[None, ...]
+                ),
+                self.tm_idx if self.logits_patch is None else 0,
                 int(self.box_size.value),
             )
 
-            self.create_image_layer(crop_grid_img, name="Particles_crops")
+            self.create_image_layer(self.crop_grid_img_al, name="Particles_crops")
             self.create_image_layer(
-                crop_grid_tm_scores,
+                self.crop_grid_tm_scores_al,
                 name="Particles_crops_scores",
                 transparency=True,
                 visibility=False,
-                range_=(0, 1) if self.logits is not None else None,
+                range_=(0, 1) if self.logits_patch is not None else None,
             )
             self.create_point_layer(
-                grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
+                self.grid_particle_points_al,
+                self.grid_particle_labels_al,
+                "Particle_BLR_is_Uncertain",
             )
         else:
             return
@@ -594,15 +684,7 @@ class AnnotationWidget(Container):
         self.all_grid = True
         self.grid_labeling_mode = True
 
-        try:
-            prediction_present = (
-                self.napari_viewer.layers.selection.active.name
-                == "Particle_Prediction_Filtered"
-            )
-        except AttributeError:
-            prediction_present = False
-
-        if prediction_present:
+        if self.is_prediction:
             particles_filter_predict = self.napari_viewer.layers[
                 "Particle_Prediction_Filtered"
             ].data
@@ -611,49 +693,58 @@ class AnnotationWidget(Container):
             ].properties["label"]
 
             (
-                crop_grid_img,
-                crop_grid_tm_scores,
-                grid_particle_points,
-                grid_particle_labels,
+                self.crop_grid_img,
+                self.crop_grid_tm_scores,
+                self.grid_particle_points,
+                self.grid_particle_labels,
             ) = build_gird_with_particles(
                 particles_filter_predict,
                 labels_filter_predict,
                 (0, 0, 0),
                 self.img_process,
-                self.tm_scores if self.logits is None else self.logits[None, ...],
-                self.tm_idx if self.logits is None else 0,
+                (
+                    self.tm_scores
+                    if self.logits_full is None
+                    else self.logits_full[None, ...]
+                ),
+                self.tm_idx if self.logits_full is None else 0,
                 int(self.box_size.value),
             )
         else:
             (
-                crop_grid_img,
-                crop_grid_tm_scores,
-                grid_particle_points,
-                grid_particle_labels,
+                self.crop_grid_img,
+                self.crop_grid_tm_scores,
+                self.grid_particle_points,
+                self.grid_particle_labels,
             ) = build_gird_with_particles(
                 self.user_annotations[:, :3],
                 self.user_annotations[:, 3],
                 (0, 0, 0),
                 self.img_process,
-                self.tm_scores if self.logits is None else self.logits[None, ...],
-                self.tm_idx if self.logits is None else 0,
+                (
+                    self.tm_scores
+                    if self.logits_full is None
+                    else self.logits_full[None, ...]
+                ),
+                self.tm_idx if self.logits_full is None else 0,
                 int(self.box_size.value),
             )
 
         self.clean_viewer()
-        self.create_image_layer(crop_grid_img, name="Particles_crops")
+        self.create_image_layer(self.crop_grid_img, name="Particles_crops")
         self.create_image_layer(
-            crop_grid_tm_scores,
+            self.crop_grid_tm_scores,
             name="Particles_crops_scores",
             transparency=True,
             visibility=False,
-            range_=(0, 1) if self.logits is not None else None,
+            range_=(0, 1) if self.logits_full is not None else None,
         )
-        if prediction_present:
+
+        if self.is_prediction:
             self.napari_viewer.add_points(
-                grid_particle_points,
+                self.grid_particle_points,
                 name="Particle_Prediction",
-                properties={"label": grid_particle_labels},
+                properties={"label": self.grid_particle_labels},
                 edge_color="black",
                 face_color="label",
                 face_colormap=colormap_for_display,
@@ -664,61 +755,10 @@ class AnnotationWidget(Container):
             )
         else:
             self.create_point_layer(
-                grid_particle_points, grid_particle_labels, "Particle_BLR_is_Uncertain"
+                self.grid_particle_points,
+                self.grid_particle_labels,
+                "Particle_BLR_is_Uncertain",
             )
-
-    # def _show_current_BLR_predictions(self):
-    #     """
-    #     !!Depreciated!!
-
-    #     Viewer function to run current BLR model and show predicted particles on
-    #     the current patch.
-    #     """
-    #     self.all_grid = False
-    #     self.grid_labeling_mode = False
-    #     self.clean_viewer()
-
-    #     patch_size = int(self.patch_size.value)
-    #     if self.model is not None:
-    #         patch, tm_score = draw_patch_and_scores(
-    #             self.img_process, self.tm_scores, self.patch_corner, patch_size
-    #         )
-    #         self.create_image_layer(patch, name="Tomogram_Patch")
-    #         self.create_image_layer(
-    #             tm_score[self.tm_idx], name="TM_Scores", transparency=True
-    #         )
-
-    #         # Features from current patch
-    #         self.shape = patch.shape
-    #         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
-    #         self.x = self.x.reshape(-1, self.x.shape[-1])
-
-    #         with torch.no_grad():
-    #             logits = self.model(self.x).reshape(*self.shape)
-    #             logits = logits.cpu().detach().numpy()
-
-    #         self.create_image_layer(logits, "Logits", True)
-
-    #         blr_model_state_points, blr_model_state_labels = find_peaks(
-    #             logits, 15, True
-    #         )
-
-    #         blr_model_state_points = blr_model_state_points[-25:, :]
-    #         blr_model_state_labels = blr_model_state_labels[-25:, :].flatten()
-    #         self.napari_viewer.add_points(
-    #             blr_model_state_points,
-    #             name="BLR_prediction",
-    #             properties={"label": blr_model_state_labels},
-    #             edge_color="black",
-    #             face_color="label",
-    #             face_colormap=colormap_for_display,
-    #             edge_width=0.1,
-    #             symbol="disc",
-    #             size=5,
-    #         )
-    #     else:
-    #         self._show_patch()
-    #         show_info("Warning No BLR model load!")
 
     """""" """""" """""" """""" """
     Viewer helper functionality
