@@ -357,7 +357,7 @@ class BinaryLogisticRegression:
         # -1 for scores with ICE
         self.weights = torch.zeros(n_features, device=self.device)
         if ice:
-            self.weights[-5:] = -1
+            self.weights[-5:] = -10
 
         # random initialization
         # self.weights = torch.randn(n_features, device=self.device)

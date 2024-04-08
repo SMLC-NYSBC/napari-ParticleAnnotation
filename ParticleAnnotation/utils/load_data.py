@@ -121,9 +121,12 @@ def load_tomogram():
     root = QFileDialog.getOpenFileNames(
         None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
     )[0]
-    image, px = load_mrc_file(mrc=root[0])
+    if len(root) > 0:
+        image, px = load_mrc_file(mrc=root[0])
 
-    return image, px, os.path.split(root[0])[1][:-4]
+        return image, px, os.path.split(root[0])[1][:-4]
+    else:
+        return None, None, None
 
 
 def load_template():
@@ -148,9 +151,9 @@ def load_template():
         root.append(ice_)
 
     template_list = root.copy()
-    template_list = [i.split('/')[-1][7:-3] for i in template_list]
+    template_list = [i.split("/")[-1][7:-3] for i in template_list]
 
-    if 'ice' in template_list:
+    if "ice" in template_list:
         template_list = template_list[:-1]
 
     if len(root) == 1:

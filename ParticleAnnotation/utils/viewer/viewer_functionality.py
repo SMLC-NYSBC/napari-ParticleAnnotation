@@ -43,6 +43,7 @@ def build_gird_with_particles(
     tm_scores: np.ndarray,
     tm_idx: int,
     box_size: int,
+    correct=True,
 ):
     # Particles are in self.patch_points, self.patch_label
     crop_particles = []
@@ -56,7 +57,11 @@ def build_gird_with_particles(
     gap_size = 2
 
     for i in patch_points:
-        i = correct_coord(np.array(i), patch_corner, True)
+        if correct:
+            i = correct_coord(np.array(i), patch_corner, True)
+        else:
+            i = np.array(i)
+
         i_min = np.max((i - patch_size, [0, 0, 0]), axis=0).astype(np.int16)
         i_max = np.max((i + patch_size, [0, 0, 0]), axis=0).astype(np.int16)
 
@@ -85,27 +90,27 @@ def build_gird_with_particles(
 
     if len(patch_points) < (grid + 1):
         crop_grid_img = np.zeros(
-            (crop_size, crop_size, n_x * crop_size + n_x * gap_size),
+            (crop_size, crop_size, n_x * crop_size + (n_x - 1) * gap_size),
             dtype=img_process.dtype,
         )
         crop_grid_tm_scores = np.zeros(
-            (crop_size, crop_size, n_x * crop_size + n_x * gap_size),
+            (crop_size, crop_size, n_x * crop_size + (n_x - 1) * gap_size),
             dtype=tm_scores.dtype,
         )
     else:
         crop_grid_img = np.zeros(
             (
                 crop_size,
-                n_y * crop_size + n_y * gap_size,
-                n_x * crop_size + n_x * gap_size,
+                n_y * crop_size + (n_y - 1) * gap_size,
+                n_x * crop_size + (n_x - 1) * gap_size,
             ),
             dtype=img_process.dtype,
         )
         crop_grid_tm_scores = np.zeros(
             (
                 crop_size,
-                n_y * crop_size + n_y * gap_size,
-                n_x * crop_size + n_x * gap_size,
+                n_y * crop_size + (n_y - 1) * gap_size,
+                n_x * crop_size + (n_x - 1) * gap_size,
             ),
             dtype=tm_scores.dtype,
         )
