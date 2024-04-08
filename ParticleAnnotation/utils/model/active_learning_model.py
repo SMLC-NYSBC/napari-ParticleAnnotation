@@ -351,11 +351,14 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
 
 
 class BinaryLogisticRegression:
-    def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
+    def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0, ice=True) -> None:
         self.device = get_device()
 
         # -1 for scores with ICE
         self.weights = torch.zeros(n_features, device=self.device)
+        if ice:
+            self.weights[-5:] = -1
+
         # random initialization
         # self.weights = torch.randn(n_features, device=self.device)
         self.bias = torch.zeros(1, device=self.device)
@@ -382,6 +385,7 @@ class BinaryLogisticRegression:
             )
         else:
             logits_all = torch.matmul(all_x, self.weights) + self.bias
+
             weights = torch.ones_like(all_y, device=self.device)
 
             is_labeled = ~torch.isnan(all_y)

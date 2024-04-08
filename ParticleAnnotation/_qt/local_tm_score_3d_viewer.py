@@ -3,10 +3,12 @@ from magicgui.widgets import (
     Container,
     PushButton,
     LineEdit,
+    ComboBox,
     FloatSlider,
     Label,
     VBox,
     HBox,
+    ProgressBar,
 )
 from napari import Viewer
 from napari.utils.notifications import show_info
@@ -51,6 +53,7 @@ class AnnotationWidget(Container):
         # Global
         self.image_name = ""
         self.filename = None
+        self.tm_list = None
         self.img_process, self.patch_corner = None, None
 
         # Particles selections
@@ -65,7 +68,7 @@ class AnnotationWidget(Container):
 
         # BLR model
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
-        self.init = False
+        self.init, self.AL, self.Predict = False, False, False
         self.AL_weights = None
 
         # Viewer
@@ -111,7 +114,20 @@ class AnnotationWidget(Container):
         self.box_size = LineEdit(name="Model Mask Size [px]", value="10")
         self.filter_size = LineEdit(name="Particle size [px]", value="15")
         self.patch_size = LineEdit(name="Region size", value="128")
-        self.pdb_id = LineEdit(name="PDB", value="7A4M")
+        self.pdb_id = ComboBox(
+            name="PDB ID:",
+            value='7A4M',
+            choices=(
+                "1FA2",
+                "1PMA",
+                "6N4V",
+                "6QS9",
+                "6R7M",
+                "7A4M",
+                "7QTQ",
+            ),
+        )
+        self.pdb_id.changed.connect(self._pdb_id_update)
 
         # ---------------- Import & Export modules ----------------
         self.export_particles = PushButton(name="Save particles")
@@ -224,9 +240,9 @@ class AnnotationWidget(Container):
         Starting function - for the plugin. Function is allowing user to label
         particles of interest, and store them.
         """
+        self.init = True
         self.all_grid = False
         self.grid_labeling_mode = False
-        filter_size = int(self.filter_size.value)
 
         # If image is not loaded, ask user to load it
         if self.napari_viewer.layers.selection.active is None:
@@ -247,37 +263,16 @@ class AnnotationWidget(Container):
         # add fantom data which will push the scores down. Fore each label negative array
         # ToDo 2: randome feature expansion with furier for all scores
         # Option Gaussian model
-        self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
-        if self.tm_scores is None:
-            show_info(f"Please select template score for {self.pdb_id.value}")
-            return
-
-        # Restart user annotation storage
-        self.user_annotations = np.zeros((0, 4))
-
-        self.create_image_layer(
-            self.tm_scores[self.tm_idx], name="TM_Scores", transparency=True
-        )
-
-        peaks, _ = find_peaks(self.tm_scores[self.tm_idx], filter_size, with_score=True)
-
-        peaks = np.concatenate((peaks[:10, :], peaks[-10:, :]))
-        peaks = np.hstack((peaks, np.zeros((20, 1))))
-        peaks[10:, 3] = 1
-        self.user_annotations = peaks
-        self.patch_points = peaks[:, :3]
-        self.patch_label = peaks[:, 3]
-
-        # Pre-select top 10 and lowest 10 as particle proposals
-        self.create_point_layer(
-            peaks[:, :3], peaks[:, 3], name="Chosen_Particles_of_Interest"
-        )
-        self._show_particle_grid()
-        self.activate_click = True
+        self.tm_scores, self.tm_list = load_template()
+        self._pdb_id_update()
 
     def _train_BLR_on_patch(
         self,
     ):
+        self.init = False
+        self.AL = True
+
+        self._reset_views()
         self.all_grid = False
         self.grid_labeling_mode = False
 
@@ -326,10 +321,14 @@ class AnnotationWidget(Container):
                 points[:, 2],
             )
         ).T
+
         self.y = label_points_to_mask(data, self.shape, box_size)
         self.count = (~torch.isnan(self.y)).float()
 
-        data = np.hstack((self.user_annotations[:, 3][:, None], self.user_annotations[:, :3]))
+        data = np.hstack(
+            (self.user_annotations[:, 3][:, None], self.user_annotations[:, :3])
+        )
+
         self.all_labels = stack_all_labels(self.tm_scores, data, box_size)
 
         if len(self.all_labels[0][0]) > 0:
@@ -357,7 +356,9 @@ class AnnotationWidget(Container):
                 .float()
                 .permute(1, 0)
             )
-            all_labels = torch.from_numpy(np.concatenate((all_label_pos, all_label_neg))).float()
+            all_labels = torch.from_numpy(
+                np.concatenate((all_label_pos, all_label_neg))
+            ).float()
 
         # Re-trained BLR model
         self.model.fit(
@@ -366,6 +367,7 @@ class AnnotationWidget(Container):
             weights=self.count.ravel(),
             all_labels=[all_scores, all_labels],
         )
+        print(self.model.weights, self.model.bias)
 
         """Draw new patch and find new particle for user to label"""
         # Select patch
@@ -399,12 +401,14 @@ class AnnotationWidget(Container):
             (stored_points >= 0) & (stored_points <= patch_size), axis=1
         )
 
-        self._reset_views()
         self._show_active_learning_grid()
 
     def _predict(
         self,
     ):
+        self.AL = False
+        self.Predict = True
+
         self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
@@ -459,8 +463,49 @@ class AnnotationWidget(Container):
     """""" """""" """""" """
     Viewer functionality
     """ """""" """""" """"""
+    def _pdb_id_update(self):
+        try:
+            self.tm_idx = [id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value][0]
+        except:
+            return
+
+        if self.init:
+            filter_size = int(self.filter_size.value)
+            # Restart user annotation storage
+            self.user_annotations = np.zeros((0, 4))
+
+            peaks, _ = find_peaks(
+                self.tm_scores[self.tm_idx], filter_size, with_score=True
+            )
+
+            peaks = np.concatenate((peaks[:10, :], peaks[-10:, :]))
+            peaks = np.hstack((peaks, np.zeros((20, 1))))
+            peaks[10:, 3] = 1
+
+            self.user_annotations = peaks
+            self.patch_points = peaks[:, :3]
+            self.patch_label = peaks[:, 3]
+
+            if self.last_view is not None:
+                if self.last_view == 'Tomo':
+                    self._show_tomogram()
+            elif self.last_view == 'AL':
+                self._show_active_learning_grid()
+            else:
+                self._show_particle_grid()
+            self.activate_click = True
+        elif self.AL or self.Predict:
+            if self.last_view is not None:
+                if self.last_view == 'Tomo':
+                    self._show_tomogram()
+            elif self.last_view == 'AL':
+                self._show_active_learning_grid()
+            else:
+                self._show_particle_grid()
+            self.activate_click = True
 
     def _reset_views(self):
+        self.last_view = None
         self.peaks_full = None
         self.peaks_confidence_full = None
         self.logits_full = None
@@ -497,59 +542,60 @@ class AnnotationWidget(Container):
         """
         Viewer function to display a tomogram and all particles in it.
         """
+        self.last_view = 'Tomo'
         self.all_grid = False
         self.grid_labeling_mode = False
         self.clean_viewer()
 
         patch_size = int(self.patch_size.value)
 
-        if self.logits_full is None:
-            if self.patch_corner is not None:
-                all_vertices = np.array(
+        if self.patch_corner is not None:
+            all_vertices = np.array(
+                [
                     [
-                        [
-                            self.patch_corner[0],
-                            self.patch_corner[1],
-                            self.patch_corner[2],
-                        ],
-                        [
-                            self.patch_corner[0],
-                            self.patch_corner[1],
-                            self.patch_corner[2] + patch_size,
-                        ],
-                        [
-                            self.patch_corner[0],
-                            self.patch_corner[1] + patch_size,
-                            self.patch_corner[2],
-                        ],
-                        [
-                            self.patch_corner[0],
-                            self.patch_corner[1] + patch_size,
-                            self.patch_corner[2] + patch_size,
-                        ],
-                        [
-                            self.patch_corner[0] + patch_size,
-                            self.patch_corner[1],
-                            self.patch_corner[2],
-                        ],
-                        [
-                            self.patch_corner[0] + patch_size,
-                            self.patch_corner[1],
-                            self.patch_corner[2] + patch_size,
-                        ],
-                        [
-                            self.patch_corner[0] + patch_size,
-                            self.patch_corner[1] + patch_size,
-                            self.patch_corner[2],
-                        ],
-                        [
-                            self.patch_corner[0] + patch_size,
-                            self.patch_corner[1] + patch_size,
-                            self.patch_corner[2] + patch_size,
-                        ],
-                    ]
-                ).squeeze()
+                        self.patch_corner[0],
+                        self.patch_corner[1],
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0],
+                        self.patch_corner[1],
+                        self.patch_corner[2] + patch_size,
+                    ],
+                    [
+                        self.patch_corner[0],
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0],
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2] + patch_size,
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1],
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1],
+                        self.patch_corner[2] + patch_size,
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2],
+                    ],
+                    [
+                        self.patch_corner[0] + patch_size,
+                        self.patch_corner[1] + patch_size,
+                        self.patch_corner[2] + patch_size,
+                    ],
+                ]
+            ).squeeze()
 
+        if self.logits_full is None:
             if self.model is not None:
                 patch_size = int(self.patch_size.value)
 
@@ -575,6 +621,7 @@ class AnnotationWidget(Container):
             transparency=True,
             visibility=False,
         )
+
         if self.logits_full is not None:
             self.create_image_layer(
                 self.logits_full, name="Sigmoid", transparency=True, visibility=False
@@ -636,11 +683,13 @@ class AnnotationWidget(Container):
         self.user_annotation and particle_layer. Particles are shown as a grid
         with particle in the center.
         """
+        self.last_view = 'AL'
         if self.patch_corner is not None:
             self.all_grid = False
             self.grid_labeling_mode = True
             self.clean_viewer()
 
+            print(self.logits_patch)
             (
                 self.crop_grid_img_al,
                 self.crop_grid_tm_scores_al,
@@ -661,13 +710,23 @@ class AnnotationWidget(Container):
             )
 
             self.create_image_layer(self.crop_grid_img_al, name="Particles_crops")
-            self.create_image_layer(
-                self.crop_grid_tm_scores_al,
-                name="Particles_crops_scores",
-                transparency=True,
-                visibility=False,
-                range_=(0, 1) if self.logits_patch is not None else None,
-            )
+            if self.logits_patch is None:
+                self.create_image_layer(
+                    self.crop_grid_tm_scores_al,
+                    name="Particles_crops_scores",
+                    transparency=True,
+                    visibility=False,
+                    range_=None,
+                )
+            else:
+                self.create_image_layer(
+                    self.crop_grid_tm_scores_al,
+                    name="Particles_crops_sigmoid",
+                    transparency=True,
+                    visibility=False,
+                    range_=(0, 1),
+                )
+
             self.create_point_layer(
                 self.grid_particle_points_al,
                 self.grid_particle_labels_al,
@@ -681,6 +740,7 @@ class AnnotationWidget(Container):
         Viewer function to show all stored particles on self.user_annotation
         and particle_layer. Particles are shown as a grid with particle in the center.
         """
+        self.last_view = 'Grid'
         self.all_grid = True
         self.grid_labeling_mode = True
 
