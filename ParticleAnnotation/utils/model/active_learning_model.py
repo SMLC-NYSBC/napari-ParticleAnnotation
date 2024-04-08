@@ -4,13 +4,13 @@ from scipy.optimize import minimize
 import numpy as np
 from topaz.model.factory import load_model
 import torch
+import torch.nn as nn
 from tqdm import tqdm
 
 from ParticleAnnotation.utils.model.utils import (
     find_peaks,
     get_device,
     divide_grid,
-    correct_coord,
 )
 import io
 import requests
@@ -81,9 +81,12 @@ def predict_3d_with_AL(
                 x_start : x_start + offset,
             ] = logits
 
+    full_logits = torch.sigmoid(torch.from_numpy(full_logits)).detach().numpy()
+
     # Extract peaks
-    max_filter = maximum_filter(full_logits.astype(np.float32), 
-                                size=maximum_filter_size)
+    max_filter = maximum_filter(
+        full_logits.astype(np.float32), size=maximum_filter_size
+    )
     peaks = full_logits - max_filter
     peaks = np.where(peaks == 0)
     peaks = np.stack(peaks, axis=-1)
@@ -172,8 +175,73 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
         y[i, j] = label
 
 
+def stack_all_labels(scores, points, size):
+    label_radius = size
+    r = label_radius
+    k = r * 2
+
+    if k % 2 == 0:
+        if label_radius % 2 == 0:
+            k = k + 1
+    else:
+        if label_radius % 2 == 0:
+            k = k + 1
+
+    center = (k // 2, k // 2, k // 2)
+    grid = np.meshgrid(np.arange(k), np.arange(k), np.arange(k), indexing="ij")
+
+    grid = np.stack(grid, axis=-1)
+    d = np.sqrt(np.sum((grid - center) ** 2, axis=-1))
+
+    start = center - np.repeat(label_radius // 2, 3)
+    end = start + label_radius
+
+    mask = np.zeros_like(d, dtype=bool)
+    mask[start[0] : end[0], start[1] : end[1], start[2] : end[2]] = True
+
+    k = mask.shape[0]
+
+    z_list_pos, z_list_neg = [[]], [[]]
+    i_list_pos, i_list_neg = [[]], [[]]
+    j_list_pos, j_list_neg = [[]], [[]]
+    for x in points:
+        label, cz, ci, cj = x
+        dz, di, dj = np.where(mask)
+        z = cz + dz - k // 2
+        i = ci + di - k // 2
+        j = cj + dj - k // 2
+
+        keep = (
+            (0 <= z)
+            & (z < scores.shape[1])
+            & (0 <= i)
+            & (i < scores.shape[2])
+            & (0 <= j)
+            & (j < scores.shape[3])
+        )
+
+        if label == 1:
+            z_list_pos.append(z[keep])
+            i_list_pos.append(i[keep])
+            j_list_pos.append(j[keep])
+        else:
+            z_list_neg.append(z[keep])
+            i_list_neg.append(i[keep])
+            j_list_neg.append(j[keep])
+
+    z_list_pos = np.concatenate(z_list_pos).astype(np.int16)
+    i_list_pos = np.concatenate(i_list_pos).astype(np.int16)
+    j_list_pos = np.concatenate(j_list_pos).astype(np.int16)
+
+    z_list_neg = np.concatenate(z_list_neg).astype(np.int16)
+    i_list_neg = np.concatenate(i_list_neg).astype(np.int16)
+    j_list_neg = np.concatenate(j_list_neg).astype(np.int16)
+
+    return (z_list_pos, z_list_neg), (i_list_pos, i_list_neg), (j_list_pos, j_list_neg)
+
+
 def label_points_to_mask(points, shape, size):
-    y = torch.zeros(*shape) + np.nan
+    y = torch.zeros(*shape) + torch.nan
 
     if len(shape) == 3:
         if len(points) > 0:
@@ -283,9 +351,14 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
 
 
 class BinaryLogisticRegression:
-    def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0) -> None:
+    def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0, ice=True) -> None:
         self.device = get_device()
+
+        # -1 for scores with ICE
         self.weights = torch.zeros(n_features, device=self.device)
+        if ice:
+            self.weights[-5:] = -10
+
         # random initialization
         # self.weights = torch.randn(n_features, device=self.device)
         self.bias = torch.zeros(1, device=self.device)
@@ -295,21 +368,41 @@ class BinaryLogisticRegression:
         self.pi_logit = np.log(pi) - np.log1p(-pi)
         self.pi_weight = pi_weight
 
-    def loss(self, x, y, weights=None):
+    def loss(self, x, y, weights=None, all_x=None, all_y=None):
         logits = torch.matmul(x, self.weights) + self.bias
 
-        if weights is None:
-            weights = torch.ones_like(y, device=self.device)
+        if all_x is None and all_y is None:
+            if weights is None:
+                weights = torch.ones_like(y, device=self.device)
 
-        # binary cross entropy for labeled y's
-        is_labeled = ~torch.isnan(y)
-        weights = weights[is_labeled]
-        n = torch.sum(weights)
-        loss_binary = F.binary_cross_entropy_with_logits(
-            logits[is_labeled], y[is_labeled], reduction="sum", weight=weights
-        )
+            # binary cross entropy for labeled y's
+            is_labeled = ~torch.isnan(y)
+            weights = weights[is_labeled]
+            n = torch.sum(weights)
+
+            loss_binary = F.binary_cross_entropy_with_logits(
+                logits[is_labeled], y[is_labeled], reduction="sum", weight=weights
+            )
+        else:
+            logits_all = torch.matmul(all_x, self.weights) + self.bias
+
+            weights = torch.ones_like(all_y, device=self.device)
+
+            is_labeled = ~torch.isnan(all_y)
+            weights = weights[is_labeled]
+            logits_all = logits_all[is_labeled]
+            all_y = all_y[is_labeled]
+
+            n = torch.sum(weights)
+            loss_binary = F.binary_cross_entropy_with_logits(
+                logits_all, all_y, reduction="sum", weight=weights
+            )
+
         # L2 regularizer on the weights
         loss_reg_l2 = self.l2 * torch.sum(self.weights**2) / 2
+
+        # Penalty for negative weights on ice scores
+        # negative_weights_penalty = torch.sum(torch.relu(-self.weights[-1]))
 
         # Penalty on the expected pi
         log_p = torch.logsumexp(F.logsigmoid(logits), dim=0) - np.log(len(logits))
@@ -318,6 +411,7 @@ class BinaryLogisticRegression:
         loss_pi = self.pi_weight * (logit_expect - self.pi_logit) ** 2
 
         loss = (loss_binary + loss_reg_l2 + loss_pi) / n
+        # loss = (loss_binary + loss_reg_l2 + loss_pi + negative_weights_penalty) / n
 
         return loss
 
@@ -326,12 +420,16 @@ class BinaryLogisticRegression:
             x = torch.from_numpy(x).to(self.device)
         else:
             x = x.to(self.device)
+
+        # x = torch.cat([torch.sin(x), torch.cos(x)], dim=1)
         return torch.matmul(x, self.weights) + self.bias
 
     def __call__(self, x):
         return self.predict(x)
 
-    def fit(self, x=None, y=None, weights=None, pre_train=None):
+    def fit(
+        self, x=None, y=None, weights=None, pre_train=None, all_labels: list = None
+    ):
         if pre_train is not None:
             self.weights = pre_train[0]
             self.weights = self.weights.to(self.device)
@@ -339,6 +437,12 @@ class BinaryLogisticRegression:
             self.bias = self.bias.to(self.device)
         else:
             x, y = x.to(self.device), y.to(self.device)
+            if all_labels is not None:
+                x_all, y_all = all_labels[0].to(self.device), all_labels[1].to(
+                    self.device
+                )
+            else:
+                x_all, y_all = None, None
 
             if weights is not None:
                 weights = weights.to(self.device)
@@ -358,7 +462,7 @@ class BinaryLogisticRegression:
                 model.weights = w
                 model.bias = b
 
-                loss = model.loss(x, y, weights=weights)
+                loss = model.loss(x, y, weights=weights, all_x=x_all, all_y=y_all)
                 loss.backward()
 
                 grad = torch.concat([w.grad, b.grad]).cpu().detach().numpy()
@@ -367,7 +471,6 @@ class BinaryLogisticRegression:
                 return loss, grad
 
             result = minimize(loss_fn, theta0, jac=True)
-            self.result = result
 
             theta = result.x
             w = torch.from_numpy(theta[:n_features]).float()

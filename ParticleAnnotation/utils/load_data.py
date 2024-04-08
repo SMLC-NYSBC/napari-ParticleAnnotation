@@ -121,12 +121,15 @@ def load_tomogram():
     root = QFileDialog.getOpenFileNames(
         None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
     )[0]
-    image, px = load_mrc_file(mrc=root[0])
+    if len(root) > 0:
+        image, px = load_mrc_file(mrc=root[0])
 
-    return image, px, os.path.split(root[0])[1][:-4]
+        return image, px, os.path.split(root[0])[1][:-4]
+    else:
+        return None, None, None
 
 
-def load_template(template: str = None):
+def load_template():
     """
     Load the template scores from disk.
 
@@ -140,16 +143,28 @@ def load_template(template: str = None):
     root = QFileDialog.getOpenFileNames(
         None, "Select a template score files", filter="Pytorch(*.pt)"
     )[0]
+    ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
+
+    if sum([True if i.endswith("scores_ice.pt") else False for i in root]) > 0:
+        ice_ = root[np.where(ice_)[0][0]]
+        root.remove(ice_)
+        root.append(ice_)
+
+    template_list = root.copy()
+    template_list = [i.split("/")[-1][7:-3] for i in template_list]
+
+    if "ice" in template_list:
+        template_list = template_list[:-1]
 
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
-        template_idx = 0
     else:
         template_score = []
-        template_idx = [id_ for id_, i in enumerate(root) if i[:-3].endswith(template)][0]
 
         for i in root:
-            template_score.append(torch.load(i, map_location=device_).type(torch.float16))
+            template_score.append(
+                torch.load(i, map_location=device_).type(torch.float16)
+            )
     template_score = torch.cat(template_score, 0)
 
     if device_ == "cpu":
@@ -172,7 +187,7 @@ def load_template(template: str = None):
         )
     print("Loaded template scores")
 
-    return template_score, template_idx
+    return template_score, template_list
 
 
 def load_image(path, aws=False):

@@ -4,6 +4,7 @@ qtpy>=2.3.1
 superqt>=0.4.1
 magicgui>=0.7.2
 vispy>=0.11.0
+napari-bbox>=0.0.7
 
 # Image loading and processing
 numpy>=1.23.5
