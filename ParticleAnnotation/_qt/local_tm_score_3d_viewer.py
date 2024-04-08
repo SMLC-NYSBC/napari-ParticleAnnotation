@@ -531,9 +531,10 @@ class AnnotationWidget(Container):
             peaks, _ = find_peaks(
                 self.tm_scores[self.tm_idx], filter_size, with_score=True
             )
+            print(peaks.shape)
 
-            peaks = np.concatenate((peaks[-30:, :]))
-            peaks = np.hstack((peaks, np.zeros((20, 1))))
+            peaks = peaks[-30:, :]
+            peaks = np.hstack((peaks, np.zeros((30, 1))))
             peaks[:, 3] = 2
 
             self.user_annotations = peaks
