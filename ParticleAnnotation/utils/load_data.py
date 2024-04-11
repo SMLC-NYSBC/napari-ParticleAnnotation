@@ -55,7 +55,6 @@ def load_coordinates(path):
     """
     if path.endswith(".csv"):
         data = np.genfromtxt(path, delimiter=",", dtype=float)
-
     elif path.endswith(".star"):
         # Implement reading of .star file
         data = starfile.read(path)
@@ -64,19 +63,15 @@ def load_coordinates(path):
         z = data["rlnCoordinateZ"]
         data = np.column_stack((x, y, z))
         return None, None
-
     elif path.endswith(".txt"):
         data = np.genfromtxt(path, delimiter=",", dtype=float)
-
     elif path.endswith(".npy"):
         data = np.load(path)
-
     elif path.endswith(".tbl"):
         # Implement reading of .tbl file
         data = np.genfromtxt(path, delimiter=",", dtype=float)
         # this will have nans where there are strings
         return None, None
-
     else:
         print("Could not load coordinates from file")
         return None, None
@@ -150,7 +145,7 @@ def load_template():
         root.remove(ice_)
         root.append(ice_)
 
-    template_list = root.copy()
+    template_list = []
     template_list = [i.split("/")[-1][7:-3] for i in template_list]
 
     if "ice" in template_list:
@@ -162,9 +157,16 @@ def load_template():
         template_score = []
 
         for i in root:
-            template_score.append(
-                torch.load(i, map_location=device_).type(torch.float16)
-            )
+            df = torch.load(i, map_location=device_).type(torch.float16)
+            name = i.split("/")[-1][:-3]
+
+            if i.endswith('tardis_6QS9.pt'):
+                template_score.append(df[None, :])
+                template_list.append(name)
+            else:
+                template_score.append(df)
+                template_list.append(name[7:])
+
     template_score = torch.cat(template_score, 0)
 
     if device_ == "cpu":

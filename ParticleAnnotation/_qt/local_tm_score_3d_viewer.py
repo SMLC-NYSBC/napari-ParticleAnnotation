@@ -8,7 +8,6 @@ from magicgui.widgets import (
     Label,
     VBox,
     HBox,
-    ProgressBar,
 )
 from napari import Viewer
 from napari.utils.notifications import show_info
@@ -41,6 +40,7 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
+from scipy.ndimage import gaussian_filter
 
 colormap_for_display = "Spectral"
 
@@ -111,9 +111,9 @@ class AnnotationWidget(Container):
         self.click_add_point_callback = None
 
         spacer_1 = Label(value="------------------- Options --------------------")
-        self.box_size = LineEdit(name="Model Mask Size [px]", value="10")
-        self.filter_size = LineEdit(name="Particle size [px]", value="15")
-        self.patch_size = LineEdit(name="Region size", value="128")
+        self.box_size = LineEdit(name="Model Mask Size [px]", value=10)
+        self.filter_size = LineEdit(name="Particle size [px]", value=15)
+        self.patch_size = LineEdit(name="Region size", value=128)
         self.pdb_id = ComboBox(
             name="PDB ID:",
             value="7A4M",
@@ -128,6 +128,8 @@ class AnnotationWidget(Container):
             ),
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
+        self.pi = LineEdit(name="Ratio of particles [%]", value=0.01)
+        self.gauss = LineEdit(name="Gaussian filter size", value=1)
 
         # ---------------- Import & Export modules ----------------
         self.export_particles = PushButton(name="Save particles")
@@ -185,7 +187,7 @@ class AnnotationWidget(Container):
 
         widget = VBox(
             widgets=(
-                spacer_1,
+                HBox(widgets=(spacer_1,)),
                 HBox(
                     widgets=(
                         self.box_size,
@@ -198,17 +200,19 @@ class AnnotationWidget(Container):
                         self.patch_size,
                     )
                 ),
-                spacer_2,
-                HBox(
+                VBox(
                     widgets=(
+                        self.pi,
+                        self.gauss,
+                        spacer_2,
                         self.select_particle_for_patches,
                         self.train_BLR_on_patch,
+                        spacer_4,
+                        self.predict,
+                        self.filter_particle_by_confidence,
+                        spacer_3,
                     )
                 ),
-                spacer_4,
-                HBox(widgets=(self.predict,)),
-                HBox(widgets=(self.filter_particle_by_confidence,)),
-                spacer_3,
                 HBox(
                     widgets=(
                         self.show_tomogram,
@@ -216,8 +220,12 @@ class AnnotationWidget(Container):
                         self.show_particle_grid,
                     )
                 ),
-                spacer_5,
-                self.import_particles,
+                VBox(
+                    widgets=(
+                        spacer_5,
+                        self.import_particles,
+                    )
+                ),
                 HBox(
                     widgets=(
                         self.export_particles_all,
@@ -236,8 +244,12 @@ class AnnotationWidget(Container):
                         self.load_model,
                     )
                 ),
-                spacer_6,
-                self.reset_session,
+                VBox(
+                    widgets=(
+                        spacer_6,
+                        self.reset_session,
+                    )
+                ),
             )
         )
 
@@ -271,10 +283,9 @@ class AnnotationWidget(Container):
 
                 self.create_image_layer(img, name=name, transparency=False)
 
-
-            self.image_name = (
-                self.filename
-            ) = self.napari_viewer.layers.selection.active.name
+            self.image_name = self.filename = (
+                self.napari_viewer.layers.selection.active.name
+            )
             img = self.napari_viewer.layers[self.image_name]
             self.img_process = img.data
             self.img_process, _ = normalize(
@@ -287,6 +298,7 @@ class AnnotationWidget(Container):
             # ToDo 2: randome feature expansion with furier for all scores
             # Option Gaussian model
             self.tm_scores, self.tm_list = load_template()
+
             self._pdb_id_update()
         else:
             return
@@ -317,12 +329,15 @@ class AnnotationWidget(Container):
         # Initialized y (empty label mask) and count
         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
         self.x = self.x.reshape(-1, self.x.shape[-1])
-        self.shape = patch.shape
+        self.shape = tm_score.shape[1:]
 
         # Take all particle crops for the training, not just a patch
         if self.model is None:
             self.model = BinaryLogisticRegression(
-                n_features=self.x.shape[0], l2=1.0, pi=0.01, pi_weight=1000
+                n_features=self.x.shape[0],
+                l2=1.0,
+                pi=float(self.pi.value),
+                pi_weight=1000,
             )
 
         """Re-trained BLR model on user corrected particles"""
@@ -331,9 +346,7 @@ class AnnotationWidget(Container):
         point_indexes = np.all(
             (stored_points >= 0) & (stored_points <= patch_size), axis=1
         )
-        points = correct_coord(
-            self.user_annotations[point_indexes, :3], self.patch_corner, False
-        )
+        points = self.user_annotations[point_indexes, :3]
         labels = self.user_annotations[point_indexes, 3]
 
         # Update BLR inputs
@@ -353,6 +366,7 @@ class AnnotationWidget(Container):
             (self.user_annotations[:, 3][:, None], self.user_annotations[:, :3])
         )
 
+        # Data for all labels
         self.all_labels = stack_all_labels(self.tm_scores, data, box_size)
 
         if len(self.all_labels[0][0]) > 0:
@@ -373,23 +387,41 @@ class AnnotationWidget(Container):
         all_label_neg = np.zeros(all_scores_neg.shape[1])
 
         if all_scores_pos.shape[1] == 0 and all_scores_neg.shape[1] == 0:
-            all_scores, all_labels = None, None
+            x_filter, y_filter = None, None
         else:
-            all_scores = (
+            x_filter = (
                 torch.from_numpy(np.hstack((all_scores_pos, all_scores_neg)))
                 .float()
                 .permute(1, 0)
             )
-            all_labels = torch.from_numpy(
+            y_filter = torch.from_numpy(
                 np.concatenate((all_label_pos, all_label_neg))
             ).float()
 
         # Re-trained BLR model
+        # Fit entire tomograms
+        index_ = self.tm_idx
+        x_onehot = torch.zeros(
+            (x_filter.size(1), x_filter.size(1)),
+            dtype=x_filter.dtype,
+            device=x_filter.device,
+        )
+
+        y_onehot = torch.zeros(
+            x_filter.size(1),
+            dtype=y_filter.dtype,
+            device=y_filter.device,
+            )
+        y_onehot[index_] = 1
+
+        x_filter = torch.cat((x_filter, x_onehot), dim=0)
+        y_filter = torch.cat((y_filter, y_onehot), dim=0)
+
         self.model.fit(
             self.x,
             self.y.ravel(),
             weights=self.count.ravel(),
-            all_labels=[all_scores, all_labels],
+            all_labels=[x_filter, y_filter],
         )
         print(self.model.weights, self.model.bias)
 
@@ -517,9 +549,21 @@ class AnnotationWidget(Container):
 
     def _pdb_id_update(self):
         try:
-            self.tm_idx = [
-                id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value
-            ][0]
+            if self.pdb_id.value == '6QS9':
+                tardis_ = [1 if i.startswith('tardis') else 0 for i in self.tm_list]
+
+                if sum(tardis_) > 0:
+                    self.tm_idx = [
+                        id_ for id_, i in enumerate(self.tm_list) if i == 'tardis_'+self.pdb_id.value
+                    ][0]
+                else:
+                    self.tm_idx = [
+                        id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value
+                    ][0]
+            else:
+                self.tm_idx = [
+                    id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value
+                ][0]
         except:
             return
 
@@ -531,8 +575,6 @@ class AnnotationWidget(Container):
             peaks, _ = find_peaks(
                 self.tm_scores[self.tm_idx], filter_size, with_score=True
             )
-            print(peaks.shape)
-
             peaks = peaks[-30:, :]
             peaks = np.hstack((peaks, np.zeros((30, 1))))
             peaks[:, 3] = 2
@@ -548,6 +590,7 @@ class AnnotationWidget(Container):
                 self._show_active_learning_grid()
             else:
                 self._show_particle_grid()
+
             self.activate_click = True
         elif self.AL or self.Predict:
             if self.last_view is not None:
@@ -557,6 +600,7 @@ class AnnotationWidget(Container):
                 self._show_active_learning_grid()
             else:
                 self._show_particle_grid()
+
             self.activate_click = True
 
     def _reset_views(self):
@@ -661,6 +705,7 @@ class AnnotationWidget(Container):
                     model=self.model,
                     offset=patch_size,
                     maximum_filter_size=int(self.filter_size.value),
+                    gauss_filter=float(self.gauss.value),
                 )
                 order = np.argsort(peaks_confidence)
                 peaks = peaks[order]
@@ -678,9 +723,17 @@ class AnnotationWidget(Container):
             visibility=False,
         )
 
+        try:
+            self.create_image_layer(
+                self.y.detach().numpy(), name="y", transparency=True, visibility=False
+            )
+        except:
+            pass
+
         if self.logits_full is not None:
             self.create_image_layer(
-                self.logits_full, name="Sigmoid", transparency=True, visibility=False
+                self.logits_full,
+                name="Sigmoid", transparency=True, visibility=False
             )
 
         if self.patch_corner is not None:
@@ -710,6 +763,19 @@ class AnnotationWidget(Container):
         )
 
         if self.is_prediction:
+            self.napari_viewer.add_points(
+                self.peaks_full,
+                name="Particle_Prediction",
+                properties={"label": self.peaks_confidence_full},
+                edge_color="black",
+                face_color="label",
+                face_colormap=colormap_for_display,
+                face_contrast_limits=(0, 1),
+                edge_width=0.1,
+                symbol="disc",
+                size=5,
+            )
+
             self._filter_particle_by_confidence()
         else:
             if self.patch_points is not None and self.logits_full is not None:
@@ -762,7 +828,7 @@ class AnnotationWidget(Container):
                 ),
                 self.tm_idx if self.logits_patch is None else 0,
                 int(self.box_size.value),
-                True if self.logits_patch is None else False
+                correct=True if self.logits_patch is None else False,
             )
 
             self.create_image_layer(self.crop_grid_img_al, name="Particles_crops")
@@ -825,6 +891,7 @@ class AnnotationWidget(Container):
                 ),
                 self.tm_idx if self.logits_full is None else 0,
                 int(self.box_size.value),
+                correct=False,
             )
         else:
             (
@@ -844,6 +911,7 @@ class AnnotationWidget(Container):
                 ),
                 self.tm_idx if self.logits_full is None else 0,
                 int(self.box_size.value),
+                correct=False,
             )
 
         self.clean_viewer()
@@ -1201,7 +1269,10 @@ class AnnotationWidget(Container):
             self.model.fit(pre_train=self.AL_weights)
         else:
             self.model = BinaryLogisticRegression(
-                n_features=self.AL_weights[0].shape[0], l2=1.0, pi=0.01, pi_weight=1000
+                n_features=self.AL_weights[0].shape[0],
+                l2=1.0,
+                pi=float(self.pi.value),
+                pi_weight=1000,
             )
             self.model.fit(pre_train=self.AL_weights)
 

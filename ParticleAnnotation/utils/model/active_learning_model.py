@@ -4,7 +4,7 @@ from scipy.optimize import minimize
 import numpy as np
 from topaz.model.factory import load_model
 import torch
-import torch.nn as nn
+from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 
 from ParticleAnnotation.utils.model.utils import (
@@ -17,7 +17,12 @@ import requests
 
 
 def predict_3d_with_AL(
-    img: np.ndarray, tm_scores: np.ndarray, model, offset: int, maximum_filter_size=25
+    img: np.ndarray,
+    tm_scores: np.ndarray,
+    model,
+    offset: int,
+    maximum_filter_size=25,
+    gauss_filter=0.0,
 ):
     peaks, peaks_logits = [], []
     device_ = get_device()
@@ -82,6 +87,8 @@ def predict_3d_with_AL(
             ] = logits
 
     full_logits = torch.sigmoid(torch.from_numpy(full_logits)).detach().numpy()
+    if gauss_filter > 0:
+        full_logits = gaussian_filter(full_logits, sigma=gauss_filter)
 
     # Extract peaks
     max_filter = maximum_filter(
@@ -173,6 +180,7 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
         j = j[keep]
 
         y[i, j] = label
+    return y
 
 
 def stack_all_labels(scores, points, size):
@@ -206,6 +214,9 @@ def stack_all_labels(scores, points, size):
     j_list_pos, j_list_neg = [[]], [[]]
     for x in points:
         label, cz, ci, cj = x
+        if label not in [0, 1]:
+            continue
+
         dz, di, dj = np.where(mask)
         z = cz + dz - k // 2
         i = ci + di - k // 2
@@ -246,11 +257,11 @@ def label_points_to_mask(points, shape, size):
     if len(shape) == 3:
         if len(points) > 0:
             for label, z, i, j in points:
-                fill_label_region(y, i, j, label, int(size), z)
+                y = fill_label_region(y, i, j, label, int(size), z)
     else:
         if len(points) > 0:
             for label, i, j in points:
-                fill_label_region(y, i, j, label, int(size))
+                y = fill_label_region(y, i, j, label, int(size))
     return y
 
 
@@ -352,17 +363,19 @@ def initialize_model(mrc, n_part=10, only_feature=False, tm_scores=None):
 
 class BinaryLogisticRegression:
     def __init__(self, n_features, l2=1.0, pi=0.01, pi_weight=1.0, ice=True) -> None:
+        """
+        Make a dataset where for each feature [1 data poitn per n_features] its 0 or 1,
+        1 is. Add scaler for the feateur, start with 1 scale to 128???
+
+        ! Not Using pi! check if its not breaking anything else
+        """
         self.device = get_device()
 
-        # -1 for scores with ICE
         self.weights = torch.zeros(n_features, device=self.device)
         if ice:
-            self.weights[-5:] = -10
+            self.weights[-3:] = -1
 
-        # random initialization
-        # self.weights = torch.randn(n_features, device=self.device)
         self.bias = torch.zeros(1, device=self.device)
-        # self.bias = torch.randn(1, device=self.device)
         self.l2 = l2
         self.pi = pi
         self.pi_logit = np.log(pi) - np.log1p(-pi)
@@ -372,6 +385,7 @@ class BinaryLogisticRegression:
         logits = torch.matmul(x, self.weights) + self.bias
 
         if all_x is None and all_y is None:
+            # logits = torch.matmul(x, self.weights) + self.bias
             if weights is None:
                 weights = torch.ones_like(y, device=self.device)
 
@@ -401,17 +415,14 @@ class BinaryLogisticRegression:
         # L2 regularizer on the weights
         loss_reg_l2 = self.l2 * torch.sum(self.weights**2) / 2
 
-        # Penalty for negative weights on ice scores
-        # negative_weights_penalty = torch.sum(torch.relu(-self.weights[-1]))
-
-        # Penalty on the expected pi
+        # # Penalty on the expected pi
         log_p = torch.logsumexp(F.logsigmoid(logits), dim=0) - np.log(len(logits))
         log_np = torch.logsumexp(F.logsigmoid(-logits), dim=0) - np.log(len(logits))
         logit_expect = log_p - log_np
         loss_pi = self.pi_weight * (logit_expect - self.pi_logit) ** 2
 
         loss = (loss_binary + loss_reg_l2 + loss_pi) / n
-        # loss = (loss_binary + loss_reg_l2 + loss_pi + negative_weights_penalty) / n
+        # loss = (loss_binary + loss_reg_l2) / n
 
         return loss
 
