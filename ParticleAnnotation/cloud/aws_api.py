@@ -60,8 +60,6 @@ def check_dir():
         mkdir("api/data/")
     if not isdir("api/data/images/"):
         mkdir("api/data/images/")
-    if not isdir("api/data/templates/"):
-        mkdir("api/data/templates/")
     if not isdir("api/data/models/"):
         mkdir("api/data/models/")
 

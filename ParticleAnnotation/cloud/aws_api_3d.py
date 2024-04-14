@@ -85,19 +85,6 @@ async def list_templates():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-@app.get("/list_models", response_model=List[str])
-async def list_models():
-    check_dir()
-
-    try:
-        # List all files in the predefined folder
-        files = listdir(dir_ + "data/models/")
-
-        return [f for f in files if f.endswith(".pth")]
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload_tomogram")
 async def upload_tomogram(file: UploadFile = File(...)):
@@ -127,44 +114,32 @@ async def upload_template(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# TODO new_model, upload_file_prediction
+# TODO new_model, upload_file_prediction, upload particles and import particles
 
 @app.get("/get_raw_tomos")
 async def get_raw_tomos(f_name: str):
+    # Assumes 
     try:
         # Load the tomogram and the template
-        tomogram, _, _ = load_tomogram(dir_ + "data/tomograms/" + f_name, aws = True)
+        tomogram, _, tomo_name = load_tomogram(dir_ + "data/tomograms/" + f_name, aws = True)
         tomogram = numpy_array_to_bytes_io(tomogram)
+        headers = {"X-filename" : tomo_name}
 
-        return StreamingResponse(tomogram)
+        return StreamingResponse(tomogram, headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/get_raw_templates")
-async def get_raw_templates(f_name: str):
+async def get_raw_templates(f_name: str, pdb_id: str):
     try:
         # Load the tomogram and the template
-        template, _ = load_template(dir_ + "data/templates/" + f_name, aws = True)
+        template, list_templates = load_template(dir_ + "data/templates/" + f_name + "/scores_" + pdb_id + ".pt", aws = True)
+        # convert list to string
+        list_templates = ",".join(map(str, list_templates))
         template = numpy_array_to_bytes_io(template)
 
-        return StreamingResponse(template)
+        headers = {"X-list_templates" : list_templates}
+
+        return StreamingResponse(template, headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/new_model", response_model=str)
-# async def new_model():
-#     # Initialize new model with weight and bias at 0.0
-#     model = BinaryLogisticRegression(n_features=128, l2=1.0, pi=0.01, pi_weight=1000)
-#     # Save model withe unique ID name
-#     list_model = listdir(dir_ + "data/models/")
-#     model_ids = [int(f[len(f) - 7 : -4]) for f in list_model if f.endswith("pth")]
-
-#     if len(model_ids) > 0:
-#         model_ids = model_ids[max(model_ids)] + 1
-#     else:
-#         model_ids = 0
-
-#     model_name = f"active_learning_model_{model_ids:03}.pth"
-#     torch.save(model, dir_ + "data/models/" + model_name)
-
-#     return model_name
