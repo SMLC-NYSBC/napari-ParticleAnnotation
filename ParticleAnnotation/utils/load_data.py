@@ -114,7 +114,12 @@ def load_tomogram(path = None, aws = False):
         Image data.
     """
     if aws:
-        data, px = load_mrc_file(path)
+        if path.endswith((".mrc", ".rec")):
+            data, px = load_mrc_file(path)
+        elif path.endswith(".tif"):
+            data = tiff.imread(path)
+            px = 1.0
+
         return data, px, os.path.split(path)[1][:-4]
 
     root = QFileDialog.getOpenFileNames(

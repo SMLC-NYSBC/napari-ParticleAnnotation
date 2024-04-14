@@ -25,24 +25,6 @@ from ParticleAnnotation.utils.load_data import (
     load_tomogram,
 )
 
-from ParticleAnnotation.utils.model.active_learning_model import (
-    BinaryLogisticRegression,
-    label_points_to_mask,
-    predict_3d_with_AL,
-    stack_all_labels,
-)
-
-from ParticleAnnotation.utils.model.utils import (
-    correct_coord,
-    find_peaks,
-    get_device,
-    get_random_patch,
-    rank_candidate_locations,
-)
-from ParticleAnnotation.utils.viewer.viewer_functionality import (
-    build_gird_with_particles,
-    draw_patch_and_scores,
-)
 app = FastAPI()
 url = "http://3.230.8.116:8000/"
 dir_ = "api/"

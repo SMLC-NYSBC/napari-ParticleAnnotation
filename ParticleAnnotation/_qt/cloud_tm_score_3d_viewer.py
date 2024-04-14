@@ -1643,6 +1643,3 @@ class AnnotationWidget(Container):
 
     def CEvent(self, viewer):
         self.key_event(viewer, 2)
-
-            
-
