@@ -106,13 +106,17 @@ def save_coordinates(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
 
-def load_tomogram():
+def load_tomogram(path = None, aws = False):
     """
     Load image data
 
     Return:
         Image data.
     """
+    if aws:
+        data, px = load_mrc_file(path)
+        return data, px, os.path.split(path)[1][:-4]
+
     root = QFileDialog.getOpenFileNames(
         None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
     )[0]
@@ -124,7 +128,7 @@ def load_tomogram():
         return None, None, None
 
 
-def load_template():
+def load_template(path = None, aws = False):
     """
     Load the template scores from disk.
 
@@ -134,12 +138,15 @@ def load_template():
     Returns:
         The template score data and index indicating position template score.
     """
-    device_ = get_device()
-    root = QFileDialog.getOpenFileNames(
+    if aws:
+        root = path
+    else:
+        root = QFileDialog.getOpenFileNames(
         None, "Select a template score files", filter="Pytorch(*.pt)"
-    )[0]
-    ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
+        )[0]
 
+    device_ = get_device()
+    ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
     if sum([True if i.endswith("scores_ice.pt") else False for i in root]) > 0:
         ice_ = root[np.where(ice_)[0][0]]
         root.remove(ice_)
