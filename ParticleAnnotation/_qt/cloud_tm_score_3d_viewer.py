@@ -39,7 +39,7 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
 )
 from scipy.ndimage import gaussian_filter
 
-from ParticleAnnotation.cloud.aws_api import url
+from ParticleAnnotation.cloud.aws_api_3d import url
 from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
 
 colormap_for_display = "Spectral"
