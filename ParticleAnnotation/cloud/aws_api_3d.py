@@ -26,8 +26,7 @@ from ParticleAnnotation.utils.load_data import (
 )
 
 app = FastAPI()
-# url = "http://3.230.8.116:8000/"
-url = "http://127.0.0.1:8000"
+url = "http://3.230.8.116:8000/"
 dir_ = "api/"
 formats = ("mrc", "rec", "tiff", "tif")
 template_formats = ("pt", "npy")
@@ -59,7 +58,6 @@ async def list_tomograms():
         # List all files in the predefined folder
         files = listdir(dir_ + "data/tomograms/")
         files = [f for f in files if f.endswith(formats)]
-        files = [f.split(".")[0] for f in files]
 
         return files
 
