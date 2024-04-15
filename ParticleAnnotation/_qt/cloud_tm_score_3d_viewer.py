@@ -137,13 +137,7 @@ class AnnotationWidget(Container):
         self.import_particles.clicked.connect(self._import_particles)
 
         spacer_2 = Label(value="------------------- Training -------------------")
-        self.load_data = ComboBox(name = "Load data", choices = self._update_data_list())
-        self.load_data_btt = PushButton(name="Load data")
-        self.load_data_btt.clicked.connect(self._load_data)
-
-        self.load_template = PushButton(name="Load template scores")
-        self.load_template.clicked.connect(self._load_template)
-
+        self.load_data = ComboBox(name = "Tomogram ID", choices = self._update_data_list())
         self.select_particle_for_patches = PushButton(name="Initialize dataset")
         self.select_particle_for_patches.clicked.connect(
             self._select_particle_for_patches
@@ -211,7 +205,16 @@ class AnnotationWidget(Container):
                         self.pi,
                         self.gauss,
                         spacer_2,
-                        self.select_particle_for_patches,
+                    )
+                ),
+                HBox(
+                    widgets=(
+                            self.load_data, 
+                            self.select_particle_for_patches,
+                        )
+                ),
+                VBox(
+                    widgets=(
                         self.train_BLR_on_patch,
                         spacer_4,
                         self.predict,
@@ -321,9 +324,9 @@ class AnnotationWidget(Container):
             show_info(f"Loaded: {self.load_data.value}")
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
-            self.napari_viewer.add_image(
-                data=np.random.random(size=(512, 512)), name="Connection_Error"
-            )
+            # self.napari_viewer.add_image(
+            #     data=np.random.random(size=(512, 512)), name="Connection_Error"
+            # )
 
     def _load_template(self):
         """
@@ -355,13 +358,19 @@ class AnnotationWidget(Container):
         particles of interest, and store them.
         """
         if not self.init_done:
+
             self.init = True
             self.all_grid = False
             self.grid_labeling_mode = False
 
             # If image is not loaded, ask user to load it
             if self.napari_viewer.layers.selection.active is None:
-                show_info("Please load the tomogram first.")
+                self._load_data()
+            
+            # confirm if the image is loaded
+            if self.napari_viewer.layers.selection.active is None:
+                show_info("Please load a tomogram first.")
+                return
 
             self.image_name = (
                 self.napari_viewer.layers.selection.active.name
