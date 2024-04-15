@@ -26,6 +26,10 @@ contributions:
       python_name: ParticleAnnotation._qt.cloud_tm_score_3d_viewer:AnnotationWidget
       title: AWS 3D TM Score
 
+    - id: ParticleAnnotation.upload_3d
+      python_name: ParticleAnnotation._qt.upload_3d:UploadWidget
+      title: Upload to AWS
+
   readers:
     - command: ParticleAnnotation.import_data
       accepts_directories: False
@@ -48,3 +52,6 @@ contributions:
 
     - command: ParticleAnnotation.viewer_cloud_tm_score_3d
       display_name: AWS Cloud [GPU]
+
+    - command: ParticleAnnotation.upload_3d
+      display_name: Upload to AWS

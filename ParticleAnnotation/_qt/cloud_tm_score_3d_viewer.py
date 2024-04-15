@@ -20,6 +20,10 @@ from napari_bbox import BoundingBoxLayer
 from topaz.stats import normalize
 import torch
 
+from ParticleAnnotation.utils.load_data import (
+    load_coordinates,
+)
+
 from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
@@ -37,7 +41,6 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
-from scipy.ndimage import gaussian_filter
 
 from ParticleAnnotation.cloud.aws_api_3d import url
 from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array

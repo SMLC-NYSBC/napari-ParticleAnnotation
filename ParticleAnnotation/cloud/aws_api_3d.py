@@ -26,7 +26,8 @@ from ParticleAnnotation.utils.load_data import (
 )
 
 app = FastAPI()
-url = "http://3.230.8.116:8000/"
+# url = "http://3.230.8.116:8000/"
+url = "http://127.0.0.1:8000"
 dir_ = "api/"
 formats = ("mrc", "rec", "tiff", "tif")
 template_formats = ("pt", "npy")
