@@ -133,7 +133,7 @@ def load_tomogram(path = None, aws = False):
         return None, None, None
 
 
-def load_template(path = None, aws = False):
+def load_template(path = None):
     """
     Load the template scores from disk.
 
@@ -143,14 +143,19 @@ def load_template(path = None, aws = False):
     Returns:
         The template score data and index indicating position template score.
     """
-    if aws:
-        root = path
+    device_ = get_device()
+
+    if path is not None:
+        root = [path]
+        # Load other template scores than the one selected using path
+        root_path = os.path.split(path)[0]
+        root = [os.path.join(root_path, i) for i in os.listdir(root_path) if i.endswith(".pt")]
+
     else:
         root = QFileDialog.getOpenFileNames(
-        None, "Select a template score files", filter="Pytorch(*.pt)"
+        None, "Select template score files", filter="Pytorch(*.pt)"
         )[0]
 
-    device_ = get_device()
     ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
     if sum([True if i.endswith("scores_ice.pt") else False for i in root]) > 0:
         ice_ = root[np.where(ice_)[0][0]]
@@ -158,13 +163,18 @@ def load_template(path = None, aws = False):
         root.append(ice_)
 
     template_list = []
-    template_list = [i.split("/")[-1][7:-3] for i in template_list]
+    # template_list = [i.split("/")[-1][7:-3] for i in template_list]
 
     if "ice" in template_list:
         template_list = template_list[:-1]
 
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
+        for i in root:
+            if i.endswith('tardis_6QS9.pt'):
+                template_list.append(i.split("/")[-1][:-3])
+            else:
+                template_list.append(i.split("/")[-1][7:-3])
     else:
         template_score = []
 

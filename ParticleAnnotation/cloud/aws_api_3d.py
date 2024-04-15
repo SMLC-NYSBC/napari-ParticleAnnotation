@@ -28,7 +28,8 @@ from ParticleAnnotation.utils.load_data import (
 app = FastAPI()
 url = "http://3.230.8.116:8000/"
 dir_ = "api/"
-formats = ("mrc", "rec", "tiff")
+formats = ("mrc", "rec", "tiff", "tif")
+template_formats = ("pt", "npy")
 
 def check_dir():
     if not isdir("api/"):
@@ -42,6 +43,10 @@ def check_dir():
     if not isdir("api/data/models/"):
         mkdir("api/data/models/")
 
+def check_dir_tomo(tomo_name):
+    if not isdir("api/data/templates/" + tomo_name):
+        mkdir("api/data/templates/" + tomo_name)
+
 @app.get("/list_tomograms", response_model=List[str])
 async def list_tomograms():
     check_dir()
@@ -49,8 +54,10 @@ async def list_tomograms():
     try:
         # List all files in the predefined folder
         files = listdir(dir_ + "data/tomograms/")
+        files = [f for f in files if f.endswith(formats)]
+        files = [f.split(".")[0] for f in files]
 
-        return [f for f in files if f.endswith(formats)]
+        return files
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -62,8 +69,9 @@ async def list_templates():
     try:
         # List all files in the predefined folder
         files = listdir(dir_ + "data/templates/")
+        files = [f for f in files if f.endswith(template_formats)]
 
-        return [f for f in files if f.endswith(formats)]
+        return files
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -83,11 +91,12 @@ async def upload_tomogram(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/upload_template")
-async def upload_template(file: UploadFile = File(...)):
+async def upload_template(file: UploadFile = File(...), tomo_name: str = None):
     check_dir()
+    check_dir_tomo(tomo_name)
 
     try:
-        dir_template = dir_ + "data/templates/"
+        dir_template = dir_ + "data/templates/" + tomo_name
         file_location = f"{dir_template}/{file.filename}"
         with open(file_location, "wb+") as f:
             shutil.copyfileobj(file.file, f)
@@ -113,9 +122,19 @@ async def get_raw_tomos(f_name: str):
 
 @app.get("/get_raw_templates")
 async def get_raw_templates(f_name: str, pdb_id: str):
+    """
+        Get the template of the tomogram
+        This assumes that the template is under the folder data/templates/tomo_name and 
+        file name is of the format scores_pdb_id.pt or tardis_6QS9.pt.
+
+        Loads all the templates in the folder data/templates/tomo_name with extension .pt.
+    """
     try:
         # Load the tomogram and the template
-        template, list_templates = load_template(dir_ + "data/templates/" + f_name + "/scores_" + pdb_id + ".pt", aws = True)
+        if pdb_id == "6QS9":
+            template, list_templates = load_template(dir_ + "data/templates/" + f_name + "/tardis_6QS9.pt")
+        else:
+            template, list_templates = load_template(dir_ + "data/templates/" + f_name + "/scores_" + pdb_id + ".pt")
         # convert list to string
         list_templates = ",".join(map(str, list_templates))
         template = numpy_array_to_bytes_io(template)

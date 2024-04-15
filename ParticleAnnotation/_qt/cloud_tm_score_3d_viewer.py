@@ -335,7 +335,7 @@ class AnnotationWidget(Container):
         # Call API for response
         try:
             response = requests.get(
-                url + "get_raw_tomos",
+                url + "get_raw_templates",
                 params={"f_name" : self.load_data.value, "pdb_id" : self.pdb_id.value},
                 timeout=None,
             )
