@@ -47,6 +47,7 @@ from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
 
 colormap_for_display = "Spectral"
 
+
 class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         super().__init__(layout="vertical")
@@ -140,7 +141,7 @@ class AnnotationWidget(Container):
         self.import_particles.clicked.connect(self._import_particles)
 
         spacer_2 = Label(value="------------------- Training -------------------")
-        self.load_data = ComboBox(name = "Tomogram ID", choices = self._update_data_list())
+        self.load_data = ComboBox(name="Tomogram ID", choices=self._update_data_list())
         self.select_particle_for_patches = PushButton(name="Initialize dataset")
         self.select_particle_for_patches.clicked.connect(
             self._select_particle_for_patches
@@ -212,9 +213,9 @@ class AnnotationWidget(Container):
                 ),
                 HBox(
                     widgets=(
-                            self.load_data, 
-                            self.select_particle_for_patches,
-                        )
+                        self.load_data,
+                        self.select_particle_for_patches,
+                    )
                 ),
                 VBox(
                     widgets=(
@@ -291,15 +292,15 @@ class AnnotationWidget(Container):
                 return tuple(self.file_list)
             else:
                 return ()
-        
+
         except:
             show_info(f"Connection Error to {url}. Check if server is running.")
             return ()
-    
+
     """""" """""" """""" """
     Main triggers for GUI
     """ """""" """""" """"""
-        
+
     def _load_data(self):
         """
         Load a down-sample image file to work on.
@@ -342,7 +343,7 @@ class AnnotationWidget(Container):
         try:
             response = requests.get(
                 url + "get_raw_templates",
-                params={"f_name" : self.load_data.value, "pdb_id" : self.pdb_id.value},
+                params={"f_name": self.load_data.value, "pdb_id": self.pdb_id.value},
                 timeout=None,
             )
 
@@ -361,7 +362,6 @@ class AnnotationWidget(Container):
         particles of interest, and store them.
         """
         if not self.init_done:
-
             self.init = True
             self.all_grid = False
             self.grid_labeling_mode = False
@@ -369,15 +369,13 @@ class AnnotationWidget(Container):
             # If image is not loaded, ask user to load it
             if self.napari_viewer.layers.selection.active is None:
                 self._load_data()
-            
+
             # confirm if the image is loaded
             if self.napari_viewer.layers.selection.active is None:
                 show_info("Please load a tomogram first.")
                 return
 
-            self.image_name = (
-                self.napari_viewer.layers.selection.active.name
-            )
+            self.image_name = self.napari_viewer.layers.selection.active.name
             img = self.napari_viewer.layers[self.image_name]
             self.img_process = img.data
             self.img_process, _ = normalize(
@@ -504,7 +502,7 @@ class AnnotationWidget(Container):
             x_filter.size(1),
             dtype=y_filter.dtype,
             device=y_filter.device,
-            )
+        )
         y_onehot[index_] = 1
 
         x_filter = torch.cat((x_filter, x_onehot), dim=0)
@@ -638,16 +636,20 @@ class AnnotationWidget(Container):
 
     def _pdb_id_update(self):
         try:
-            if self.pdb_id.value == '6QS9':
-                tardis_ = [1 if i.startswith('tardis') else 0 for i in self.tm_list]
+            if self.pdb_id.value == "6QS9":
+                tardis_ = [1 if i.startswith("tardis") else 0 for i in self.tm_list]
 
                 if sum(tardis_) > 0:
                     self.tm_idx = [
-                        id_ for id_, i in enumerate(self.tm_list) if i == 'tardis_'+self.pdb_id.value
+                        id_
+                        for id_, i in enumerate(self.tm_list)
+                        if i == "tardis_" + self.pdb_id.value
                     ][0]
                 else:
                     self.tm_idx = [
-                        id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value
+                        id_
+                        for id_, i in enumerate(self.tm_list)
+                        if i == self.pdb_id.value
                     ][0]
             else:
                 self.tm_idx = [
@@ -821,8 +823,7 @@ class AnnotationWidget(Container):
 
         if self.logits_full is not None:
             self.create_image_layer(
-                self.logits_full,
-                name="Sigmoid", transparency=True, visibility=False
+                self.logits_full, name="Sigmoid", transparency=True, visibility=False
             )
 
         if self.patch_corner is not None:
@@ -1233,7 +1234,7 @@ class AnnotationWidget(Container):
 
         self._export(prediction)
         # TODO Save to AWS EC2 instance
-    
+
     def _export_particles_filter(self):
         try:
             prediction_particle = self.napari_viewer.layers[
@@ -1378,7 +1379,7 @@ class AnnotationWidget(Container):
             self.model.fit(pre_train=self.AL_weights)
 
         self.AL_weights = None  # Reset to allow re-training
-        
+
     """""" """""" """""" """""
     Mouse and keys bindings
     """ """""" """""" """""" ""

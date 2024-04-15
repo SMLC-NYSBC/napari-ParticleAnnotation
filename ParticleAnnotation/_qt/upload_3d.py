@@ -14,6 +14,7 @@ from ParticleAnnotation.cloud.aws_api_3d import url
 from napari.utils.notifications import show_info
 from napari import Viewer
 
+
 class UploadWidget(Container):
     def __init__(self, napari_viewer: Viewer):
         super().__init__(layout="vertical")
@@ -34,7 +35,7 @@ class UploadWidget(Container):
 
     def _send_tomogram_to_aws(self):
         """
-        Send image file to AWS EC2 instance.    
+        Send image file to AWS EC2 instance.
         Return:
             napari.show_info: User info prompt to indicate output.
         """
@@ -65,7 +66,7 @@ class UploadWidget(Container):
 
     def _send_template_to_aws(self):
         """
-        Send template file to AWS EC2 instance.    
+        Send template file to AWS EC2 instance.
         Return:
             napari.show_info: User info prompt to indicate output.
         """
@@ -81,8 +82,9 @@ class UploadWidget(Container):
         files = {"file": (name_, open(f"{self.filename}", "rb"), f"image/{format_}")}
 
         try:
-            response = requests.post(url + "upload_template", files=files, 
-                                     params={"tomo_name": tomo_name})
+            response = requests.post(
+                url + "upload_template", files=files, params={"tomo_name": tomo_name}
+            )
 
             if response.status_code == 200:
                 show_info(f"File uploaded successfully: {response.json()}")

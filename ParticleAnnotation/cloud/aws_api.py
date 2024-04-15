@@ -19,12 +19,14 @@ from ParticleAnnotation.cloud.utils import (
     numpy_array_to_bytes_io,
     get_model_name_and_weights,
 )
+
 # from ParticleAnnotation.utils.load_data import load_image, downsample
 from ParticleAnnotation.utils.load_data import (
     load_template,
     load_coordinates,
     load_tomogram,
 )
+
 # from ParticleAnnotation.utils.model.active_learning_model import (
 #     BinaryLogisticRegression,
 #     initialize_model,
@@ -36,6 +38,7 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     predict_3d_with_AL,
     stack_all_labels,
 )
+
 # from ParticleAnnotation.utils.model.utils import get_device
 from ParticleAnnotation.utils.model.utils import (
     correct_coord,
@@ -48,10 +51,12 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
+
 app = FastAPI()
 url = "http://3.230.8.116:8000/"
 dir_ = "api/"
 formats = ("mrc", "rec", "tiff")
+
 
 def check_dir():
     if not isdir("api/"):
@@ -62,6 +67,7 @@ def check_dir():
         mkdir("api/data/images/")
     if not isdir("api/data/models/"):
         mkdir("api/data/models/")
+
 
 @app.get("/list_files", response_model=List[str])
 async def list_files():

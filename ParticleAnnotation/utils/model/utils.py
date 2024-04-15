@@ -241,6 +241,7 @@ def get_device(device: str = "0") -> torch.device:
     # return device
     return torch.device("cpu")
 
+
 def device_is_str(device: str = "0") -> bool:
     """
     Check if used device is convertible to int value

@@ -283,9 +283,9 @@ class AnnotationWidget(Container):
 
                 self.create_image_layer(img, name=name, transparency=False)
 
-            self.image_name = self.filename = (
-                self.napari_viewer.layers.selection.active.name
-            )
+            self.image_name = (
+                self.filename
+            ) = self.napari_viewer.layers.selection.active.name
             img = self.napari_viewer.layers[self.image_name]
             self.img_process = img.data
             self.img_process, _ = normalize(
@@ -327,8 +327,11 @@ class AnnotationWidget(Container):
         )
 
         # Initialized y (empty label mask) and count
+        print(self.x.shape)
         self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
+        print(self.x.shape)
         self.x = self.x.reshape(-1, self.x.shape[-1])
+        print(self.x.shape)
         self.shape = tm_score.shape[1:]
 
         # Take all particle crops for the training, not just a patch
@@ -411,7 +414,7 @@ class AnnotationWidget(Container):
             x_filter.size(1),
             dtype=y_filter.dtype,
             device=y_filter.device,
-            )
+        )
         y_onehot[index_] = 1
 
         x_filter = torch.cat((x_filter, x_onehot), dim=0)
@@ -472,13 +475,16 @@ class AnnotationWidget(Container):
             return
 
         patch_size = int(self.patch_size.value)
+        gauss_filter = float(self.gauss.value)
 
+        # ToDo Preiction of filamets with skeletonization and down scaling
         peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
             self.img_process,
             tm_scores=self.tm_scores,
             model=self.model,
             offset=patch_size,
             maximum_filter_size=int(self.filter_size.value),
+            gauss_filter=gauss_filter,
         )
         order = np.argsort(peaks_confidence)
         self.peaks_full = peaks[order]
@@ -549,16 +555,20 @@ class AnnotationWidget(Container):
 
     def _pdb_id_update(self):
         try:
-            if self.pdb_id.value == '6QS9':
-                tardis_ = [1 if i.startswith('tardis') else 0 for i in self.tm_list]
+            if self.pdb_id.value == "6QS9":
+                tardis_ = [1 if i.startswith("tardis") else 0 for i in self.tm_list]
 
                 if sum(tardis_) > 0:
                     self.tm_idx = [
-                        id_ for id_, i in enumerate(self.tm_list) if i == 'tardis_'+self.pdb_id.value
+                        id_
+                        for id_, i in enumerate(self.tm_list)
+                        if i == "tardis_" + self.pdb_id.value
                     ][0]
                 else:
                     self.tm_idx = [
-                        id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value
+                        id_
+                        for id_, i in enumerate(self.tm_list)
+                        if i == self.pdb_id.value
                     ][0]
             else:
                 self.tm_idx = [
@@ -648,6 +658,8 @@ class AnnotationWidget(Container):
 
         patch_size = int(self.patch_size.value)
         shape_ = self.img_process.shape
+        gauss_filter = float(self.gauss.value)
+        filter_size = int(self.filter_size.value)
 
         if self.patch_corner is not None:
             all_vertices = np.array(
@@ -697,15 +709,13 @@ class AnnotationWidget(Container):
 
         if self.logits_full is None:
             if self.model is not None:
-                patch_size = int(self.patch_size.value)
-
                 peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
                     self.img_process,
                     tm_scores=self.tm_scores,
                     model=self.model,
                     offset=patch_size,
-                    maximum_filter_size=int(self.filter_size.value),
-                    gauss_filter=float(self.gauss.value),
+                    maximum_filter_size=filter_size,
+                    gauss_filter=gauss_filter,
                 )
                 order = np.argsort(peaks_confidence)
                 peaks = peaks[order]
@@ -732,8 +742,7 @@ class AnnotationWidget(Container):
 
         if self.logits_full is not None:
             self.create_image_layer(
-                self.logits_full,
-                name="Sigmoid", transparency=True, visibility=False
+                self.logits_full, name="Sigmoid", transparency=True, visibility=False
             )
 
         if self.patch_corner is not None:

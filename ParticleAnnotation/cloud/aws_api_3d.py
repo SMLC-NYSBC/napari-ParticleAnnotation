@@ -32,6 +32,7 @@ dir_ = "api/"
 formats = ("mrc", "rec", "tiff", "tif")
 template_formats = ("pt", "npy")
 
+
 def check_dir():
     if not isdir("api/"):
         mkdir("api/")
@@ -44,9 +45,11 @@ def check_dir():
     if not isdir("api/data/models/"):
         mkdir("api/data/models/")
 
+
 def check_dir_tomo(tomo_name):
     if not isdir("api/data/templates/" + tomo_name):
         mkdir("api/data/templates/" + tomo_name)
+
 
 @app.get("/list_tomograms", response_model=List[str])
 async def list_tomograms():
@@ -62,7 +65,8 @@ async def list_tomograms():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @app.get("/list_templates", response_model=List[str])
 async def list_templates():
     check_dir()
@@ -77,6 +81,7 @@ async def list_templates():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/upload_tomogram")
 async def upload_tomogram(file: UploadFile = File(...)):
     check_dir()
@@ -87,10 +92,11 @@ async def upload_tomogram(file: UploadFile = File(...)):
         with open(file_location, "wb+") as f:
             shutil.copyfileobj(file.file, f)
         return JSONResponse(status_code=200, content={"filename": file.filename})
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
+
 @app.post("/upload_template")
 async def upload_template(file: UploadFile = File(...), tomo_name: str = None):
     check_dir()
@@ -102,45 +108,54 @@ async def upload_template(file: UploadFile = File(...), tomo_name: str = None):
         with open(file_location, "wb+") as f:
             shutil.copyfileobj(file.file, f)
         return JSONResponse(status_code=200, content={"filename": file.filename})
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # TODO new_model, upload_file_prediction, upload particles and import particles
+
 
 @app.get("/get_raw_tomos")
 async def get_raw_tomos(f_name: str):
-    # Assumes 
+    # Assumes
     try:
         # Load the tomogram and the template
-        tomogram, _, tomo_name = load_tomogram(dir_ + "data/tomograms/" + f_name, aws = True)
+        tomogram, _, tomo_name = load_tomogram(
+            dir_ + "data/tomograms/" + f_name, aws=True
+        )
         tomogram = numpy_array_to_bytes_io(tomogram)
-        headers = {"X-filename" : tomo_name}
+        headers = {"X-filename": tomo_name}
 
         return StreamingResponse(tomogram, headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/get_raw_templates")
 async def get_raw_templates(f_name: str, pdb_id: str):
     """
-        Get the template of the tomogram
-        This assumes that the template is under the folder data/templates/tomo_name and 
-        file name is of the format scores_pdb_id.pt or tardis_6QS9.pt.
+    Get the template of the tomogram
+    This assumes that the template is under the folder data/templates/tomo_name and
+    file name is of the format scores_pdb_id.pt or tardis_6QS9.pt.
 
-        Loads all the templates in the folder data/templates/tomo_name with extension .pt.
+    Loads all the templates in the folder data/templates/tomo_name with extension .pt.
     """
     try:
         # Load the tomogram and the template
         if pdb_id == "6QS9":
-            template, list_templates = load_template(dir_ + "data/templates/" + f_name + "/tardis_6QS9.pt")
+            template, list_templates = load_template(
+                dir_ + "data/templates/" + f_name + "/tardis_6QS9.pt"
+            )
         else:
-            template, list_templates = load_template(dir_ + "data/templates/" + f_name + "/scores_" + pdb_id + ".pt")
+            template, list_templates = load_template(
+                dir_ + "data/templates/" + f_name + "/scores_" + pdb_id + ".pt"
+            )
         # convert list to string
         list_templates = ",".join(map(str, list_templates))
         template = numpy_array_to_bytes_io(template)
 
-        headers = {"X-list_templates" : list_templates}
+        headers = {"X-list_templates": list_templates}
 
         return StreamingResponse(template, headers=headers)
     except Exception as e:

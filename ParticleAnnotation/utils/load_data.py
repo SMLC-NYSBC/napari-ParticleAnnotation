@@ -106,7 +106,7 @@ def save_coordinates(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
 
-def load_tomogram(path = None, aws = False):
+def load_tomogram(path=None, aws=False):
     """
     Load image data
 
@@ -133,7 +133,7 @@ def load_tomogram(path = None, aws = False):
         return None, None, None
 
 
-def load_template(path = None):
+def load_template(path=None):
     """
     Load the template scores from disk.
 
@@ -149,11 +149,15 @@ def load_template(path = None):
         root = [path]
         # Load other template scores than the one selected using path
         root_path = os.path.split(path)[0]
-        root = [os.path.join(root_path, i) for i in os.listdir(root_path) if i.endswith(".pt")]
+        root = [
+            os.path.join(root_path, i)
+            for i in os.listdir(root_path)
+            if i.endswith(".pt")
+        ]
 
     else:
         root = QFileDialog.getOpenFileNames(
-        None, "Select template score files", filter="Pytorch(*.pt)"
+            None, "Select template score files", filter="Pytorch(*.pt)"
         )[0]
 
     ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
@@ -171,7 +175,7 @@ def load_template(path = None):
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
         for i in root:
-            if i.endswith('tardis_6QS9.pt'):
+            if i.endswith("tardis_6QS9.pt"):
                 template_list.append(i.split("/")[-1][:-3])
             else:
                 template_list.append(i.split("/")[-1][7:-3])
@@ -182,7 +186,7 @@ def load_template(path = None):
             df = torch.load(i, map_location=device_).type(torch.float16)
             name = i.split("/")[-1][:-3]
 
-            if i.endswith('tardis_6QS9.pt'):
+            if i.endswith("tardis_6QS9.pt"):
                 template_score.append(df[None, :])
                 template_list.append(name)
             else:
