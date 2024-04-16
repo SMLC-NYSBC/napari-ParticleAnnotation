@@ -40,7 +40,9 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
-from scipy.ndimage import gaussian_filter
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
 
 colormap_for_display = "Spectral"
 
@@ -49,6 +51,8 @@ class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         super().__init__(layout="vertical")
         self.napari_viewer = viewer_tm_score_3d
+        self.delta_plot = PlotPopup()
+        self.delta_plot.show()
 
         # Global
         self.image_name = ""
@@ -70,6 +74,7 @@ class AnnotationWidget(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init, self.init_done, self.AL, self.Predict = False, False, False, False
         self.AL_weights = None
+        self.delta = None
 
         # Viewer
         self.color_map_particle_classes = {
@@ -129,6 +134,7 @@ class AnnotationWidget(Container):
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
         self.pi = LineEdit(name="Ratio of particles [%]", value=0.01)
+        self.pi.changed.connect(self._pdb_id_update)
         self.gauss = LineEdit(name="Gaussian filter size", value=1)
 
         # ---------------- Import & Export modules ----------------
@@ -283,9 +289,9 @@ class AnnotationWidget(Container):
 
                 self.create_image_layer(img, name=name, transparency=False)
 
-            self.image_name = (
-                self.filename
-            ) = self.napari_viewer.layers.selection.active.name
+            self.image_name = self.filename = (
+                self.napari_viewer.layers.selection.active.name
+            )
             img = self.napari_viewer.layers[self.image_name]
             self.img_process = img.data
             self.img_process, _ = normalize(
@@ -327,17 +333,15 @@ class AnnotationWidget(Container):
         )
 
         # Initialized y (empty label mask) and count
-        print(self.x.shape)
-        self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
-        print(self.x.shape)
+        self.x = torch.from_numpy(tm_score.copy()).float()
+        self.x = self.x.permute(1, 2, 3, 0)
         self.x = self.x.reshape(-1, self.x.shape[-1])
-        print(self.x.shape)
         self.shape = tm_score.shape[1:]
 
         # Take all particle crops for the training, not just a patch
         if self.model is None:
             self.model = BinaryLogisticRegression(
-                n_features=self.x.shape[0],
+                n_features=self.x.shape[-1],
                 l2=1.0,
                 pi=float(self.pi.value),
                 pi_weight=1000,
@@ -361,9 +365,10 @@ class AnnotationWidget(Container):
                 points[:, 2],
             )
         ).T
-
+        data[:, 1:] = correct_coord(data[:, 1:], self.patch_corner, False)
         self.y = label_points_to_mask(data, self.shape, box_size)
         self.count = (~torch.isnan(self.y)).float()
+        self.count[self.y == 0] = 0
 
         data = np.hstack(
             (self.user_annotations[:, 3][:, None], self.user_annotations[:, :3])
@@ -426,7 +431,20 @@ class AnnotationWidget(Container):
             weights=self.count.ravel(),
             all_labels=[x_filter, y_filter],
         )
-        print(self.model.weights, self.model.bias)
+        if self.delta is None:
+            self.delta_values = []
+            show_info("Training weights delta = 0.0")
+            self.delta = self.model.weights
+        else:
+            self.delta_values.append(torch.mean(self.delta - self.model.weights))
+            show_info(
+                f"Training weights delta = {self.delta_values[-1]}"
+            )
+            print(
+                f"Training weights delta = {self.delta_values[-1]}"
+            )
+            self.delta_plot.update_plot(y_values=self.delta_values)
+            self.delta = self.model.weights
 
         """Draw new patch and find new particle for user to label"""
         # Select patch
@@ -441,7 +459,8 @@ class AnnotationWidget(Container):
 
         # BLR training and model update
         self.shape = patch.shape
-        self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
+        self.x = torch.from_numpy(tm_score.copy()).float()
+        self.x = self.x.permute(1, 2, 3, 0)
         self.x = self.x.reshape(-1, self.x.shape[-1])
 
         with torch.no_grad():
@@ -531,6 +550,10 @@ class AnnotationWidget(Container):
         self.tm_list = None
         self.img_process, self.patch_corner = None, None
 
+        self.delta = None
+        self.delta_values = []
+        self.delta_plot.update_plot(y_values=self.delta_values)
+
         # Particles selections
         self.cur_proposal_index, self.proposals = 0, []
         self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
@@ -548,6 +571,29 @@ class AnnotationWidget(Container):
 
         self._reset_views()
         self.clean_viewer()
+
+    def _soft_reset_session(self):
+        self.tm_idx = None
+        self.delta = None
+        self.patch_corner = None
+
+        # Particles selections
+        self.cur_proposal_index, self.proposals = 0, []
+        self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
+        self.selected_particle_id = None
+
+        self.delta_values = []
+        self.delta_plot.update_plot(y_values=self.delta_values)
+
+        # Remove after testing
+        self.particle = None
+        self.confidence = None
+        self.patch_points, self.patch_label = np.zeros((0, 3)), np.zeros((1,))
+
+        # BLR model
+        self.model, self.model_pred, self.weights, self.bias = None, None, None, None
+        self.init, self.init_done, self.AL, self.Predict = False, False, False, False
+        self.AL_weights = None
 
     """""" """""" """""" """
     Viewer functionality
@@ -585,24 +631,27 @@ class AnnotationWidget(Container):
             peaks, _ = find_peaks(
                 self.tm_scores[self.tm_idx], filter_size, with_score=True
             )
-            peaks = peaks[-30:, :]
-            peaks = np.hstack((peaks, np.zeros((30, 1))))
+            peaks = peaks[-20:, :]
+            peaks = np.hstack((peaks, np.zeros((20, 1))))
             peaks[:, 3] = 2
+
+            peaks_ice, _ = find_peaks(self.tm_scores[-1], filter_size, with_score=True)
+
+            peaks_ice = peaks_ice[-10:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((10, 1))))
+            peaks_ice[:, 3] = 2
+
+            peaks = np.vstack((peaks, peaks_ice))
 
             self.user_annotations = peaks
             self.patch_points = peaks[:, :3]
             self.patch_label = peaks[:, 3]
 
-            if self.last_view is not None:
-                if self.last_view == "Tomo":
-                    self._show_tomogram()
-            elif self.last_view == "AL":
-                self._show_active_learning_grid()
-            else:
-                self._show_particle_grid()
+            self._show_particle_grid()
 
             self.activate_click = True
         elif self.AL or self.Predict:
+            self._soft_reset_session()
             if self.last_view is not None:
                 if self.last_view == "Tomo":
                     self._show_tomogram()
@@ -1335,7 +1384,10 @@ class AnnotationWidget(Container):
         labels = point_layer.properties["label"]
 
         if self.all_grid:
-            point = self.patch_points[index]
+            if self.init:
+                point = self.user_annotations[index]
+            else:
+                point = self.patch_points[index]
         else:
             point = correct_coord(self.patch_points[index], self.patch_corner, True)
 
@@ -1344,36 +1396,52 @@ class AnnotationWidget(Container):
             if labels[index] != label:
                 labels[index] = label
 
-            self.patch_label = labels
+            if self.init:
+                self.user_annotations[:, 3] = labels
+            else:
+                self.patch_label = labels
 
             # Check if point index from self.point_layer is already in self.user_annotations
             # Add and/or update point label in self.user_annotations
-            idx = self.user_annotations[:, :3] - point
-            idx_bool = 0 in np.sum(idx.astype(np.float16), axis=1)
+            if not self.init:
+                idx = self.user_annotations[:, :3] - point
+                idx_bool = 0 in np.sum(idx.astype(np.float16), axis=1)
 
-            if idx_bool:  # Add point to self.user_annotation
-                idx = np.where(np.sum(idx.astype(np.float16), axis=1) == 0)
+                if idx_bool:  # Add point to self.user_annotation
+                    idx = np.where(np.sum(idx.astype(np.float16), axis=1) == 0)
 
-                if len(idx) > 0:
-                    self.user_annotations[idx[0][0], 3] = label
-            else:  # Update point label in self.user_annotations
-                self.user_annotations = np.insert(
-                    self.user_annotations,
-                    0,
-                    np.insert(point, 3, [label], axis=1),
-                    axis=0,
-                )
+                    if len(idx) > 0:
+                        self.user_annotations[idx[0][0], 3] = label
+                else:  # Update point label in self.user_annotations
+                    self.user_annotations = np.insert(
+                        self.user_annotations,
+                        0,
+                        np.insert(point, 3, [label], axis=1),
+                        axis=0,
+                    )
         elif func == "remove":
-            self.patch_points = np.delete(self.patch_points, index, axis=0)
-            self.patch_label = np.delete(self.patch_label, index, axis=0)
-            points = np.delete(self.patch_points, index, axis=0)
-            labels = np.delete(self.patch_points, index, axis=0)
+            if self.init:
+                self.user_annotations = np.delete(
+                    self.user_annotations[:, :3], index, axis=0
+                )
+                self.user_annotations[:, 3] = np.delete(
+                    self.user_annotations[:, 3], index, axis=0
+                )
+                points = np.delete(self.user_annotations[:, :3], index, axis=0)
+                labels = np.delete(self.user_annotations[:, 3], index, axis=0)
+            else:
+                self.patch_points = np.delete(self.patch_points, index, axis=0)
+                self.patch_label = np.delete(self.patch_label, index, axis=0)
+                points = np.delete(self.patch_points, index, axis=0)
+                labels = np.delete(self.patch_points, index, axis=0)
 
-            idx = point in self.user_annotations[:, :3]
-            if idx:  # Remove point to self.user_annotation
-                idx = np.where(point in self.user_annotations[:, :3])[0][0]
+                idx = point in self.user_annotations[:, :3]
+                if idx:  # Remove point to self.user_annotation
+                    idx = np.where(point in self.user_annotations[:, :3])[0][0]
 
-                self.user_annotations = np.delete(self.user_annotations, index, axis=0)
+                    self.user_annotations = np.delete(
+                        self.user_annotations, index, axis=0
+                    )
 
         self.create_point_layer(points, labels, "Particle_BLR_is_Uncertain")
 
@@ -1381,12 +1449,12 @@ class AnnotationWidget(Container):
         name = self.napari_viewer.layers.selection.active.name
         point_layer = self.napari_viewer.layers[name]
 
-        try:
-            point_layer = self.napari_viewer.layers["Particle_BLR_is_Uncertain"]
-            # self.patch_points = point_layer.data
-            # self.patch_label = point_layer.properties["label"]
-        except Exception as e:
-            pass
+        # try:
+        #     point_layer = self.napari_viewer.layers["Particle_BLR_is_Uncertain"]
+        #     # self.patch_points = point_layer.data
+        #     # self.patch_label = point_layer.properties["label"]
+        # except Exception as e:
+        #     pass
 
         # Add point pointed by mouse
         if func == "add":
@@ -1434,9 +1502,6 @@ class AnnotationWidget(Container):
             self.user_annotations = np.vstack(
                 tuple(set(map(tuple, self.user_annotations)))
             )
-
-            # Update point layer
-            self.create_point_layer(points, labels, name)
         elif func == "remove":  # Remove point pointed by mouse
             points = point_layer.data
             labels = point_layer.properties["label"]
@@ -1463,9 +1528,6 @@ class AnnotationWidget(Container):
             # Remove point from layer
             points = np.delete(points, index, axis=0)
             labels = np.delete(labels, index, axis=0)
-
-            # Update point layer
-            self.create_point_layer(points, labels, name)
         elif func == "update":  # Update point pointed by mouse
             points = point_layer.data
             labels = point_layer.properties["label"]
@@ -1517,9 +1579,8 @@ class AnnotationWidget(Container):
             if labels[index] != label:
                 labels[index] = label
 
-                # Update point layer
-                self.create_point_layer(points, labels, name)
-
+        # Update point layer
+        self.create_point_layer(points, labels, name)
         point_layer.edge_color_cycle = self.color_map_particle_classes
 
     def key_event(self, viewer: Viewer, key: int):
@@ -1563,3 +1624,29 @@ class AnnotationWidget(Container):
 
     def CEvent(self, viewer):
         self.key_event(viewer, 2)
+
+
+class PlotPopup(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Plot Popup")
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+        self.figure = plt.figure()
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
+        self.setLayout(layout)
+
+    def update_plot(self, y_values):
+        x_values = np.arange(
+            len(y_values)
+        )  # Automatically generate x-axis values based on length of y_values
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.plot(x_values, y_values)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        self.canvas.draw()

@@ -1,4 +1,5 @@
 import torch.nn.functional as F
+import torch.nn as nn
 from scipy.ndimage import maximum_filter
 from scipy.optimize import minimize
 import numpy as np
@@ -144,7 +145,7 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
 
     if label == 1:
         mask = pos_mask
-    else:
+    elif label == 0:
         mask = neg_mask
 
     if cz is not None:
@@ -369,9 +370,11 @@ class BinaryLogisticRegression:
 
         ! Not Using pi! check if its not breaking anything else
         """
+        self.n_features = n_features
         self.device = get_device()
 
-        self.weights = torch.zeros(n_features, device=self.device)
+        self.weights = torch.zeros(self.n_features, device=self.device)
+
         if ice:
             self.weights[-3:] = -1
 
@@ -433,7 +436,9 @@ class BinaryLogisticRegression:
             x = x.to(self.device)
 
         # x = torch.cat([torch.sin(x), torch.cos(x)], dim=1)
-        return torch.matmul(x, self.weights) + self.bias
+        x = torch.matmul(x, self.weights) + self.bias
+
+        return x
 
     def __call__(self, x):
         return self.predict(x)
@@ -458,17 +463,16 @@ class BinaryLogisticRegression:
             if weights is not None:
                 weights = weights.to(self.device)
 
-            n_features = x.shape[1]
-            theta0 = np.zeros(n_features + 1)
+            theta0 = np.zeros(self.n_features + 1)
 
             def loss_fn(theta):
-                w = torch.from_numpy(theta[:n_features]).float().to(self.device)
-                b = torch.from_numpy(theta[n_features:]).float().to(self.device)
+                w = torch.from_numpy(theta[: self.n_features]).float().to(self.device)
+                b = torch.from_numpy(theta[self.n_features :]).float().to(self.device)
                 w.requires_grad = True
                 b.requires_grad = True
 
                 model = BinaryLogisticRegression(
-                    n_features, l2=self.l2, pi=self.pi, pi_weight=self.pi_weight
+                    self.n_features, l2=self.l2, pi=self.pi, pi_weight=self.pi_weight
                 )
                 model.weights = w
                 model.bias = b
@@ -484,8 +488,8 @@ class BinaryLogisticRegression:
             result = minimize(loss_fn, theta0, jac=True)
 
             theta = result.x
-            w = torch.from_numpy(theta[:n_features]).float()
-            b = torch.from_numpy(theta[n_features:]).float()
+            w = torch.from_numpy(theta[: self.n_features]).float()
+            b = torch.from_numpy(theta[self.n_features :]).float()
             self.weights = w
             self.bias = b
 
