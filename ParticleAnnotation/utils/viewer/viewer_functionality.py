@@ -79,11 +79,13 @@ def build_gird_with_particles(
 
     # Get empty grid
     if len(patch_points) < 50:
-        grid = 5
-    elif len(patch_points) < 100:
         grid = 10
-    else:
+    elif len(patch_points) < 100:
         grid = 20
+    elif len(patch_points) < 250:
+        grid = 30
+    else:
+        grid = 30
 
     n_x = np.min((grid, len(patch_points))).astype(np.int8)
     n_y = np.ceil(len(patch_points) / grid).astype(np.int8)

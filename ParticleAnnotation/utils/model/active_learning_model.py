@@ -147,6 +147,8 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
         mask = pos_mask
     elif label == 0:
         mask = neg_mask
+    else:
+        return
 
     if cz is not None:
         k = mask.shape[0]

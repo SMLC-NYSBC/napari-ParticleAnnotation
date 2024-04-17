@@ -21,8 +21,10 @@ from magicgui.widgets import (
     VBox,
     HBox,
 )
+
 from qtpy.QtWidgets import QFileDialog
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
+from PyQt5.QtWidgets import QVBoxLayout
 
 from ParticleAnnotation.utils.load_data import (
     load_template,
@@ -199,71 +201,79 @@ class AnnotationWidget(Container):
         self.reset_session.clicked.connect(self._reset_session)
 
         widget = VBox(
-            widgets=(
-                HBox(widgets=(spacer_1,)),
+            widgets=[
+                HBox(widgets=[spacer_1,]),
                 HBox(
-                    widgets=(
+                    widgets=[
                         self.box_size,
                         self.filter_size,
-                    )
+                    ]
                 ),
                 HBox(
-                    widgets=(
+                    widgets=[
                         self.pdb_id,
                         self.patch_size,
-                    )
+                    ]
                 ),
                 VBox(
-                    widgets=(
+                    widgets=[
                         self.pi,
                         self.gauss,
-                        spacer_2,
+                        ],
+                    ),
+                HBox(widgets=[spacer_2,]),
+                VBox(
+                    widgets=[
                         self.select_particle_for_patches,
                         self.train_BLR_on_patch,
-                        spacer_4,
+                        ],
+                    ),
+                HBox(widgets=[spacer_4,]),
+                VBox(
+                    widgets=[
                         self.predict,
                         self.filter_particle_by_confidence,
-                        spacer_3,
-                    )
-                ),
+                        ],
+                    ),
+                HBox(widgets=[spacer_3,]),
                 HBox(
-                    widgets=(
+                    widgets=[
                         self.show_tomogram,
                         self.show_active_learning_grid,
                         self.show_particle_grid,
-                    )
+                    ]
                 ),
                 VBox(
-                    widgets=(
+                    widgets=[
                         spacer_5,
                         self.import_particles,
-                    )
+                    ]
                 ),
                 HBox(
-                    widgets=(
+                    widgets=[
                         self.export_particles_all,
                         self.export_particles_labeled,
-                    )
+            ]
                 ),
                 HBox(
-                    widgets=(
+                    widgets=[
                         self.export_particles_predict,
                         self.export_particles_filter,
-                    )
+                    ]
                 ),
                 HBox(
-                    widgets=(
+                    widgets=[
                         self.save_model,
                         self.load_model,
-                    )
+                    ]
                 ),
                 VBox(
-                    widgets=(
+                    widgets=[
                         spacer_6,
                         self.reset_session,
-                    )
+                    ]
                 ),
-            )
+            ]
         )
 
         widget.max_width = 400
@@ -438,19 +448,6 @@ class AnnotationWidget(Container):
             weights=self.count.ravel(),
             all_labels=[x_filter, y_filter],
         )
-        if self.delta is None:
-            show_info("Training weights delta = 0.0")
-            self.delta = self.model.weights
-        else:
-            _delta = torch.mean(self.delta - self.model.weights)
-            _delta = _delta.detach().numpy()[0]
-            self.delta_values.append(torch.mean(self.delta - self.model.weights))
-
-            show_info(f"Training weights delta = {self.delta_values[-1]}")
-            print(f"Training weights delta = {self.delta_values[-1]}")
-
-            self.delta_plot.update_plot(y_values=self.delta_values)
-            self.delta = self.model.weights
 
         """Draw new patch and find new particle for user to label"""
         # Select patch
@@ -484,6 +481,18 @@ class AnnotationWidget(Container):
         point_indexes = np.all(
             (stored_points >= 0) & (stored_points <= patch_size), axis=1
         )
+
+        if self.delta is None:
+            show_info("Training weights delta = 0.0")
+            self.delta = self.model.weights
+        else:
+            _delta = torch.mean(self.delta - self.model.weights).item()
+            self.delta_values.append(_delta)
+
+            print(f"Training weights delta = {self.delta_values[-1]}")
+
+            self.delta_plot.update_plot(y_values=self.delta_values)
+            self.delta = self.model.weights
 
         self._show_active_learning_grid()
 
@@ -643,9 +652,22 @@ class AnnotationWidget(Container):
             peaks[:, 3] = 2
 
             peaks_ice, _ = find_peaks(self.tm_scores[-1], filter_size, with_score=True)
+            peaks_ice = peaks_ice[-3:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((3, 1))))
+            peaks_ice[:, 3] = 2
 
-            peaks_ice = peaks_ice[-10:, :]
-            peaks_ice = np.hstack((peaks_ice, np.zeros((10, 1))))
+            peaks = np.vstack((peaks, peaks_ice))
+
+            peaks_ice, _ = find_peaks(self.tm_scores[-2], filter_size, with_score=True)
+            peaks_ice = peaks_ice[-3:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((3, 1))))
+            peaks_ice[:, 3] = 2
+
+            peaks = np.vstack((peaks, peaks_ice))
+
+            peaks_ice, _ = find_peaks(self.tm_scores[-3], filter_size, with_score=True)
+            peaks_ice = peaks_ice[-4:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((4, 1))))
             peaks_ice[:, 3] = 2
 
             peaks = np.vstack((peaks, peaks_ice))
@@ -1170,19 +1192,14 @@ class AnnotationWidget(Container):
             filename = filename.split(".")
             filename = filename[0] + ".csv"
 
-        # Legacy file
-        np.savetxt(
-            filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
-        )
-
         filename = filename[:-3] + "star"
         data = pd.DataFrame(
             data=data,
             columns=[
-                "_rlnConfidence",
                 "_rlnCoordinateZ",
                 "_rlnCoordinateY",
                 "_rlnCoordinateX",
+                "_rlnConfidence",
             ],
         )
         starfile.write(data, filename)
@@ -1678,7 +1695,7 @@ class PlotPopup(QDialog):
 
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-        ax.plot(x_values, y_values)
+        ax.plot(x_values, y_values, '-bo', label='line with marker')
         ax.set_xlabel("Training step")
         ax.set_ylabel("Score")
         self.canvas.draw()
