@@ -344,7 +344,10 @@ class AnnotationWidget(Container):
         try:
             response = requests.get(
                 url + "get_raw_templates",
-                params={"f_name" : (self.load_data.value).split(".")[0], "pdb_id" : self.pdb_id.value},
+                params={
+                    "f_name": (self.load_data.value).split(".")[0],
+                    "pdb_id": self.pdb_id.value,
+                },
                 timeout=None,
             )
 

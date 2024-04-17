@@ -1,4 +1,16 @@
 import numpy as np
+import pandas as pd
+import starfile
+
+from napari import Viewer
+from napari.utils.notifications import show_info
+from napari_bbox import BoundingBoxLayer
+
+from sklearn.neighbors import KDTree
+
+import torch
+from topaz.stats import normalize
+
 from magicgui.widgets import (
     Container,
     PushButton,
@@ -9,14 +21,8 @@ from magicgui.widgets import (
     VBox,
     HBox,
 )
-from napari import Viewer
-from napari.utils.notifications import show_info
-from sklearn.neighbors import KDTree
 from qtpy.QtWidgets import QFileDialog
-from napari_bbox import BoundingBoxLayer
-
-from topaz.stats import normalize
-import torch
+from PyQt5.QtWidgets import QDialog, QVBoxLayout
 
 from ParticleAnnotation.utils.load_data import (
     load_template,
@@ -40,7 +46,7 @@ from ParticleAnnotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
+
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 
@@ -75,6 +81,7 @@ class AnnotationWidget(Container):
         self.init, self.init_done, self.AL, self.Predict = False, False, False, False
         self.AL_weights = None
         self.delta = None
+        self.delta_values = []
 
         # Viewer
         self.color_map_particle_classes = {
@@ -289,9 +296,9 @@ class AnnotationWidget(Container):
 
                 self.create_image_layer(img, name=name, transparency=False)
 
-            self.image_name = self.filename = (
-                self.napari_viewer.layers.selection.active.name
-            )
+            self.image_name = (
+                self.filename
+            ) = self.napari_viewer.layers.selection.active.name
             img = self.napari_viewer.layers[self.image_name]
             self.img_process = img.data
             self.img_process, _ = normalize(
@@ -432,17 +439,16 @@ class AnnotationWidget(Container):
             all_labels=[x_filter, y_filter],
         )
         if self.delta is None:
-            self.delta_values = []
             show_info("Training weights delta = 0.0")
             self.delta = self.model.weights
         else:
+            _delta = torch.mean(self.delta - self.model.weights)
+            _delta = _delta.detach().numpy()[0]
             self.delta_values.append(torch.mean(self.delta - self.model.weights))
-            show_info(
-                f"Training weights delta = {self.delta_values[-1]}"
-            )
-            print(
-                f"Training weights delta = {self.delta_values[-1]}"
-            )
+
+            show_info(f"Training weights delta = {self.delta_values[-1]}")
+            print(f"Training weights delta = {self.delta_values[-1]}")
+
             self.delta_plot.update_plot(y_values=self.delta_values)
             self.delta = self.model.weights
 
@@ -624,6 +630,7 @@ class AnnotationWidget(Container):
             return
 
         if self.init:
+            self.delta_values.append(0.0)
             filter_size = int(self.filter_size.value)
             # Restart user annotation storage
             self.user_annotations = np.zeros((0, 4))
@@ -646,8 +653,8 @@ class AnnotationWidget(Container):
             self.user_annotations = peaks
             self.patch_points = peaks[:, :3]
             self.patch_label = peaks[:, 3]
-
-            self._show_particle_grid()
+            self.patch_corner = (0, 0, 0)
+            self._show_active_learning_grid()
 
             self.activate_click = True
         elif self.AL or self.Predict:
@@ -795,9 +802,10 @@ class AnnotationWidget(Container):
             )
 
         if self.patch_corner is not None:
-            bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
-            bb_layer.add(all_vertices)
-            self.napari_viewer.add_layer(bb_layer)
+            if self.patch_corner != (0, 0, 0):
+                bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
+                bb_layer.add(all_vertices)
+                self.napari_viewer.add_layer(bb_layer)
 
         if self.model is not None:
             self.napari_viewer.add_points(
@@ -1098,10 +1106,6 @@ class AnnotationWidget(Container):
         self.napari_viewer.layers[name].mode = "select"
         self.napari_viewer.layers[name].visible = visible
 
-    """""" """""" """""" """""
-    Global helper functions
-    """ """""" """""" """""" ""
-
     def _filter_particle_by_confidence(self):
         """
         Function to fetch
@@ -1149,15 +1153,39 @@ class AnnotationWidget(Container):
         except Exception as e:
             pass
 
+    """""" """""" """""" """""
+    Global helper functions
+    """ """""" """""" """""" ""
+
     def _export(self, data: np.ndarray):
+        """
+        General export function to .star file format
+        """
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File", directory="user_annotations.csv"
         )
 
+        if filename.endswith(".star"):
+            filename = filename.split(".")
+            filename = filename[0] + ".csv"
+
+        # Legacy file
         np.savetxt(
             filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
         )
+
+        filename = filename[:-3] + "star"
+        data = pd.DataFrame(
+            data=data,
+            columns=[
+                "_rlnConfidence",
+                "_rlnCoordinateZ",
+                "_rlnCoordinateY",
+                "_rlnCoordinateX",
+            ],
+        )
+        starfile.write(data, filename)
 
     def _export_particles_all(self):
         user_annotations = self.user_annotations.copy()
@@ -1384,26 +1412,25 @@ class AnnotationWidget(Container):
         labels = point_layer.properties["label"]
 
         if self.all_grid:
-            if self.init:
-                point = self.user_annotations[index]
-            else:
-                point = self.patch_points[index]
+            point = self.user_annotations[index]
         else:
-            point = correct_coord(self.patch_points[index], self.patch_corner, True)
+            point = self.patch_points[index]
 
         if func == "update":
             # Update point labels
             if labels[index] != label:
                 labels[index] = label
 
-            if self.init:
+            if self.all_grid:
                 self.user_annotations[:, 3] = labels
             else:
                 self.patch_label = labels
 
             # Check if point index from self.point_layer is already in self.user_annotations
             # Add and/or update point label in self.user_annotations
-            if not self.init:
+            if not self.all_grid:
+                point = correct_coord(point, self.patch_corner, True)
+
                 idx = self.user_annotations[:, :3] - point
                 idx_bool = 0 in np.sum(idx.astype(np.float16), axis=1)
 
@@ -1420,7 +1447,7 @@ class AnnotationWidget(Container):
                         axis=0,
                     )
         elif func == "remove":
-            if self.init:
+            if self.all_grid:
                 self.user_annotations = np.delete(
                     self.user_annotations[:, :3], index, axis=0
                 )
@@ -1435,9 +1462,9 @@ class AnnotationWidget(Container):
                 points = np.delete(self.patch_points, index, axis=0)
                 labels = np.delete(self.patch_points, index, axis=0)
 
-                idx = point in self.user_annotations[:, :3]
+                idx = points in self.user_annotations[:, :3]
                 if idx:  # Remove point to self.user_annotation
-                    idx = np.where(point in self.user_annotations[:, :3])[0][0]
+                    idx = np.where(points in self.user_annotations[:, :3])[0][0]
 
                     self.user_annotations = np.delete(
                         self.user_annotations, index, axis=0
@@ -1629,11 +1656,13 @@ class AnnotationWidget(Container):
 class PlotPopup(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Plot Popup")
+        self.setWindowTitle("Napari Active Learning training progress")
         self.initUI()
 
     def initUI(self):
         layout = QVBoxLayout()
+        plt.style.use(["dark_background"])
+
         self.figure = plt.figure()
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
@@ -1641,12 +1670,15 @@ class PlotPopup(QDialog):
         self.setLayout(layout)
 
     def update_plot(self, y_values):
+        y_values = [round(value, 3) for value in y_values]
+
         x_values = np.arange(
             len(y_values)
         )  # Automatically generate x-axis values based on length of y_values
+
         self.figure.clear()
         ax = self.figure.add_subplot(111)
         ax.plot(x_values, y_values)
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
+        ax.set_xlabel("Training step")
+        ax.set_ylabel("Score")
         self.canvas.draw()

@@ -11,6 +11,7 @@ numpy>=1.23.5
 tifffile>=2023.3.21
 scipy>=1.10.1
 starfile>=0.5.6
+pandas>=2.1.4
 
 # ML
 torch>=1.13.0
