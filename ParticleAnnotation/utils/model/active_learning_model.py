@@ -16,6 +16,8 @@ from ParticleAnnotation.utils.model.utils import (
 import io
 import requests
 
+from ParticleAnnotation.utils.pc_sampling import VoxelDownSampling
+
 
 def predict_3d_with_AL(
     img: np.ndarray,
@@ -24,6 +26,7 @@ def predict_3d_with_AL(
     offset: int,
     maximum_filter_size=25,
     gauss_filter=0.0,
+    filament=False,
 ):
     peaks, peaks_logits = [], []
     device_ = get_device()
@@ -92,12 +95,23 @@ def predict_3d_with_AL(
         full_logits = gaussian_filter(full_logits, sigma=gauss_filter)
 
     # Extract peaks
-    max_filter = maximum_filter(
-        full_logits.astype(np.float32), size=maximum_filter_size
-    )
-    peaks = full_logits - max_filter
-    peaks = np.where(peaks == 0)
-    peaks = np.stack(peaks, axis=-1)
+    if filament:
+        from skimage.morphology import skeletonize_3d
+
+        peaks = skeletonize_3d(np.where(full_logits > 0.5, 1, 0))
+        peaks = np.where(peaks > 0)
+        peaks = np.stack(
+                (peaks[0], peaks[1], peaks[2])
+            ).T
+        peaks = VoxelDownSampling(voxel=5, labels=False, KNN=False)(coord=peaks)
+        peaks = peaks.astype(np.int16)
+    else:
+        max_filter = maximum_filter(
+            full_logits.astype(np.float32), size=maximum_filter_size
+        )
+        peaks = full_logits - max_filter
+        peaks = np.where(peaks == 0)
+        peaks = np.stack(peaks, axis=-1)
 
     # Save patch peaks and its logits
     peaks_logits = full_logits[peaks[:, 0], peaks[:, 1], peaks[:, 2]]
@@ -148,7 +162,7 @@ def fill_label_region(y, ci, cj, label, size: int, cz=None):
     elif label == 0:
         mask = neg_mask
     else:
-        return
+        return y
 
     if cz is not None:
         k = mask.shape[0]

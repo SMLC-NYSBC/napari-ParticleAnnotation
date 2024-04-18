@@ -175,7 +175,7 @@ def load_template(path=None):
     if len(root) == 1:
         template_score = [torch.load(root[0], map_location=device_)]
         for i in root:
-            if i.endswith("tardis_6QS9.pt"):
+            if i.endswith("tardis_6R7M.pt"):
                 template_list.append(i.split("/")[-1][:-3])
             else:
                 template_list.append(i.split("/")[-1][7:-3])
@@ -186,7 +186,7 @@ def load_template(path=None):
             df = torch.load(i, map_location=device_).type(torch.float16)
             name = i.split("/")[-1][:-3]
 
-            if i.endswith("tardis_6QS9.pt"):
+            if i.endswith("tardis_6R7M.pt"):
                 template_score.append(df[None, :])
                 template_list.append(name)
             else:

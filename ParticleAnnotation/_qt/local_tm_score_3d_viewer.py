@@ -83,7 +83,7 @@ class AnnotationWidget(Container):
         self.init, self.init_done, self.AL, self.Predict = False, False, False, False
         self.AL_weights = None
         self.delta = None
-        self.delta_values = []
+        self.delta_values = [0.0]
 
         # Viewer
         self.color_map_particle_classes = {
@@ -147,8 +147,6 @@ class AnnotationWidget(Container):
         self.gauss = LineEdit(name="Gaussian filter size", value=1)
 
         # ---------------- Import & Export modules ----------------
-        self.export_particles = PushButton(name="Save particles")
-        self.export_particles.clicked.connect(self._export_particles)
         self.import_particles = PushButton(name="Load particles")
         self.import_particles.clicked.connect(self._import_particles)
 
@@ -483,16 +481,17 @@ class AnnotationWidget(Container):
         )
 
         if self.delta is None:
+            self.delta = self.model.weights.clone()
+
             show_info("Training weights delta = 0.0")
-            self.delta = self.model.weights
         else:
             _delta = torch.mean(self.delta - self.model.weights).item()
             self.delta_values.append(_delta)
 
             print(f"Training weights delta = {self.delta_values[-1]}")
 
-            self.delta_plot.update_plot(y_values=self.delta_values)
-            self.delta = self.model.weights
+        self.delta_plot.update_plot(y_values=self.delta_values)
+        self.delta = self.model.weights
 
         self._show_active_learning_grid()
 
@@ -519,6 +518,7 @@ class AnnotationWidget(Container):
             offset=patch_size,
             maximum_filter_size=int(self.filter_size.value),
             gauss_filter=gauss_filter,
+            filament=True if self.pdb_id.value == '6R7M' else False,
         )
         order = np.argsort(peaks_confidence)
         self.peaks_full = peaks[order]
@@ -616,7 +616,7 @@ class AnnotationWidget(Container):
 
     def _pdb_id_update(self):
         try:
-            if self.pdb_id.value == "6QS9":
+            if self.pdb_id.value == "6R7M":
                 tardis_ = [1 if i.startswith("tardis") else 0 for i in self.tm_list]
 
                 if sum(tardis_) > 0:
@@ -1179,20 +1179,15 @@ class AnnotationWidget(Container):
     Global helper functions
     """ """""" """""" """""" ""
 
-    def _export(self, data: np.ndarray):
+    def _export(self, data: np.ndarray, name: str):
         """
         General export function to .star file format
         """
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
-            caption="Save File", directory="user_annotations.csv"
+            caption="Save File", directory=name,
         )
 
-        if filename.endswith(".star"):
-            filename = filename.split(".")
-            filename = filename[0] + ".csv"
-
-        filename = filename[:-3] + "star"
         data = pd.DataFrame(
             data=data,
             columns=[
@@ -1225,10 +1220,10 @@ class AnnotationWidget(Container):
         user_annotations[user_annotations[:, 3] == 1, 3] = max_
         data = np.concatenate((user_annotations, prediction))
 
-        self._export(data)
+        self._export(data, "all_annotations.star")
 
     def _export_particles_labeled(self):
-        self._export(self.user_annotations.copy())
+        self._export(self.user_annotations.copy(), "user_annotations.star")
 
     def _export_particles_predict(self):
         try:
@@ -1241,7 +1236,8 @@ class AnnotationWidget(Container):
 
         prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
 
-        self._export(prediction)
+        self.pdb_id.value
+        self._export(prediction, f"{self.pdb_id.value}_prediction.star")
 
     def _export_particles_filter(self):
         try:
@@ -1256,48 +1252,7 @@ class AnnotationWidget(Container):
 
         prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
 
-        self._export(prediction)
-
-    def _export_particles(self):
-        """
-        Fetch all positive and negative particle, and export it as .csv file
-        with header [Z, Y, X, Score].
-
-        Fetched points should be from all already labels by user or predicted.
-        If positive is present score is 1 or max. confidence score from prediction
-        if present. For negative prediction it should be -1 or min. confidence
-        score from prediction if present.
-
-        Export self.user_annotations [n, 4] organized Z, Y, X, ID
-        """
-        user_annotations = self.user_annotations.copy()
-
-        try:
-            prediction_particle = self.napari_viewer.layers["Particle_Prediction"].data
-            prediction_labels = self.napari_viewer.layers[
-                "Particle_Prediction"
-            ].properties["label"]
-        except:
-            prediction_particle, prediction_labels = [], []
-
-        # Save only user annotations (positive labels)
-        filename, _ = QFileDialog.getSaveFileName(
-            caption="Save File", directory="user_annotations.csv"
-        )
-
-        if len(prediction_particle) == 0:
-            data = user_annotations
-        else:
-            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
-            min_, max_ = np.min(prediction_labels), np.max(prediction_labels)
-
-        user_annotations[user_annotations[:, 3] == 0, 3] = min_
-        user_annotations[user_annotations[:, 3] == 1, 3] = max_
-        data = np.concatenate((user_annotations, prediction))
-
-        np.savetxt(
-            filename, data, delimiter=",", fmt="%s", header="Z, Y, X, Confidence"
-        )
+        self._export(prediction, f"{self.pdb_id.value}_prediction_filtered.star")
 
     def _import_particles(self):
         """
@@ -1471,15 +1426,15 @@ class AnnotationWidget(Container):
                 self.user_annotations[:, 3] = np.delete(
                     self.user_annotations[:, 3], index, axis=0
                 )
-                points = np.delete(self.user_annotations[:, :3], index, axis=0)
-                labels = np.delete(self.user_annotations[:, 3], index, axis=0)
+                points = self.user_annotations[:, :3].copy()
+                labels = self.user_annotations[:, 3].copy()
             else:
                 self.patch_points = np.delete(self.patch_points, index, axis=0)
                 self.patch_label = np.delete(self.patch_label, index, axis=0)
-                points = np.delete(self.patch_points, index, axis=0)
-                labels = np.delete(self.patch_points, index, axis=0)
+                points = self.patch_points.copy()
+                labels = self.patch_label.copy()
 
-                idx = points in self.user_annotations[:, :3]
+                idx = point in self.user_annotations[:, :3]
                 if idx:  # Remove point to self.user_annotation
                     idx = np.where(points in self.user_annotations[:, :3])[0][0]
 
