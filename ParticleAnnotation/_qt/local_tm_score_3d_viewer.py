@@ -57,7 +57,8 @@ colormap_for_display = "Spectral"
 
 class AnnotationWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
-        super().__init__(layout="vertical")
+        super(AnnotationWidget, self).__init__(layout="vertical")
+
         self.napari_viewer = viewer_tm_score_3d
         self.delta_plot = PlotPopup()
         self.delta_plot.show()

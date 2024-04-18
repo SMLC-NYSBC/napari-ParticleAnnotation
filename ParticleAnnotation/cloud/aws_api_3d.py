@@ -56,8 +56,8 @@ async def list_tomograms():
 
     try:
         # List all files in the predefined folder
-        files = listdir(dir_ + "data/tomograms/")
-        files = [f for f in files if f.endswith(formats)]
+        files = listdir(dir_ + "data/")
+        files = [f for f in files if f.startswith('T_')]
 
         return files
 
