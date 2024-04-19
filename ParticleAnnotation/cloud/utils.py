@@ -6,9 +6,16 @@ import numpy as np
 
 
 def numpy_array_to_bytes_io(array: np.ndarray) -> io.BytesIO:
+    if isinstance(array, torch.Tensor):
+        if array.device.type == 'cpu':
+            array = array.detach().numpy()
+        else:
+            array = array.cpu().detach().numpy()
+
     bytes_io = io.BytesIO()
     np.save(bytes_io, array, allow_pickle=False)
     bytes_io.seek(0)
+
     return bytes_io
 
 

@@ -133,7 +133,7 @@ def load_tomogram(path=None, aws=False):
         return None, None, None
 
 
-def load_template(path=None):
+def load_template(path=None, aws=False):
     """
     Load the template scores from disk.
 
@@ -145,35 +145,67 @@ def load_template(path=None):
     """
     device_ = get_device()
 
-    if path is not None:
-        root = [path]
-        # Load other template scores than the one selected using path
-        root_path = os.path.split(path)[0]
-        root = [
-            os.path.join(root_path, i)
-            for i in os.listdir(root_path)
-            if i.endswith(".pt")
-        ]
+    if aws:
+        if len(path) == 1:
+            template_score = torch.load(path[0], map_location=device_).type(torch.float16)
+        else:
+            template_score = []
 
+            for i in path:
+                df = torch.load(i, map_location=device_).type(torch.float16)
+
+                if i.endswith("tardis_6R7M.pt"):
+                    template_score.append(df[None, ...])
+                else:
+                    template_score.append(df)
+
+            template_score = torch.cat(template_score, 0)
+        if template_score.ndim == 3:
+            template_score = template_score[None, ...]
+
+        if device_ == "cpu":
+            template_score = np.flip(
+                (
+                    template_score.detach().numpy()
+                    if isinstance(template_score, torch.Tensor)
+                    else template_score
+                ),
+                axis=2,
+            )
+        else:
+            template_score = np.flip(
+                (
+                    template_score.cpu().detach().numpy()
+                    if isinstance(template_score, torch.Tensor)
+                    else template_score
+                ),
+                axis=2,
+            )
+
+        return template_score
+
+    if path is not None:
+        root = path
     else:
         root = QFileDialog.getOpenFileNames(
             None, "Select template score files", filter="Pytorch(*.pt)"
         )[0]
 
     ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
-    if sum([True if i.endswith("scores_ice.pt") else False for i in root]) > 0:
+    if sum(ice_) > 0:
         ice_ = root[np.where(ice_)[0][0]]
         root.remove(ice_)
         root.append(ice_)
 
     template_list = []
-    # template_list = [i.split("/")[-1][7:-3] for i in template_list]
+    # template_list = [i.split("/")[-1][7:-3] for i in root]
 
-    if "ice" in template_list:
-        template_list = template_list[:-1]
+    # if "ice" in template_list:
+    #     template_list = template_list[:-1]
 
     if len(root) == 1:
-        template_score = [torch.load(root[0], map_location=device_)]
+        template_score = [torch.load(root[0], map_location=device_).type(torch.float16)]
+
         for i in root:
             if i.endswith("tardis_6R7M.pt"):
                 template_list.append(i.split("/")[-1][:-3])

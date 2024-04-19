@@ -476,11 +476,6 @@ class AnnotationWidget(Container):
         self.patch_label = np.zeros((self.patch_points.shape[0],))
         self.patch_label[:] = 2
 
-        stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
-        point_indexes = np.all(
-            (stored_points >= 0) & (stored_points <= patch_size), axis=1
-        )
-
         if self.delta is None:
             self.delta = self.model.weights.clone()
 
