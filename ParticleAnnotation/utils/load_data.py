@@ -147,7 +147,9 @@ def load_template(path=None, aws=False):
 
     if aws:
         if len(path) == 1:
-            template_score = torch.load(path[0], map_location=device_).type(torch.float16)
+            template_score = torch.load(path[0], map_location=device_).type(
+                torch.float16
+            )
         else:
             template_score = []
 

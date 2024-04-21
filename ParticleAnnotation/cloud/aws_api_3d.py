@@ -29,7 +29,11 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     label_points_to_mask,
     stack_all_labels,
 )
-from ParticleAnnotation.utils.model.utils import correct_coord, find_peaks, rank_candidate_locations
+from ParticleAnnotation.utils.model.utils import (
+    correct_coord,
+    find_peaks,
+    rank_candidate_locations,
+)
 from ParticleAnnotation.utils.viewer.viewer_functionality import draw_patch_and_scores
 
 app = FastAPI()
@@ -247,9 +251,7 @@ async def re_train_model(
     pdb_name = template_list(f_name)
     template, _ = load_template(pdb_name)
 
-    _, tm_score = draw_patch_and_scores(
-        tomogram, template, patch_corner, patch_size
-    )
+    _, tm_score = draw_patch_and_scores(tomogram, template, patch_corner, patch_size)
 
     x = torch.from_numpy(tm_score.copy()).float()
     x = x.permute(1, 2, 3, 0)
@@ -336,9 +338,9 @@ async def re_train_model(
         all_labels=[x_filter, y_filter],
     )
 
-    weights = ', '.join(map(str, model.weights.numpy()))
-    bias = ', '.join(map(str, model.bias.numpy()))
-    weights_bias = weights + '|' + bias
+    weights = ", ".join(map(str, model.weights.numpy()))
+    bias = ", ".join(map(str, model.bias.numpy()))
+    weights_bias = weights + "|" + bias
 
     return weights_bias
 
@@ -372,9 +374,7 @@ async def new_proposal(
     pdb_name = template_list(f_name)
     template, _ = load_template(pdb_name)
 
-    _, tm_score = draw_patch_and_scores(
-        tomogram, template, patch_corner, patch_size
-    )
+    _, tm_score = draw_patch_and_scores(tomogram, template, patch_corner, patch_size)
 
     # BLR training and model update
     shape = tm_score.shape[1:]
@@ -393,4 +393,5 @@ async def new_proposal(
 
     logits_patch_shape = logits_patch.shape
 
+    # ToDo build long string
     return logits_patch, logits_patch_shape, patch_points

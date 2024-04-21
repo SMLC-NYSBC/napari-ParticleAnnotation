@@ -201,7 +201,11 @@ class AnnotationWidget(Container):
 
         widget = VBox(
             widgets=[
-                HBox(widgets=[spacer_1,]),
+                HBox(
+                    widgets=[
+                        spacer_1,
+                    ]
+                ),
                 HBox(
                     widgets=[
                         self.box_size,
@@ -218,23 +222,35 @@ class AnnotationWidget(Container):
                     widgets=[
                         self.pi,
                         self.gauss,
-                        ],
-                    ),
-                HBox(widgets=[spacer_2,]),
+                    ],
+                ),
+                HBox(
+                    widgets=[
+                        spacer_2,
+                    ]
+                ),
                 VBox(
                     widgets=[
                         self.select_particle_for_patches,
                         self.train_BLR_on_patch,
-                        ],
-                    ),
-                HBox(widgets=[spacer_4,]),
+                    ],
+                ),
+                HBox(
+                    widgets=[
+                        spacer_4,
+                    ]
+                ),
                 VBox(
                     widgets=[
                         self.predict,
                         self.filter_particle_by_confidence,
-                        ],
-                    ),
-                HBox(widgets=[spacer_3,]),
+                    ],
+                ),
+                HBox(
+                    widgets=[
+                        spacer_3,
+                    ]
+                ),
                 HBox(
                     widgets=[
                         self.show_tomogram,
@@ -252,7 +268,7 @@ class AnnotationWidget(Container):
                     widgets=[
                         self.export_particles_all,
                         self.export_particles_labeled,
-            ]
+                    ]
                 ),
                 HBox(
                     widgets=[
@@ -326,6 +342,10 @@ class AnnotationWidget(Container):
             return
 
     def _train_BLR_on_patch(self):
+        if len(self.user_annotations) == 0:
+            show_info('Please label any particle first!')
+            return
+
         self.init_done = True
         self.init = False
         self.AL = True
@@ -492,6 +512,12 @@ class AnnotationWidget(Container):
         self._show_active_learning_grid()
 
     def _predict(self):
+        if self.model is None:
+            show_info(
+                'You must load model or pre-train one with Active-Learning protocols!'
+                )
+            return
+
         self.AL = False
         self.Predict = True
 
@@ -499,9 +525,6 @@ class AnnotationWidget(Container):
         self.grid_labeling_mode = False
         self.clean_viewer()
         self._reset_views()
-
-        if self.model is None:
-            return
 
         patch_size = int(self.patch_size.value)
         gauss_filter = float(self.gauss.value)
@@ -514,7 +537,7 @@ class AnnotationWidget(Container):
             offset=patch_size,
             maximum_filter_size=int(self.filter_size.value),
             gauss_filter=gauss_filter,
-            filament=True if self.pdb_id.value == '6R7M' else False,
+            filament=True if self.pdb_id.value == "6R7M" else False,
         )
         order = np.argsort(peaks_confidence)
         self.peaks_full = peaks[order]
@@ -668,7 +691,7 @@ class AnnotationWidget(Container):
 
             peaks = np.vstack((peaks, peaks_ice))
 
-            self.user_annotations = peaks
+            # self.user_annotations = peaks
             self.patch_points = peaks[:, :3]
             self.patch_label = peaks[:, 3]
             self.patch_corner = (0, 0, 0)
@@ -806,13 +829,6 @@ class AnnotationWidget(Container):
             transparency=True,
             visibility=False,
         )
-
-        try:
-            self.create_image_layer(
-                self.y.detach().numpy(), name="y", transparency=True, visibility=False
-            )
-        except:
-            pass
 
         if self.logits_full is not None:
             self.create_image_layer(
@@ -978,25 +994,28 @@ class AnnotationWidget(Container):
                 correct=False,
             )
         else:
-            (
-                self.crop_grid_img,
-                self.crop_grid_tm_scores,
-                self.grid_particle_points,
-                self.grid_particle_labels,
-            ) = build_gird_with_particles(
-                self.user_annotations[:, :3],
-                self.user_annotations[:, 3],
-                (0, 0, 0),
-                self.img_process,
+            if len(self.user_annotations) > 0:
                 (
-                    self.tm_scores
-                    if self.logits_full is None
-                    else self.logits_full[None, ...]
-                ),
-                self.tm_idx if self.logits_full is None else 0,
-                int(self.box_size.value),
-                correct=False,
-            )
+                    self.crop_grid_img,
+                    self.crop_grid_tm_scores,
+                    self.grid_particle_points,
+                    self.grid_particle_labels,
+                ) = build_gird_with_particles(
+                    self.user_annotations[:, :3],
+                    self.user_annotations[:, 3],
+                    (0, 0, 0),
+                    self.img_process,
+                    (
+                        self.tm_scores
+                        if self.logits_full is None
+                        else self.logits_full[None, ...]
+                    ),
+                    self.tm_idx if self.logits_full is None else 0,
+                    int(self.box_size.value),
+                    correct=False,
+                )
+            else:
+                return
 
         self.clean_viewer()
         self.create_image_layer(self.crop_grid_img, name="Particles_crops")
@@ -1181,7 +1200,8 @@ class AnnotationWidget(Container):
         """
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
-            caption="Save File", directory=name,
+            caption="Save File",
+            directory=name,
         )
 
         data = pd.DataFrame(
@@ -1646,7 +1666,7 @@ class PlotPopup(QDialog):
 
         self.figure.clear()
         ax = self.figure.add_subplot(111)
-        ax.plot(x_values, y_values, '-bo', label='line with marker')
+        ax.plot(x_values, y_values, "-bo", label="line with marker")
         ax.set_xlabel("Training step")
         ax.set_ylabel("Score")
         self.canvas.draw()

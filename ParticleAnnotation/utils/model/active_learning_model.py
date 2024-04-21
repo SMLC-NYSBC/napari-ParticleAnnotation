@@ -100,9 +100,7 @@ def predict_3d_with_AL(
 
         peaks = skeletonize_3d(np.where(full_logits > 0.5, 1, 0))
         peaks = np.where(peaks > 0)
-        peaks = np.stack(
-                (peaks[0], peaks[1], peaks[2])
-            ).T
+        peaks = np.stack((peaks[0], peaks[1], peaks[2])).T
         peaks = VoxelDownSampling(voxel=5, labels=False, KNN=False)(coord=peaks)
         peaks = peaks.astype(np.int16)
     else:
