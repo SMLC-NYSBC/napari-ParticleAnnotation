@@ -81,7 +81,7 @@ class AnnotationWidget(Container):
 
         # BLR model
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
-        self.init, self.init_done, self.AL, self.Predict = False, False, False, False
+        self.init, self.init_done, self.AL, self.Predict = True, False, False, False
         self.AL_weights = None
         self.delta = None
         self.delta_values = [0.0]
@@ -616,7 +616,7 @@ class AnnotationWidget(Container):
         self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
         self.selected_particle_id = None
 
-        self.delta_values = []
+        self.delta_values = [0.0]
         self.delta_plot.update_plot(y_values=self.delta_values)
 
         # Remove after testing
@@ -626,7 +626,7 @@ class AnnotationWidget(Container):
 
         # BLR model
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
-        self.init, self.init_done, self.AL, self.Predict = False, False, False, False
+        self.init, self.init_done, self.AL, self.Predict = True, False, False, False
         self.AL_weights = None
 
     """""" """""" """""" """
@@ -634,6 +634,8 @@ class AnnotationWidget(Container):
     """ """""" """""" """"""
 
     def _pdb_id_update(self):
+        self._soft_reset_session()
+
         try:
             if self.pdb_id.value == "6R7M":
                 tardis_ = [1 if i.startswith("tardis") else 0 for i in self.tm_list]
