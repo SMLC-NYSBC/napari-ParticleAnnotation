@@ -22,10 +22,6 @@ from ParticleAnnotation.utils.load_data import (
     load_coordinates,
 )
 
-from ParticleAnnotation.utils.model.active_learning_model import (
-    BinaryLogisticRegression,
-    predict_3d_with_AL,
-)
 from ParticleAnnotation.utils.model.utils import (
     correct_coord,
     get_device,
@@ -74,6 +70,8 @@ class AWSWidget(Container):
         self.weights_bias = None
         self.delta = None
         self.delta_values = [0.0]
+
+        self.logits_full = None
 
         # Viewer
         self.color_map_particle_classes = {
@@ -429,7 +427,7 @@ class AWSWidget(Container):
 
     def _train_BLR_on_patch(self):
         if len(self.user_annotations) == 0:
-            show_info('Please label any particle first!')
+            show_info("Please label any particle first!")
             return
 
         self.init_done = True
@@ -481,14 +479,11 @@ class AWSWidget(Container):
             [float(i) for i in self.weights_bias[1].split(",")],
         ]
 
+        w = np.array(self.weights_bias[0])
         if self.delta is None:
-            self.delta = np.array(self.weights_bias[0])
-
             show_info("Training weights delta = 0.0")
         else:
-            w = np.array(self.weights_bias[0])
-
-            _delta = torch.mean(self.delta - w)
+            _delta = np.mean(self.delta - w)
             self.delta_values.append(_delta)
 
             print(f"Training weights delta = {self.delta_values[-1]}")
@@ -512,22 +507,22 @@ class AWSWidget(Container):
         response = response.json().split("|")
 
         logits_shape = tuple([int(i) for i in response[1].split(",")])
-        self.logits_patch = np.array([int(i) for i in response[0].split(",")]).reshape(
-            logits_shape
-        )
+        self.logits_patch = np.array([int(i) for i in response[0].split(",")])
+        self.logits_patch = self.logits_patch.reshape(logits_shape)
+
         self.patch_points = np.array([float(i) for i in response[2].split(",")])
-        self.patch_points = self.patch_points.reshape(self.patch_points // 3, 3)
+        self.patch_points = self.patch_points.reshape(len(self.patch_points) // 3, 3)
 
         self.patch_label = np.zeros((self.patch_points.shape[0],))
-        self.patch_label[...] = 2
+        self.patch_label[:,] = 2
 
         self._show_active_learning_grid()
 
     def _predict(self):
         if self.weights_bias is None:
             show_info(
-                'You must load model or pre-train one with Active-Learning protocols!'
-                )
+                "You must load model or pre-train one with Active-Learning protocols!"
+            )
 
         self.AL = False
         self.Predict = True
@@ -538,21 +533,33 @@ class AWSWidget(Container):
         self._reset_views()
 
         patch_size = int(self.patch_size.value)
+        filter_size = int(self.filter_size.value)
         gauss_filter = float(self.gauss.value)
 
-        # ToDo Preiction of filamets with skeletonization and down scaling
-        peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
-            self.img_process,
-            tm_scores=self.tm_scores,
-            model=self.model,
-            offset=patch_size,
-            maximum_filter_size=int(self.filter_size.value),
-            gauss_filter=gauss_filter,
-            filament=True if self.pdb_id.value == "6R7M" else False,
+        response = requests.get(
+            url + "predict",
+            params={
+                "f_name": self.image_name,
+                "pbd_id": self.pdb_id.value,
+                "patch_size": patch_size,
+                "pi": float(self.pi.value),
+                "weights": ",".join(map(str, self.weights_bias[0])),
+                "bias": ",".join(map(str, self.weights_bias[1])),
+                "gauss_filter": gauss_filter,
+                "filter_size": filter_size,
+            },
+            timeout=None,
         )
-        order = np.argsort(peaks_confidence)
-        self.peaks_full = peaks[order]
-        self.peaks_confidence_full = peaks_confidence[order]
+        response = response.json().split("|")
+
+        shape_ = tuple([int(i) for i in response[1].split(",")])
+        self.logits_full = np.array([int(i) for i in response[0].split(",")])
+        self.logits_full = self.logits_full.reshape(shape_)
+
+        peaks = np.array([float(i) for i in response[2].split(",")])
+
+        self.peaks_full = peaks.reshape((len(peaks) // 3, 3))
+        self.peaks_confidence_full = np.array([float(i) for i in response[3].split(",")])
 
         self.create_image_layer(self.img_process, self.filename)
         self.create_image_layer(
@@ -806,18 +813,30 @@ class AWSWidget(Container):
 
         # ToDo move to the Cloud
         if self.logits_full is None:
-            if self.model is not None:
-                peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
-                    self.img_process,
-                    tm_scores=self.tm_scores,
-                    model=self.model,
-                    offset=patch_size,
-                    maximum_filter_size=filter_size,
-                    gauss_filter=gauss_filter,
+            if self.weights_bias is not None:
+                response = requests.get(
+                    url + "show_tomogram",
+                    params={
+                        "f_name": self.image_name,
+                        "patch_corner": ",".join(map(str, self.patch_corner)),
+                        "patch_size": patch_size,
+                        "pi": float(self.pi.value),
+                        "weights": ",".join(map(str, self.weights_bias[0])),
+                        "bias": ",".join(map(str, self.weights_bias[1])),
+                        "gauss_filter": gauss_filter,
+                        "filter_size": filter_size,
+                    },
+                    timeout=None,
                 )
-                order = np.argsort(peaks_confidence)
-                peaks = peaks[order]
-                peaks_confidence = peaks_confidence[order]
+                response = response.json().split("|")
+                shape_ = tuple([int(i) for i in response[1].split(",")])
+                self.logits_full = np.array([int(i) for i in response[0].split(",")])
+                self.logits_full = self.logits_full.reshape(shape_)
+
+                peaks = np.array([float(i) for i in response[2].split(",")])
+                peaks = peaks.reshape((len(peaks) // 3, 3))
+
+                peaks_confidence = np.array([float(i) for i in response[3].split(",")])
 
                 self.peaks_full = peaks[-100:, :]
                 self.peaks_confidence_full = peaks_confidence[-100:]
@@ -1317,15 +1336,15 @@ class AWSWidget(Container):
         """
         if self.model is not None:
             # Check for AL_weights
-            if (
-                self.weights_bias is not None
-            ):
+            if self.weights_bias is not None:
                 filename, _ = QFileDialog.getSaveFileName(
                     caption="Save File", directory="Active_learn_model.pt"
                 )
 
-                self.weights_bias = [torch.Tensor(self.weights_bias[0]),
-                                     torch.Tensor(self.weights_bias[1])]
+                self.weights_bias = [
+                    torch.Tensor(self.weights_bias[0]),
+                    torch.Tensor(self.weights_bias[1]),
+                ]
 
             torch.save(self.weights_bias, filename)
 

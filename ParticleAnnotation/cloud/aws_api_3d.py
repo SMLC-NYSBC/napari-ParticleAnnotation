@@ -1,32 +1,25 @@
 import json
-from os import listdir, mkdir
-from os.path import isdir, isfile
+from os import listdir
 from typing import List
 
-from scipy.ndimage import maximum_filter
-
-from ParticleAnnotation.cloud.datatypes import Consensus, String, InitialValues
 import numpy as np
 import torch
-from fastapi.responses import JSONResponse
-import shutil
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from topaz.stats import normalize
 
 from ParticleAnnotation.cloud.utils import (
     numpy_array_to_bytes_io,
-    get_model_name_and_weights,
 )
 
 from ParticleAnnotation.utils.load_data import (
     load_template,
-    load_coordinates,
     load_tomogram,
 )
 from ParticleAnnotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
+    predict_3d_with_AL,
     stack_all_labels,
 )
 from ParticleAnnotation.utils.model.utils import (
@@ -129,7 +122,7 @@ async def get_raw_tomos(f_name: str):
         min_ = tomogram.min()
         max_ = tomogram.max()
         tomogram = ((tomogram - min_) / (max_ - min_)) * 128
-        tomogram = tomogram.astype(np.int8)
+        tomogram = tomogram.astype(np.uint8)
 
         tomogram = numpy_array_to_bytes_io(tomogram)
         headers = {"X-filename": tomo_name}
@@ -159,7 +152,7 @@ async def get_raw_templates(f_name: str, pdb_name: str):
         min_ = template.min()
         max_ = template.max()
         template = ((template - min_) / (max_ - min_)) * 128
-        template = template.astype(np.int8)
+        template = template.astype(np.uint8)
 
         # convert list to string
         template = numpy_array_to_bytes_io(template)
@@ -354,6 +347,9 @@ async def new_proposal(
     weights: str,
     bias: str,
 ):
+    patch_corner = patch_corner.split(",")
+    patch_corner = tuple(map(int, patch_corner))
+
     weights = weights.split(",")
     weights = tuple(map(float, weights))
     weights = torch.from_numpy(np.array(weights).astype(np.float32))
@@ -374,11 +370,11 @@ async def new_proposal(
     pdb_name = template_list(f_name)
     template, _ = load_template(pdb_name)
 
-    _, tm_score = draw_patch_and_scores(tomogram, template, patch_corner, patch_size)
+    _, x = draw_patch_and_scores(tomogram, template, patch_corner, patch_size)
 
     # BLR training and model update
-    shape = tm_score.shape[1:]
-    x = torch.from_numpy(tm_score.copy()).float()
+    shape = x.shape[1:]
+    x = torch.from_numpy(x.copy()).float()
     x = x.permute(1, 2, 3, 0)
     x = x.reshape(-1, x.shape[-1])
 
@@ -391,7 +387,134 @@ async def new_proposal(
     proposals = rank_candidate_locations(logits, shape)
     patch_points = np.vstack(proposals[:10])
 
-    logits_patch_shape = logits_patch.shape
+    # ToDo replace for procentiles
+    min_ = logits_patch.min()
+    max_ = logits_patch.max()
+    logits_patch = ((logits_patch - min_) / (max_ - min_)) * 128
+    logits_patch = logits_patch.astype(np.uint8)
 
-    # ToDo build long string
-    return logits_patch, logits_patch_shape, patch_points
+    return_str = (
+        ",".join(map(str, logits_patch.flatten()))
+        + "|"
+        + ",".join(map(str, logits_patch.shape))
+        + "|"
+        + ",".join(map(str, patch_points.flatten()))
+    )
+
+    return return_str
+
+
+@app.get("/show_tomogram")
+async def show_tomogram(
+    f_name: str,
+    patch_corner: str,
+    patch_size: int,
+    pi: float,
+    weights: str,
+    bias: str,
+    gauss_filter: float,
+    filter_size: int,
+):
+    patch_corner = patch_corner.split(",")
+    patch_corner = tuple(map(int, patch_corner))
+
+    weights = weights.split(",")
+    weights = tuple(map(float, weights))
+    weights = torch.from_numpy(np.array(weights).astype(np.float32))
+
+    bias = float(bias)
+    bias = torch.Tensor([bias])
+
+    model = BinaryLogisticRegression(
+        n_features=len(weights),
+        l2=1.0,
+        pi=float(pi),
+        pi_weight=1000,
+    )
+    model.fit(pre_train=[weights, bias])
+
+    tomogram, _, _ = load_tomogram("data/" + f_name + f"/{f_name}.mrc", aws=True)
+
+    pdb_name = template_list(f_name)
+    template, _ = load_template(pdb_name)
+
+    peaks, peaks_confidence, logits_full = predict_3d_with_AL(
+        tomogram,
+        tm_scores=template,
+        model=model,
+        offset=patch_size,
+        maximum_filter_size=filter_size,
+        gauss_filter=gauss_filter,
+    )
+
+    order = np.argsort(peaks_confidence)
+    peaks = ",".join(map(str, peaks[order].flatten()))
+    peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
+
+    min_ = logits_full.min()
+    max_ = logits_full.max()
+    logits_full = ((logits_full - min_) / (max_ - min_)) * 128
+    logits_full = logits_full.astype(np.uint8)
+
+    logits_full_shape = ",".join(map(str, logits_full.shape))
+    logits_full = ",".join(map(str, logits_full.flatten()))
+
+    return logits_full + "|" + logits_full_shape + "|" + peaks + "|" + peaks_confidence
+
+
+@app.get("/predict")
+async def predict(
+    f_name: str,
+    pbd_id: str,
+    patch_size: int,
+    pi: float,
+    weights: str,
+    bias: str,
+    gauss_filter: float,
+    filter_size: int,
+):
+
+    weights = weights.split(",")
+    weights = tuple(map(float, weights))
+    weights = torch.from_numpy(np.array(weights).astype(np.float32))
+
+    bias = float(bias)
+    bias = torch.Tensor([bias])
+
+    tomogram, _, _ = load_tomogram("data/" + f_name + f"/{f_name}.mrc", aws=True)
+
+    pdb_name = template_list(f_name)
+    template, _ = load_template(pdb_name)
+
+    model = BinaryLogisticRegression(
+        n_features=len(weights),
+        l2=1.0,
+        pi=float(pi),
+        pi_weight=1000,
+    )
+    model.fit(pre_train=[weights, bias])
+
+    peaks, peaks_confidence, logits_full = predict_3d_with_AL(
+        tomogram,
+        tm_scores=template,
+        model=model,
+        offset=patch_size,
+        maximum_filter_size=filter_size,
+        gauss_filter=gauss_filter,
+        filament=True if pbd_id == "6R7M" else False,
+    )
+
+    order = np.argsort(peaks_confidence)
+
+    peaks = ",".join(map(str, peaks[order].flatten()))
+    peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
+
+    min_ = logits_full.min()
+    max_ = logits_full.max()
+    logits_full = ((logits_full - min_) / (max_ - min_)) * 128
+    logits_full = logits_full.astype(np.uint8)
+
+    logits_full_shape = ",".join(map(str, logits_full.shape))
+    logits_full = ",".join(map(str, logits_full.flatten()))
+
+    return logits_full + "|" + logits_full_shape + "|" + peaks + "|" + peaks_confidence

@@ -343,7 +343,7 @@ class AnnotationWidget(Container):
 
     def _train_BLR_on_patch(self):
         if len(self.user_annotations) == 0:
-            show_info('Please label any particle first!')
+            show_info("Please label any particle first!")
             return
 
         self.init_done = True
@@ -514,8 +514,8 @@ class AnnotationWidget(Container):
     def _predict(self):
         if self.model is None:
             show_info(
-                'You must load model or pre-train one with Active-Learning protocols!'
-                )
+                "You must load model or pre-train one with Active-Learning protocols!"
+            )
             return
 
         self.AL = False
