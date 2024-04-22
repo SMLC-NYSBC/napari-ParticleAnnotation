@@ -473,7 +473,6 @@ async def predict(
     gauss_filter: float,
     filter_size: int,
 ):
-
     weights = weights.split(",")
     weights = tuple(map(float, weights))
     weights = torch.from_numpy(np.array(weights).astype(np.float32))

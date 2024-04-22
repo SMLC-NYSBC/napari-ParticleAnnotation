@@ -559,7 +559,9 @@ class AWSWidget(Container):
         peaks = np.array([float(i) for i in response[2].split(",")])
 
         self.peaks_full = peaks.reshape((len(peaks) // 3, 3))
-        self.peaks_confidence_full = np.array([float(i) for i in response[3].split(",")])
+        self.peaks_confidence_full = np.array(
+            [float(i) for i in response[3].split(",")]
+        )
 
         self.create_image_layer(self.img_process, self.filename)
         self.create_image_layer(
