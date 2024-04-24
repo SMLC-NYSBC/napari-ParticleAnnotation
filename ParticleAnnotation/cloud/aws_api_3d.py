@@ -11,7 +11,7 @@ from topaz.stats import normalize
 from ParticleAnnotation.cloud.utils import (
     numpy_array_to_bytes_io,
 )
-
+from ParticleAnnotation.utils.scale import scale_image
 from ParticleAnnotation.utils.load_data import (
     load_template,
     load_tomogram,
@@ -30,7 +30,8 @@ from ParticleAnnotation.utils.model.utils import (
 from ParticleAnnotation.utils.viewer.viewer_functionality import draw_patch_and_scores
 
 app = FastAPI()
-url = "http://localhost:8000/"
+# url = "http://localhost:8000/"  # Debugging
+url = ""  # Production
 dir_ = ""
 formats = ("mrc", "rec", "tiff", "tif")
 template_formats = ("pt", "npy")
@@ -40,24 +41,25 @@ Initialization of the plugin
 """
 
 
-def template_list(f_name):
+def template_list(f_name: str, dataset: str):
     # Load TM Scores
-    files = listdir("data/" + f_name)
+    files = listdir(f"data/{dataset}/{f_name}")
     files = [f[:-3] for f in files if f.endswith(".pt")]
     ice_ = [True if i.endswith("scores_ice") else False for i in files]
+
     if sum(ice_) > 0:
         ice_ = files[np.where(ice_)[0][0]]
         files.remove(ice_)
         files.append(ice_)
 
-    return [f"data/{f_name}/{s}.pt" for s in files]
+    return [f"data/{dataset}/{f_name}/{s}.pt" for s in files]
 
 
 @app.get("/list_tomograms", response_model=List[str])
-async def list_tomograms():
+async def list_tomograms(dataset: str):
     try:
         # List all files in the predefined folder
-        files = listdir("data/")
+        files = listdir(f"data/{dataset}")
         files = [f for f in files if f.startswith("T_")]
 
         return files
@@ -67,9 +69,9 @@ async def list_tomograms():
 
 
 @app.get("/list_templates", response_model=List[str])
-async def list_templates(tomo_name: str = None):
+async def list_templates(tomo_name: str, dataset: str):
     try:
-        template = template_list(tomo_name)
+        template = template_list(tomo_name, dataset)
         template = [t.split("/")[-1][:-3] for t in template]
 
         return template
@@ -112,28 +114,30 @@ Retrive data for the visualization
 
 
 @app.get("/get_raw_tomos")
-async def get_raw_tomos(f_name: str):
-    try:
-        # Load the tomogram and the template
-        tomogram, _, tomo_name = load_tomogram(
-            "data/" + f_name + f"/{f_name}.mrc", aws=True
+async def get_raw_tomos(f_name: str, dataset: str, high_res: int):
+    # Load the tomogram and the template
+    tomogram, _, tomo_name = load_tomogram(
+        f"data/{dataset}/{f_name}/{f_name}.mrc", aws=True
+    )
+
+    if not bool(high_res):
+        tomogram, _ = scale_image(
+            scale=[125, 720, 511], image=tomogram, nn=False, device="cpu"
         )
 
-        min_ = tomogram.min()
-        max_ = tomogram.max()
-        tomogram = ((tomogram - min_) / (max_ - min_)) * 128
-        tomogram = tomogram.astype(np.uint8)
+    min_ = tomogram.min()
+    max_ = tomogram.max()
+    tomogram = ((tomogram - min_) / (max_ - min_)) * 128
+    tomogram = tomogram.astype(np.uint8)
 
-        tomogram = numpy_array_to_bytes_io(tomogram)
-        headers = {"X-filename": tomo_name}
+    tomogram = numpy_array_to_bytes_io(tomogram)
+    headers = {"X-filename": tomo_name}
 
-        return StreamingResponse(tomogram, headers=headers)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(tomogram, headers=headers)
 
 
 @app.get("/get_raw_templates")
-async def get_raw_templates(f_name: str, pdb_name: str):
+async def get_raw_templates(f_name: str, dataset: str, pdb_name: str, high_res: int):
     """
     Get the template of the tomogram
     This assumes that the template is under the folder data/templates/tomo_name and
@@ -144,10 +148,20 @@ async def get_raw_templates(f_name: str, pdb_name: str):
     pdb_name = pdb_name.split("|")
 
     try:
-        pdb_name = [f"data/{f_name}/{f}.pt" for f in pdb_name]
+        pdb_name = [f"data/{dataset}/{f_name}/{f}.pt" for f in pdb_name]
 
         # Load the tomogram and the template
         template = load_template(pdb_name, aws=True)
+        if template.ndim == 4:
+            template = template[0, :]
+
+        if not bool(high_res):
+            template, _ = scale_image(
+                scale=[125, 720, 511],
+                image=template.astype(np.float32),
+                nn=False,
+                device="cpu",
+            )
 
         min_ = template.min()
         max_ = template.max()
@@ -169,8 +183,8 @@ Get first particles based on TM scores
 
 
 @app.get("/get_initial_peaks")
-async def get_initial_peaks(f_name: str, filter_size: int, tm_idx: int):
-    pdb_name = template_list(f_name)
+async def get_initial_peaks(f_name: str, dataset: str, filter_size: int, tm_idx: int):
+    pdb_name = template_list(f_name, dataset)
 
     template, _ = load_template(pdb_name)
 
@@ -211,6 +225,7 @@ async def get_initial_peaks(f_name: str, filter_size: int, tm_idx: int):
 @app.get("/re_train_model")
 async def re_train_model(
     f_name: str,
+    dataset: str,
     tm_idx: int,
     patch_corner: str,
     patch_size: int,
@@ -239,9 +254,9 @@ async def re_train_model(
     points = np.array(tuple(map(float, points.split(","))))
     points = points.reshape((points.shape[0] // 4, 4))
 
-    tomogram, _, _ = load_tomogram("data/" + f_name + f"/{f_name}.mrc", aws=True)
+    tomogram, _, _ = load_tomogram(f"data/{dataset}/{f_name}/{f_name}.mrc", aws=True)
 
-    pdb_name = template_list(f_name)
+    pdb_name = template_list(f_name, dataset)
     template, _ = load_template(pdb_name)
 
     _, tm_score = draw_patch_and_scores(tomogram, template, patch_corner, patch_size)
@@ -341,6 +356,7 @@ async def re_train_model(
 @app.get("/new_proposal")
 async def new_proposal(
     f_name: str,
+    dataset: str,
     patch_corner: str,
     patch_size: int,
     pi: float,
@@ -365,9 +381,9 @@ async def new_proposal(
     )
     model.fit(pre_train=[weights, bias])
 
-    tomogram, _, _ = load_tomogram("data/" + f_name + f"/{f_name}.mrc", aws=True)
+    tomogram, _, _ = load_tomogram(f"data/{dataset}/{f_name}/{f_name}.mrc", aws=True)
 
-    pdb_name = template_list(f_name)
+    pdb_name = template_list(f_name, dataset)
     template, _ = load_template(pdb_name)
 
     _, x = draw_patch_and_scores(tomogram, template, patch_corner, patch_size)
@@ -385,7 +401,12 @@ async def new_proposal(
 
     # Draw 10 coordinates with lowest entropy
     proposals = rank_candidate_locations(logits, shape)
-    patch_points = np.vstack(proposals[:10])
+    patch_points = np.vstack(
+        (
+            np.vstack(proposals[:10]),  # least certain
+            np.vstack(proposals[-10:]),  # Most certain
+        )
+    )
 
     # ToDo replace for procentiles
     min_ = logits_patch.min()
@@ -407,6 +428,8 @@ async def new_proposal(
 @app.get("/show_tomogram")
 async def show_tomogram(
     f_name: str,
+    dataset: str,
+    high_res: int,
     patch_corner: str,
     patch_size: int,
     pi: float,
@@ -433,9 +456,9 @@ async def show_tomogram(
     )
     model.fit(pre_train=[weights, bias])
 
-    tomogram, _, _ = load_tomogram("data/" + f_name + f"/{f_name}.mrc", aws=True)
+    tomogram, _, _ = load_tomogram(f"data/{dataset}/{f_name}/{f_name}.mrc", aws=True)
 
-    pdb_name = template_list(f_name)
+    pdb_name = template_list(f_name, dataset)
     template, _ = load_template(pdb_name)
 
     peaks, peaks_confidence, logits_full = predict_3d_with_AL(
@@ -451,6 +474,14 @@ async def show_tomogram(
     peaks = ",".join(map(str, peaks[order].flatten()))
     peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
 
+    if not bool(high_res):
+        logits_full, _ = scale_image(
+            scale=[125, 720, 511],
+            image=logits_full.astype(np.float32),
+            nn=False,
+            device="cpu",
+        )
+
     min_ = logits_full.min()
     max_ = logits_full.max()
     logits_full = ((logits_full - min_) / (max_ - min_)) * 128
@@ -465,6 +496,8 @@ async def show_tomogram(
 @app.get("/predict")
 async def predict(
     f_name: str,
+    dataset: str,
+    high_res: int,
     pbd_id: str,
     patch_size: int,
     pi: float,
@@ -480,9 +513,9 @@ async def predict(
     bias = float(bias)
     bias = torch.Tensor([bias])
 
-    tomogram, _, _ = load_tomogram("data/" + f_name + f"/{f_name}.mrc", aws=True)
+    tomogram, _, _ = load_tomogram(f"data/{dataset}/{f_name}/{f_name}.mrc", aws=True)
 
-    pdb_name = template_list(f_name)
+    pdb_name = template_list(f_name, dataset)
     template, _ = load_template(pdb_name)
 
     model = BinaryLogisticRegression(
@@ -507,6 +540,14 @@ async def predict(
 
     peaks = ",".join(map(str, peaks[order].flatten()))
     peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
+
+    if not bool(high_res):
+        logits_full, _ = scale_image(
+            scale=[125, 720, 511],
+            image=logits_full.astype(np.float32),
+            nn=False,
+            device="cpu",
+        )
 
     min_ = logits_full.min()
     max_ = logits_full.max()
