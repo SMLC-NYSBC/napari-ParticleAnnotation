@@ -1,3 +1,4 @@
+import uuid
 import requests
 import numpy as np
 from magicgui.widgets import (
@@ -43,11 +44,11 @@ colormap_for_display = "Spectral"
 # url = "http://3.230.8.116:8000/"  # Production
 
 
-class AWSWidget_3(Container):
-    def __init__(self, viewer_cloud_tm_score_3d_3: Viewer):
-        super(AWSWidget_3, self).__init__(layout="vertical")
+class AWSWidget_7(Container):
+    def __init__(self, viewer_cloud_tm_score_3d_7: Viewer):
+        super(AWSWidget_7, self).__init__(layout="vertical")
 
-        self.napari_viewer = viewer_cloud_tm_score_3d_3
+        self.napari_viewer = viewer_cloud_tm_score_3d_7
         self.delta_plot = PlotPopup()
         self.delta_plot.show()
 
@@ -117,6 +118,7 @@ class AWSWidget_3(Container):
         self.click_add_point_callback = None
 
         spacer_1 = Label(value="------------------- Options --------------------")
+        # "3.230.8.116"
         self.url = LineEdit(name="Server", value="3.230.8.116")
         self.resolution = CheckBox(name="High-Res", value=False)
         self.box_size = LineEdit(name="Model Mask Size [px]", value=5)
@@ -126,9 +128,13 @@ class AWSWidget_3(Container):
             name="PDB ID:",
             value="7A4M",
             choices=(
+                "1FA2",
                 "1PMA",
                 "6N4V",
+                "6QS9",
+                "6R7M",
                 "7A4M",
+                "7QTQ",
             ),
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
@@ -373,7 +379,7 @@ class AWSWidget_3(Container):
                 url=f"http://{self.url.value}:8000/get_raw_tomos",
                 params={
                     "f_name": self.image_name,
-                    "dataset": "7",
+                    "dataset": "3",
                     "high_res": int(self.resolution.value),
                 },
                 timeout=None,
@@ -1284,12 +1290,17 @@ class AWSWidget_3(Container):
                 "_rlnCoordinateY",
                 "_rlnCoordinateX",
                 "_rlnConfidence",
+                "_rlnTomogramName",
+                "_rlnGroup",
+                "_rlnUserID",
+                "_rlnPDBID",
             ],
         )
         starfile.write(data, filename)
 
     def _export_particles_all(self):
         user_annotations = self.user_annotations.copy()
+        groups = np.repeat("user_annotations", len(user_annotations))
 
         try:
             prediction_particle = self.napari_viewer.layers["Particle_Prediction"].data
@@ -1305,14 +1316,33 @@ class AWSWidget_3(Container):
             prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
             min_, max_ = np.min(prediction_labels), np.max(prediction_labels)
 
-        user_annotations[user_annotations[:, 3] == 0, 3] = min_
-        user_annotations[user_annotations[:, 3] == 1, 3] = max_
-        data = np.concatenate((user_annotations, prediction))
+            user_annotations[user_annotations[:, 3] == 0, 3] = min_
+            user_annotations[user_annotations[:, 3] == 1, 3] = max_
+            data = np.concatenate((user_annotations, prediction))
 
+            groups = np.hstack((groups, np.repeat("predictions", len(prediction))))
+
+        data = np.hstack((data, np.repeat(self.image_name, len(data))[:, None]))
+        data = np.hstack((data, groups[:, None]))
+        data = np.hstack(
+            (data, np.repeat(str(uuid.UUID(int=uuid.getnode())), len(data))[:, None])
+        )
+        data = np.hstack((data, np.repeat(self.pdb_id.value, len(data))[:, None]))
+
+        print(data)
         self._export(data, "all_annotations.star")
 
     def _export_particles_labeled(self):
-        self._export(self.user_annotations.copy(), "user_annotations.star")
+        data = self.user_annotations.copy()
+
+        data = np.hstack((data, np.repeat(self.image_name, len(data))[:, None]))
+        data = np.hstack((data, np.repeat("user_annotations", len(data))[:, None]))
+        data = np.hstack(
+            (data, np.repeat(str(uuid.UUID(int=uuid.getnode())), len(data))[:, None])
+        )
+        data = np.hstack((data, np.repeat(self.pdb_id.value, len(data))[:, None]))
+
+        self._export(data, "user_annotations.star")
 
     def _export_particles_predict(self):
         try:
@@ -1320,13 +1350,30 @@ class AWSWidget_3(Container):
             prediction_labels = self.napari_viewer.layers[
                 "Particle_Prediction"
             ].properties["label"]
+
+            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
+
+            prediction = np.hstack(
+                (prediction, np.repeat(self.image_name, len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat("user_annotations", len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (
+                    prediction,
+                    np.repeat(str(uuid.UUID(int=uuid.getnode())), len(prediction))[
+                        :, None
+                    ],
+                )
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat(self.pdb_id.value, len(prediction))[:, None])
+            )
+
+            self._export(prediction, f"{self.pdb_id.value}_prediction.star")
         except:
-            prediction_particle, prediction_labels = [], []
-
-        prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
-
-        self.pdb_id.value
-        self._export(prediction, f"{self.pdb_id.value}_prediction.star")
+            pass
 
     def _export_particles_filter(self):
         try:
@@ -1336,12 +1383,31 @@ class AWSWidget_3(Container):
             prediction_labels = self.napari_viewer.layers[
                 "Particle_Prediction_Filtered"
             ].properties["label"]
+
+            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
+
+            prediction = np.hstack(
+                (prediction, np.repeat(self.image_name, len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat("user_annotations", len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (
+                    prediction,
+                    np.repeat(str(uuid.UUID(int=uuid.getnode())), len(prediction))[
+                        :, None
+                    ],
+                )
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat(self.pdb_id.value, len(prediction))[:, None])
+            )
+
+            self._export(prediction, f"{self.pdb_id.value}_prediction_filtered.star")
+
         except:
-            prediction_particle, prediction_labels = [], []
-
-        prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
-
-        self._export(prediction, f"{self.pdb_id.value}_prediction_filtered.star")
+            pass
 
     def _import_particles(self):
         """

@@ -119,7 +119,7 @@ class AWSWidget_7(Container):
 
         spacer_1 = Label(value="------------------- Options --------------------")
         # "3.230.8.116"
-        self.url = LineEdit(name="Server", value="localhost")
+        self.url = LineEdit(name="Server", value="3.230.8.116")
         self.resolution = CheckBox(name="High-Res", value=False)
         self.box_size = LineEdit(name="Model Mask Size [px]", value=5)
         self.filter_size = LineEdit(name="Particle size [px]", value=15)
