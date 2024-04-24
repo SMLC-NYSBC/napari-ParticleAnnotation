@@ -55,7 +55,6 @@ def load_coordinates(path):
     """
     if path.endswith(".csv"):
         data = np.genfromtxt(path, delimiter=",", dtype=float)
-
     elif path.endswith(".star"):
         # Implement reading of .star file
         data = starfile.read(path)
@@ -64,19 +63,15 @@ def load_coordinates(path):
         z = data["rlnCoordinateZ"]
         data = np.column_stack((x, y, z))
         return None, None
-
     elif path.endswith(".txt"):
         data = np.genfromtxt(path, delimiter=",", dtype=float)
-
     elif path.endswith(".npy"):
         data = np.load(path)
-
     elif path.endswith(".tbl"):
         # Implement reading of .tbl file
         data = np.genfromtxt(path, delimiter=",", dtype=float)
         # this will have nans where there are strings
         return None, None
-
     else:
         print("Could not load coordinates from file")
         return None, None
@@ -111,13 +106,22 @@ def save_coordinates(path, data):
     np.savetxt(path, data, delimiter=",", fmt="%s")
 
 
-def load_tomogram():
+def load_tomogram(path=None, aws=False):
     """
     Load image data
 
     Return:
         Image data.
     """
+    if aws:
+        if path.endswith((".mrc", ".rec")):
+            data, px = load_mrc_file(path)
+        elif path.endswith(".tif"):
+            data = tiff.imread(path)
+            px = 1.0
+
+        return data, px, os.path.split(path)[1][:-4]
+
     root = QFileDialog.getOpenFileNames(
         None, "Select a tomogram files [.mrc]", filter="mrc(*.mrc)"
     )[0]
@@ -129,7 +133,7 @@ def load_tomogram():
         return None, None, None
 
 
-def load_template():
+def load_template(path=None, aws=False):
     """
     Load the template scores from disk.
 
@@ -140,31 +144,89 @@ def load_template():
         The template score data and index indicating position template score.
     """
     device_ = get_device()
-    root = QFileDialog.getOpenFileNames(
-        None, "Select a template score files", filter="Pytorch(*.pt)"
-    )[0]
-    ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
 
-    if sum([True if i.endswith("scores_ice.pt") else False for i in root]) > 0:
+    if aws:
+        if len(path) == 1:
+            template_score = torch.load(path[0], map_location=device_).type(
+                torch.float16
+            )
+        else:
+            template_score = []
+
+            for i in path:
+                df = torch.load(i, map_location=device_).type(torch.float16)
+
+                if i.endswith("tardis_6R7M.pt"):
+                    template_score.append(df[None, ...])
+                else:
+                    template_score.append(df)
+
+            template_score = torch.cat(template_score, 0)
+        if template_score.ndim == 3:
+            template_score = template_score[None, ...]
+
+        if device_ == "cpu":
+            template_score = np.flip(
+                (
+                    template_score.detach().numpy()
+                    if isinstance(template_score, torch.Tensor)
+                    else template_score
+                ),
+                axis=2,
+            )
+        else:
+            template_score = np.flip(
+                (
+                    template_score.cpu().detach().numpy()
+                    if isinstance(template_score, torch.Tensor)
+                    else template_score
+                ),
+                axis=2,
+            )
+
+        return template_score
+
+    if path is not None:
+        root = path
+    else:
+        root = QFileDialog.getOpenFileNames(
+            None, "Select template score files", filter="Pytorch(*.pt)"
+        )[0]
+
+    ice_ = [True if i.endswith("scores_ice.pt") else False for i in root]
+    if sum(ice_) > 0:
         ice_ = root[np.where(ice_)[0][0]]
         root.remove(ice_)
         root.append(ice_)
 
-    template_list = root.copy()
-    template_list = [i.split("/")[-1][7:-3] for i in template_list]
+    template_list = []
+    # template_list = [i.split("/")[-1][7:-3] for i in root]
 
-    if "ice" in template_list:
-        template_list = template_list[:-1]
+    # if "ice" in template_list:
+    #     template_list = template_list[:-1]
 
     if len(root) == 1:
-        template_score = [torch.load(root[0], map_location=device_)]
+        template_score = [torch.load(root[0], map_location=device_).type(torch.float16)]
+
+        for i in root:
+            if i.endswith("tardis_6R7M.pt"):
+                template_list.append(i.split("/")[-1][:-3])
+            else:
+                template_list.append(i.split("/")[-1][7:-3])
     else:
         template_score = []
 
         for i in root:
-            template_score.append(
-                torch.load(i, map_location=device_).type(torch.float16)
-            )
+            df = torch.load(i, map_location=device_).type(torch.float16)
+            name = i.split("/")[-1][:-3]
+
+            if i.endswith("tardis_6R7M.pt"):
+                template_score.append(df[None, :])
+                template_list.append(name)
+            else:
+                template_score.append(df)
+                template_list.append(name[7:])
+
     template_score = torch.cat(template_score, 0)
 
     if device_ == "cpu":

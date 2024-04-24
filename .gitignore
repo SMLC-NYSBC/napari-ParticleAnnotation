@@ -140,3 +140,5 @@ dmypy.json
 *.tif
 *.pt
 
+api/data/models/topaz_al_model_000.pth
+*.avi

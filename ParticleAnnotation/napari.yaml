@@ -18,9 +18,13 @@ contributions:
       python_name: ParticleAnnotation._qt.local_tm_score_3d_viewer:AnnotationWidget
       title: Local 3D TM Score
 
-    - id: ParticleAnnotation.viewer_tm_score_3d_predict
-      python_name: ParticleAnnotation._qt.local_tm_score_3d_predict_viewer:PredictionWidget
-      title: Local 3D TM Score
+    - id: ParticleAnnotation.viewer_cloud_tm_score_3d_3
+      python_name: ParticleAnnotation._qt.cloud_tm_score_3d_viewer_3:AWSWidget_3
+      title: AWS Cloud [3 protein mix]
+
+    - id: ParticleAnnotation.viewer_cloud_tm_score_3d_7
+      python_name: ParticleAnnotation._qt.cloud_tm_score_3d_viewer_7:AWSWidget_7
+      title: AWS Cloud [7 protein mix]
 
   readers:
     - command: ParticleAnnotation.import_data
@@ -37,7 +41,11 @@ contributions:
 
   widgets:
     - command: ParticleAnnotation.viewer_tm_score_3d
-      display_name: Local 3D TM Score [CPU/GPU]
+      display_name: Local 3D TM Score
 
-    - command: ParticleAnnotation.viewer_tm_score_3d_predict
-      display_name: Local 3D TM Score [CPU/GPU]
+    - command: ParticleAnnotation.viewer_cloud_tm_score_3d_3
+      display_name: AWS Cloud [3 protein mix]
+
+    - command: ParticleAnnotation.viewer_cloud_tm_score_3d_7
+      display_name: AWS Cloud [7 protein mix]
+
