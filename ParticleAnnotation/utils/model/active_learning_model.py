@@ -8,7 +8,7 @@ import torch
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 
-from ParticleAnnotation.utils.model.utils import (
+from particleannotation.utils.model.utils import (
     find_peaks,
     get_device,
     divide_grid,
@@ -16,7 +16,7 @@ from ParticleAnnotation.utils.model.utils import (
 import io
 import requests
 
-from ParticleAnnotation.utils.pc_sampling import VoxelDownSampling
+from particleannotation.utils.pc_sampling import VoxelDownSampling
 
 
 def predict_3d_with_AL(
@@ -91,8 +91,8 @@ def predict_3d_with_AL(
             ] = logits
 
     full_logits = torch.sigmoid(torch.from_numpy(full_logits)).detach().numpy()
-    if gauss_filter > 0:
-        full_logits = gaussian_filter(full_logits, sigma=gauss_filter)
+    # if gauss_filter > 0:
+    #     full_logits = gaussian_filter(full_logits, sigma=gauss_filter)
 
     # Extract peaks
     if filament:

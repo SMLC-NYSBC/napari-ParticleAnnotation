@@ -44,11 +44,11 @@ colormap_for_display = "Spectral"
 # url = "http://3.230.8.116:8000/"  # Production
 
 
-class AWSWidget_7(Container):
-    def __init__(self, viewer_cloud_tm_score_3d_7: Viewer):
-        super(AWSWidget_7, self).__init__(layout="vertical")
+class AWSWidget_ecoli(Container):
+    def __init__(self, viewer_cloud_tm_score_3d_ecoli: Viewer):
+        super(AWSWidget_ecoli, self).__init__(layout="vertical")
 
-        self.napari_viewer = viewer_cloud_tm_score_3d_7
+        self.napari_viewer = viewer_cloud_tm_score_3d_ecoli
         self.delta_plot = PlotPopup()
         self.delta_plot.show()
 
@@ -126,15 +126,11 @@ class AWSWidget_7(Container):
         self.patch_size = LineEdit(name="Region size", value=128)
         self.pdb_id = ComboBox(
             name="PDB ID:",
-            value="7A4M",
+            value="6IOJ",
             choices=(
-                "1FA2",
-                "1PMA",
-                "6N4V",
-                "6QS9",
-                "6R7M",
-                "7A4M",
-                "7QTQ",
+                "2YEY",
+                "4V9O",
+                "6IOJ",
             ),
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
@@ -321,7 +317,7 @@ class AWSWidget_7(Container):
         try:
             response = requests.get(
                 url=f"http://{self.url}:8000/" + "list_tomograms",
-                params={"dataset": "7"},
+                params={"dataset": "ecoli"},
             )
 
             # If server response is successful
@@ -356,7 +352,7 @@ class AWSWidget_7(Container):
             try:
                 response = requests.get(
                     f"http://{self.url}:8000/" + "list_templates",
-                    params={"tomo_name": self.image_name, "dataset": "7"},
+                    params={"tomo_name": self.image_name, "dataset": "ecoli"},
                     timeout=None,
                 )
 
@@ -383,7 +379,7 @@ class AWSWidget_7(Container):
                 url=f"http://{self.url}:8000/get_raw_tomos",
                 params={
                     "f_name": self.image_name,
-                    "dataset": "7",
+                    "dataset": "ecoli",
                     "high_res": int(self.resolution.value),
                 },
                 timeout=None,
@@ -396,7 +392,7 @@ class AWSWidget_7(Container):
 
             if not self.resolution.value:
                 self.img_process, _ = scale_image(
-                    scale=[250, 1440, 1022],
+                    scale=[374, 1440, 1022],
                     image=self.img_process,
                     nn=False,
                     device="cpu",
@@ -473,7 +469,7 @@ class AWSWidget_7(Container):
             f"http://{self.url}:8000/" + "re_train_model",
             params={
                 "f_name": self.image_name,
-                "dataset": "7",
+                "dataset": "ecoli",
                 "tm_idx": self.tm_idx,
                 "patch_corner": ",".join(map(str, self.patch_corner)),
                 "patch_size": patch_size,
@@ -507,7 +503,7 @@ class AWSWidget_7(Container):
             f"http://{self.url}:8000/" + "new_proposal",
             params={
                 "f_name": self.image_name,
-                "dataset": "7",
+                "dataset": "ecoli",
                 "patch_corner": ",".join(map(str, self.patch_corner)),
                 "patch_size": patch_size,
                 "pi": float(self.pi.value),
@@ -560,7 +556,7 @@ class AWSWidget_7(Container):
             f"http://{self.url}:8000/" + "predict",
             params={
                 "f_name": self.image_name,
-                "dataset": "7",
+                "dataset": "ecoli",
                 "high_res": int(self.resolution.value),
                 "pbd_id": self.pdb_id.value,
                 "patch_size": patch_size,
@@ -580,7 +576,7 @@ class AWSWidget_7(Container):
 
         if not self.resolution.value:
             self.logits_full, _ = scale_image(
-                scale=[250, 1440, 1022], image=self.logits_full, nn=False, device="cpu"
+                scale=[374, 1440, 1022], image=self.logits_full, nn=False, device="cpu"
             )
 
         peaks = np.array([float(i) for i in response[2].split(",")])
@@ -718,7 +714,7 @@ class AWSWidget_7(Container):
             url=f"http://{self.url}:8000/get_raw_templates",
             params={
                 "f_name": self.image_name,
-                "dataset": "7",
+                "dataset": "ecoli",
                 "pdb_name": self.tm_list[self.tm_idx],
                 "high_res": int(self.resolution.value),
             },
@@ -729,7 +725,7 @@ class AWSWidget_7(Container):
         self.tm_scores = bytes_io_to_numpy_array(response.content)
         if not self.resolution.value:
             self.tm_scores, _ = scale_image(
-                scale=[250, 1440, 1022],
+                scale=[374, 1440, 1022],
                 image=self.tm_scores,
                 nn=False,
                 device="cpu",
@@ -754,7 +750,7 @@ class AWSWidget_7(Container):
                 f"http://{self.url}:8000/" + "get_initial_peaks",
                 params={
                     "f_name": self.image_name,
-                    "dataset": "7",
+                    "dataset": "ecoli",
                     "filter_size": filter_size,
                     "tm_idx": self.tm_idx,
                 },
@@ -885,7 +881,7 @@ class AWSWidget_7(Container):
                     f"http://{self.url}:8000/" + "show_tomogram",
                     params={
                         "f_name": self.image_name,
-                        "dataset": "7",
+                        "dataset": "ecoli",
                         "high_res": int(self.resolution.value),
                         "patch_corner": ",".join(map(str, self.patch_corner)),
                         "patch_size": patch_size,
@@ -904,7 +900,7 @@ class AWSWidget_7(Container):
 
                 if not self.resolution.value:
                     self.logits_full, _ = scale_image(
-                        scale=[250, 1440, 1022],
+                        scale=[374, 1440, 1022],
                         image=self.logits_full,
                         nn=False,
                         device="cpu",

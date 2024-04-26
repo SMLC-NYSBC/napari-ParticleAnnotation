@@ -12,8 +12,8 @@ from magicgui.widgets import (
 from napari.utils.notifications import show_info
 from napari import Viewer
 
-from ParticleAnnotation.cloud.aws_api import url
-from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
+from particleannotation.cloud.aws_api import url
+from particleannotation.cloud.utils import bytes_io_to_numpy_array
 
 
 class AnnotationWidgetv2(Container):

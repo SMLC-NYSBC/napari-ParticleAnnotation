@@ -1,8 +1,8 @@
 from shutil import rmtree
 from os import rmdir
 from fastapi.testclient import TestClient
-from ParticleAnnotation.cloud.aws_api_3d import *
-from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
+from particleannotation.cloud.aws_api_3d import *
+from particleannotation.cloud.utils import bytes_io_to_numpy_array
 
 client = TestClient(app)
 
@@ -21,7 +21,7 @@ def test_upload_tomogram():
         "file": (
             "ts0.tif",
             open(
-                "/h2/njain/original-repo/napari-ParticleAnnotation/data/ts0.tif", "rb"
+                "/h2/njain/original-repo/napari-particleannotation/data/ts0.tif", "rb"
             ),
             "image/mrc",
         )
@@ -37,7 +37,7 @@ def test_upload_template():
         "file": (
             "scores_7A4M.pt",
             open(
-                "/h2/njain/original-repo/napari-ParticleAnnotation/data/scores_7A4M.pt",
+                "/h2/njain/original-repo/napari-particleannotation/data/scores_7A4M.pt",
                 "rb",
             ),
             "image/mrc",
@@ -52,7 +52,7 @@ def test_upload_template():
         "file": (
             "scores_6R7M.pt",
             open(
-                "/h2/njain/original-repo/napari-ParticleAnnotation/data/scores_6R7M.pt",
+                "/h2/njain/original-repo/napari-particleannotation/data/scores_6R7M.pt",
                 "rb",
             ),
             "image/mrc",

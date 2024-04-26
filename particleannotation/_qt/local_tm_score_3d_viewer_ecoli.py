@@ -1,6 +1,17 @@
 import uuid
-import requests
 import numpy as np
+import pandas as pd
+import starfile
+
+from napari import Viewer
+from napari.utils.notifications import show_info
+from napari_bbox import BoundingBoxLayer
+
+from sklearn.neighbors import KDTree
+
+import torch
+from topaz.stats import normalize
+
 from magicgui.widgets import (
     Container,
     PushButton,
@@ -8,47 +19,48 @@ from magicgui.widgets import (
     ComboBox,
     FloatSlider,
     Label,
-    CheckBox,
     VBox,
     HBox,
 )
-from napari import Viewer
-from napari.utils.notifications import show_info
-from sklearn.neighbors import KDTree
-from qtpy.QtWidgets import QFileDialog
-from napari_bbox import BoundingBoxLayer
 
-import torch
-import pandas as pd
+from qtpy.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QDialog, QVBoxLayout
+from PyQt5.QtWidgets import QVBoxLayout
 
 from particleannotation.utils.load_data import (
+    load_template,
     load_coordinates,
+    load_tomogram,
 )
-from particleannotation.utils.scale import scale_image
+from particleannotation.utils.model.active_learning_model import (
+    BinaryLogisticRegression,
+    label_points_to_mask,
+    predict_3d_with_AL,
+    stack_all_labels,
+)
 from particleannotation.utils.model.utils import (
     correct_coord,
+    find_peaks,
     get_device,
     get_random_patch,
+    rank_candidate_locations,
 )
 from particleannotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
+    draw_patch_and_scores,
 )
-import starfile
 
-from particleannotation.cloud.utils import bytes_io_to_numpy_array
-from particleannotation._qt.local_tm_score_3d_viewer import PlotPopup
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
 
 colormap_for_display = "Spectral"
 
-# # url = "http://localhost:8000/"  # Debugging
-# url = "http://3.230.8.116:8000/"  # Production
 
+class AnnotationWidget(Container):
+    def __init__(self, viewer_tm_score_3d: Viewer):
+        super(AnnotationWidget, self).__init__(layout="vertical")
 
-class AWSWidget_7(Container):
-    def __init__(self, viewer_cloud_tm_score_3d_7: Viewer):
-        super(AWSWidget_7, self).__init__(layout="vertical")
-
-        self.napari_viewer = viewer_cloud_tm_score_3d_7
+        self.napari_viewer = viewer_tm_score_3d
         self.delta_plot = PlotPopup()
         self.delta_plot.show()
 
@@ -72,11 +84,8 @@ class AWSWidget_7(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init, self.init_done, self.AL, self.Predict = True, False, False, False
         self.AL_weights = None
-        self.weights_bias = None
         self.delta = None
         self.delta_values = [0.0]
-
-        self.logits_full = None
 
         # Viewer
         self.color_map_particle_classes = {
@@ -118,23 +127,16 @@ class AWSWidget_7(Container):
         self.click_add_point_callback = None
 
         spacer_1 = Label(value="------------------- Options --------------------")
-        # "3.230.8.116"
-        self.url = "3.230.8.116"
-        self.resolution = CheckBox(name="High-Res", value=False)
         self.box_size = LineEdit(name="Model Mask Size [px]", value=5)
         self.filter_size = LineEdit(name="Particle size [px]", value=15)
         self.patch_size = LineEdit(name="Region size", value=128)
         self.pdb_id = ComboBox(
             name="PDB ID:",
-            value="7A4M",
+            value="6IOJ",
             choices=(
-                "1FA2",
-                "1PMA",
-                "6N4V",
-                "6QS9",
-                "6R7M",
-                "7A4M",
-                "7QTQ",
+                "2YEY",
+                "4V9O",
+                "6IOJ",
             ),
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
@@ -142,10 +144,15 @@ class AWSWidget_7(Container):
         self.pi.changed.connect(self._pdb_id_update)
         self.gauss = LineEdit(name="Gaussian filter size", value=1)
 
+        # ---------------- Import & Export modules ----------------
+        self.import_particles = PushButton(name="Load particles")
+        self.import_particles.clicked.connect(self._import_particles)
+
         spacer_2 = Label(value="------------------- Training -------------------")
-        self.data_list = ComboBox(name="Dataset", choices=self._update_data_list())
-        self.load_data = PushButton(name="Load")
-        self.load_data.clicked.connect(self._select_particle_for_patches)
+        self.select_particle_for_patches = PushButton(name="Load data")
+        self.select_particle_for_patches.clicked.connect(
+            self._select_particle_for_patches
+        )
         self.train_BLR_on_patch = PushButton(name="Re-train model")
         self.train_BLR_on_patch.clicked.connect(self._train_BLR_on_patch)
 
@@ -162,7 +169,7 @@ class AWSWidget_7(Container):
         self.predict.clicked.connect(self._predict)
         self.filter_particle_by_confidence = FloatSlider(
             name="Filter Particle",
-            value=0.0,
+            value=0.5,
             min=0,
             max=1,
         )
@@ -179,9 +186,6 @@ class AWSWidget_7(Container):
         self.export_particles_predict.clicked.connect(self._export_particles_predict)
         self.export_particles_filter = PushButton(name="Predicted & Filtered")
         self.export_particles_filter.clicked.connect(self._export_particles_filter)
-
-        self.import_particles = PushButton(name="Load particles")
-        self.import_particles.clicked.connect(self._import_particles)
 
         self.save_model = PushButton(name="Save Model")
         self.save_model.clicked.connect(self._save_model)
@@ -201,11 +205,6 @@ class AWSWidget_7(Container):
                 ),
                 HBox(
                     widgets=[
-                        self.resolution,
-                    ]
-                ),
-                HBox(
-                    widgets=[
                         self.box_size,
                         self.filter_size,
                     ]
@@ -220,23 +219,18 @@ class AWSWidget_7(Container):
                     widgets=[
                         self.pi,
                         self.gauss,
-                    ]
+                    ],
                 ),
                 HBox(
                     widgets=[
                         spacer_2,
                     ]
                 ),
-                HBox(
-                    widgets=[
-                        self.data_list,
-                        self.load_data,
-                    ]
-                ),
                 VBox(
                     widgets=[
+                        self.select_particle_for_patches,
                         self.train_BLR_on_patch,
-                    ]
+                    ],
                 ),
                 HBox(
                     widgets=[
@@ -261,18 +255,9 @@ class AWSWidget_7(Container):
                         self.show_particle_grid,
                     ]
                 ),
-            ]
-        )
-
-        widget_left = VBox(
-            widgets=[
-                HBox(
-                    widgets=[
-                        spacer_5,
-                    ]
-                ),
                 VBox(
                     widgets=[
+                        spacer_5,
                         self.import_particles,
                     ]
                 ),
@@ -300,46 +285,15 @@ class AWSWidget_7(Container):
                         self.reset_session,
                     ]
                 ),
-                ])
+            ]
+        )
 
         widget.max_width = 400
         self.napari_viewer.window.add_dock_widget(widget, area="right")
-        self.napari_viewer.window.add_dock_widget(widget_left, area="left")
 
         self.device_ = get_device()
         show_info(f"Active learning model runs on: {self.device_}")
         self._reset_views()
-
-    def _update_data_list(self):
-        """
-        API call to get a list of available tomogram files on the AWS EC2 instance
-
-         Returns:
-              tuple: List of available tomograms
-        """
-        # Call API for response
-        try:
-            response = requests.get(
-                url=f"http://{self.url}:8000/" + "list_tomograms",
-                params={"dataset": "7"},
-            )
-
-            # If server response is successful
-            if response.status_code == 200:
-                self.file_list = response.json()
-
-                return tuple(self.file_list)
-            else:
-                show_info(
-                    f"Connection Error to http://{self.url}:8000/. With error code: {response.status_code}."
-                )
-                return ()
-
-        except:
-            show_info(
-                f"Connection Error to http://{self.url}:8000/. Check if server is running."
-            )
-            return ()
 
     """""" """""" """""" """
     Main triggers for GUI
@@ -350,86 +304,35 @@ class AWSWidget_7(Container):
         Starting function - for the plugin. Function is allowing user to label
         particles of interest, and store them.
         """
-        self.image_name = self.filename = self.data_list.value
-
-        if self.tm_list is None:
-            try:
-                response = requests.get(
-                    f"http://{self.url}:8000/" + "list_templates",
-                    params={"tomo_name": self.image_name, "dataset": "7"},
-                    timeout=None,
-                )
-
-                if response.status_code == 200:
-                    self.tm_list = response.json()
-                else:
-                    show_info(
-                        f"Connection Error to http://{self.url}:8000/. With error code: {response.status_code}."
-                    )
-                    self.tm_list = None
-            except:
-                self.tm_list = None
-                show_info(
-                    f"Connection Error to http://{self.url}:8000/. Check if server is running."
-                )
-
         if not self.init_done:
             self.init = True
             self.all_grid = False
             self.grid_labeling_mode = False
 
-            # Call API for response
-            response = requests.get(
-                url=f"http://{self.url}:8000/get_raw_tomos",
-                params={
-                    "f_name": self.image_name,
-                    "dataset": "7",
-                    "high_res": int(self.resolution.value),
-                },
-                timeout=None,
+            # If image is not loaded, ask user to load it
+            if self.napari_viewer.layers.selection.active is None:
+                img, _, name = load_tomogram()
+
+                if img is None:
+                    return
+
+                self.create_image_layer(img, name=name, transparency=False)
+
+            self.image_name = (
+                self.filename
+            ) = self.napari_viewer.layers.selection.active.name
+            img = self.napari_viewer.layers[self.image_name]
+            self.img_process = img.data
+            self.img_process, _ = normalize(
+                self.img_process.copy(), method="affine", use_cuda=False
             )
 
-            # Decode bytes to np.array
-            self.img_process = bytes_io_to_numpy_array(response.content).astype(
-                np.uint8
-            )
-
-            if not self.resolution.value:
-                self.img_process, _ = scale_image(
-                    scale=[250, 1440, 1022],
-                    image=self.img_process,
-                    nn=False,
-                    device="cpu",
-                )
-
-            self.create_image_layer(
-                self.img_process, name=self.image_name, transparency=False
-            )
-
-            try:
-                if self.pdb_id.value == "6R7M":
-                    tardis_ = [1 if i.startswith("tardis") else 0 for i in self.tm_list]
-
-                    if sum(tardis_) > 0:
-                        self.tm_idx = [
-                            id_
-                            for id_, i in enumerate(self.tm_list)
-                            if i == "tardis_" + self.pdb_id.value
-                        ][0]
-                    else:
-                        self.tm_idx = [
-                            id_
-                            for id_, i in enumerate(self.tm_list)
-                            if i == self.pdb_id.value
-                        ][0]
-                else:
-                    self.tm_idx = [
-                        id_
-                        for id_, i in enumerate(self.tm_list)
-                        if i.split("_")[1] == self.pdb_id.value
-                    ][0]
-            except:
-                pass
+            # Load and pre-process tm_scores data
+            # ToDo 1 add regularizer for pushing the negative weights towards ice scores
+            # add fantom data which will push the scores down. Fore each label negative array
+            # ToDo 2: randome feature expansion with furier for all scores
+            # Option Gaussian model
+            self.tm_scores, self.tm_list = load_template()
 
             self._pdb_id_update()
         else:
@@ -437,7 +340,6 @@ class AWSWidget_7(Container):
 
     def _train_BLR_on_patch(self):
         if len(self.user_annotations) == 0:
-            # when 
             show_info("Please label any particle first!")
             return
 
@@ -453,88 +355,170 @@ class AWSWidget_7(Container):
         box_size = int(self.box_size.value)
 
         """If Patch do not exist create one and drawn panicles"""
+        if self.patch_corner is None:
+            self.patch_corner = get_random_patch(
+                self.img_process.shape, patch_size, self.user_annotations[:, :3]
+            )
+
+        self.clean_viewer()
+        patch, tm_score = draw_patch_and_scores(
+            self.img_process, self.tm_scores, self.patch_corner, patch_size
+        )
+
+        # Initialized y (empty label mask) and count
+        self.x = torch.from_numpy(tm_score.copy()).float()
+        self.x = self.x.permute(1, 2, 3, 0)
+        self.x = self.x.reshape(-1, self.x.shape[-1])
+        self.shape = tm_score.shape[1:]
+
+        # Take all particle crops for the training, not just a patch
+        if self.model is None:
+            self.model = BinaryLogisticRegression(
+                n_features=self.x.shape[-1],
+                l2=1.0,
+                pi=float(self.pi.value),
+                pi_weight=1000,
+            )
+
+        """Re-trained BLR model on user corrected particles"""
+        # Retrive coordinate within patch
+        stored_points = self.user_annotations.copy()[:, :3] - self.patch_corner
+        point_indexes = np.all(
+            (stored_points >= 0) & (stored_points <= patch_size), axis=1
+        )
+        points = self.user_annotations[point_indexes, :3]
+        labels = self.user_annotations[point_indexes, 3]
+
+        # Update BLR inputs
+        data = np.array(
+            (
+                np.array(labels).astype(np.int16),
+                points[:, 0],
+                points[:, 1],
+                points[:, 2],
+            )
+        ).T
+        data[:, 1:] = correct_coord(data[:, 1:], self.patch_corner, False)
+        self.y = label_points_to_mask(data, self.shape, box_size)
+        self.count = (~torch.isnan(self.y)).float()
+        self.count[self.y == 0] = 0
+
+        data = np.hstack(
+            (self.user_annotations[:, 3][:, None], self.user_annotations[:, :3])
+        )
+
+        # Data for all labels
+        self.all_labels = stack_all_labels(self.tm_scores, data, box_size)
+
+        if len(self.all_labels[0][0]) > 0:
+            all_scores_pos = self.tm_scores[
+                :, self.all_labels[0][0], self.all_labels[1][0], self.all_labels[2][0]
+            ]
+        else:
+            all_scores_pos = np.ones((self.tm_scores.shape[0], 0))
+
+        if len(self.all_labels[0][1]) > 0:
+            all_scores_neg = self.tm_scores[
+                :, self.all_labels[0][1], self.all_labels[1][1], self.all_labels[2][1]
+            ]
+        else:
+            all_scores_neg = np.zeros((self.tm_scores.shape[0], 0))
+
+        all_label_pos = np.ones(all_scores_pos.shape[1])
+        all_label_neg = np.zeros(all_scores_neg.shape[1])
+
+        if all_scores_pos.shape[1] == 0 and all_scores_neg.shape[1] == 0:
+            x_filter, y_filter = None, None
+        else:
+            x_filter = (
+                torch.from_numpy(np.hstack((all_scores_pos, all_scores_neg)))
+                .float()
+                .permute(1, 0)
+            )
+            y_filter = torch.from_numpy(
+                np.concatenate((all_label_pos, all_label_neg))
+            ).float()
+
+        # Re-trained BLR model
+        # Fit entire tomograms
+        index_ = self.tm_idx
+        x_onehot = torch.zeros(
+            (x_filter.size(1), x_filter.size(1)),
+            dtype=x_filter.dtype,
+            device=x_filter.device,
+        )
+
+        y_onehot = torch.zeros(
+            x_filter.size(1),
+            dtype=y_filter.dtype,
+            device=y_filter.device,
+        )
+        y_onehot[index_] = 1
+
+        x_filter = torch.cat((x_filter, x_onehot), dim=0)
+        y_filter = torch.cat((y_filter, y_onehot), dim=0)
+
+        self.model.fit(
+            self.x,
+            self.y.ravel(),
+            weights=self.count.ravel(),
+            all_labels=[x_filter, y_filter],
+        )
+
+        """Draw new patch and find new particle for user to label"""
+        # Select patch
         self.patch_corner = get_random_patch(
             self.img_process.shape, patch_size, self.user_annotations[:, :3]
         )
 
-        if self.weights_bias is None:
-            features = len(self.tm_list)
-            if "score_ice" in self.tm_list:
-                features += 2
-
-            weights = np.zeros((features,), dtype=np.float32)
-            bias = np.zeros((1,), dtype=np.float32)
-        else:
-            weights = self.weights_bias[0]
-            bias = self.weights_bias[1]
-
-        self.clean_viewer()
-        response = requests.get(
-            f"http://{self.url}:8000/" + "re_train_model",
-            params={
-                "f_name": self.image_name,
-                "dataset": "7",
-                "tm_idx": self.tm_idx,
-                "patch_corner": ",".join(map(str, self.patch_corner)),
-                "patch_size": patch_size,
-                "box_size": box_size,
-                "pi": float(self.pi.value),
-                "weights": ",".join(map(str, weights)),
-                "bias": ",".join(map(str, bias)),
-                "points": ",".join(map(str, self.user_annotations.flatten())),
-            },
-            timeout=None,
+        # Display new patch and associated scores
+        patch, tm_score = draw_patch_and_scores(
+            self.img_process, self.tm_scores, self.patch_corner, patch_size
         )
-        self.weights_bias = response.json().split("|")
-        self.weights_bias = [
-            [float(i) for i in self.weights_bias[0].split(",")],
-            [float(i) for i in self.weights_bias[1].split(",")],
-        ]
 
-        w = np.array(self.weights_bias[0])
+        # BLR training and model update
+        self.shape = patch.shape
+        self.x = torch.from_numpy(tm_score.copy()).float()
+        self.x = self.x.permute(1, 2, 3, 0)
+        self.x = self.x.reshape(-1, self.x.shape[-1])
+
+        with torch.no_grad():
+            logits = self.model(self.x).reshape(*self.shape)
+            self.logits_patch = torch.sigmoid(logits).cpu().detach().numpy()
+            logits = logits.cpu().detach()
+
+        # Draw 10 coordinates with lowest entropy
+        self.proposals = rank_candidate_locations(logits, self.shape)
+        self.patch_points = np.vstack(
+            (
+                np.vstack(self.proposals[:10]),  # Highest uncertainty
+                np.vstack(self.proposals[-10:]),  # Lowest uncertainty
+            )
+        )
+        self.patch_label = np.zeros((self.patch_points.shape[0],))
+        self.patch_label[:] = 2
+
         if self.delta is None:
+            self.delta = self.model.weights.clone()
+
             show_info("Training weights delta = 0.0")
         else:
-            self.delta_values.append(np.abs(np.mean(self.delta - w)))
+            _delta = np.abs(torch.mean(self.delta - self.model.weights).item())
+            self.delta_values.append(_delta)
 
             print(f"Training weights delta = {self.delta_values[-1]}")
 
         self.delta_plot.update_plot(y_values=self.delta_values)
-        self.delta = w
-
-        """Draw new patch and find new particle for user to label"""
-        response = requests.get(
-            f"http://{self.url}:8000/" + "new_proposal",
-            params={
-                "f_name": self.image_name,
-                "dataset": "7",
-                "patch_corner": ",".join(map(str, self.patch_corner)),
-                "patch_size": patch_size,
-                "pi": float(self.pi.value),
-                "weights": ",".join(map(str, self.weights_bias[0])),
-                "bias": ",".join(map(str, self.weights_bias[1])),
-            },
-            timeout=None,
-        )
-        response = response.json().split("|")
-
-        logits_shape = tuple([int(i) for i in response[1].split(",")])
-        self.logits_patch = np.array([int(i) for i in response[0].split(",")])
-        self.logits_patch = self.logits_patch.reshape(logits_shape)
-
-        self.patch_points = np.array([float(i) for i in response[2].split(",")])
-        self.patch_points = self.patch_points.reshape(len(self.patch_points) // 3, 3)
-
-        self.patch_label = np.zeros((self.patch_points.shape[0],))
-        self.patch_label[:,] = 2
+        self.delta = self.model.weights
 
         self._show_active_learning_grid()
 
     def _predict(self):
-        if self.weights_bias is None:
+        if self.model is None:
             show_info(
                 "You must load model or pre-train one with Active-Learning protocols!"
             )
+            return
 
         self.AL = False
         self.Predict = True
@@ -545,57 +529,28 @@ class AWSWidget_7(Container):
         self._reset_views()
 
         patch_size = int(self.patch_size.value)
-        filter_size = int(self.filter_size.value)
         gauss_filter = float(self.gauss.value)
 
-        # ToDo if self.weights_bias is None feed in zero weights with TM scores and ice -1
-        if self.weights_bias == None:
-            self.weights_bias = [
-                [0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1],
-                [0]
-                ]
-            self.weights_bias[0][self.tm_idx] = 1
-
-        response = requests.get(
-            f"http://{self.url}:8000/" + "predict",
-            params={
-                "f_name": self.image_name,
-                "dataset": "7",
-                "high_res": int(self.resolution.value),
-                "pbd_id": self.pdb_id.value,
-                "patch_size": patch_size,
-                "pi": float(self.pi.value),
-                "weights": ",".join(map(str, self.weights_bias[0])),
-                "bias": ",".join(map(str, self.weights_bias[1])),
-                "gauss_filter": gauss_filter,
-                "filter_size": filter_size,
-            },
-            timeout=None,
+        # ToDo Preiction of filamets with skeletonization and down scaling
+        peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
+            self.img_process,
+            tm_scores=self.tm_scores,
+            model=self.model,
+            offset=patch_size,
+            maximum_filter_size=int(self.filter_size.value),
+            gauss_filter=gauss_filter,
+            filament=True if self.pdb_id.value == "6R7M" else False,
         )
-        response = response.json().split("|")
-
-        shape_ = tuple([int(i) for i in response[1].split(",")])
-        self.logits_full = np.array([int(i) for i in response[0].split(",")])
-        self.logits_full = self.logits_full.reshape(shape_)
-
-        if not self.resolution.value:
-            self.logits_full, _ = scale_image(
-                scale=[250, 1440, 1022], image=self.logits_full, nn=False, device="cpu"
-            )
-
-        peaks = np.array([float(i) for i in response[2].split(",")])
-
-        self.peaks_full = peaks.reshape((len(peaks) // 3, 3))
-        self.peaks_confidence_full = np.array(
-            [float(i) for i in response[3].split(",")]
-        )
+        order = np.argsort(peaks_confidence)
+        self.peaks_full = peaks[order]
+        self.peaks_confidence_full = peaks_confidence[order]
 
         self.create_image_layer(self.img_process, self.filename)
         self.create_image_layer(
             self.tm_scores[self.tm_idx], "TM_Score", transparency=True, visibility=False
         )
         self.create_image_layer(
-            self.logits_full / 128, "Prediction", transparency=True, range_=(0, 1)
+            self.logits_full, "Prediction", transparency=True, range_=(0, 1)
         )
 
         self.create_point_layer(
@@ -640,8 +595,6 @@ class AWSWidget_7(Container):
         self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
         self.selected_particle_id = None
 
-        self.logits_full, self.logits_patch = None, None
-
         # Remove after testing
         self.particle = None
         self.confidence = None
@@ -660,8 +613,6 @@ class AWSWidget_7(Container):
         self.delta = None
         self.patch_corner = None
 
-        self.weights_bias == None
-
         # Particles selections
         self.cur_proposal_index, self.proposals = 0, []
         self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
@@ -675,12 +626,11 @@ class AWSWidget_7(Container):
         self.confidence = None
         self.patch_points, self.patch_label = np.zeros((0, 3)), np.zeros((1,))
 
-        self.logits_full, self.logits_patch = None, None
-
         # BLR model
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init, self.init_done, self.AL, self.Predict = True, False, False, False
         self.AL_weights = None
+        self.logits_patch, self.logits_full = None, None
 
     """""" """""" """""" """
     Viewer functionality
@@ -703,67 +653,48 @@ class AWSWidget_7(Container):
                     self.tm_idx = [
                         id_
                         for id_, i in enumerate(self.tm_list)
-                        if i.endswith(self.pdb_id.value)
+                        if i == self.pdb_id.value
                     ][0]
             else:
                 self.tm_idx = [
-                    id_
-                    for id_, i in enumerate(self.tm_list)
-                    if i.endswith(self.pdb_id.value)
+                    id_ for id_, i in enumerate(self.tm_list) if i == self.pdb_id.value
                 ][0]
         except:
             return
 
-        response = requests.get(
-            url=f"http://{self.url}:8000/get_raw_templates",
-            params={
-                "f_name": self.image_name,
-                "dataset": "7",
-                "pdb_name": self.tm_list[self.tm_idx],
-                "high_res": int(self.resolution.value),
-            },
-            timeout=None,
-        )
-
-        # Decode bytes to np.array
-        self.tm_scores = bytes_io_to_numpy_array(response.content)
-        if not self.resolution.value:
-            self.tm_scores, _ = scale_image(
-                scale=[250, 1440, 1022],
-                image=self.tm_scores,
-                nn=False,
-                device="cpu",
-            )
-
-        if self.tm_scores.ndim == 4:
-            self.tm_scores = self.tm_scores[0, ...].astype(np.uint8)
-
-        self.create_image_layer(
-            self.tm_scores,
-            name="TM_Scores",
-            transparency=False,
-            visibility=False,
-        )
-
         if self.init:
+            self.delta_values.append(0.0)
             filter_size = int(self.filter_size.value)
             # Restart user annotation storage
             self.user_annotations = np.zeros((0, 4))
 
-            response = requests.get(
-                f"http://{self.url}:8000/" + "get_initial_peaks",
-                params={
-                    "f_name": self.image_name,
-                    "dataset": "7",
-                    "filter_size": filter_size,
-                    "tm_idx": self.tm_idx,
-                },
+            peaks, _ = find_peaks(
+                self.tm_scores[self.tm_idx], filter_size, with_score=True
             )
+            peaks = peaks[-20:, :]
+            peaks = np.hstack((peaks, np.zeros((20, 1))))
+            peaks[:, 3] = 2
 
-            if response.status_code == 200:
-                peaks = bytes_io_to_numpy_array(response.content)
-            else:
-                peaks = np.zeros((1, 4))
+            peaks_ice, _ = find_peaks(self.tm_scores[-1], filter_size, with_score=True)
+            peaks_ice = peaks_ice[-3:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((3, 1))))
+            peaks_ice[:, 3] = 2
+
+            peaks = np.vstack((peaks, peaks_ice))
+
+            peaks_ice, _ = find_peaks(self.tm_scores[-2], filter_size, with_score=True)
+            peaks_ice = peaks_ice[-3:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((3, 1))))
+            peaks_ice[:, 3] = 2
+
+            peaks = np.vstack((peaks, peaks_ice))
+
+            peaks_ice, _ = find_peaks(self.tm_scores[-3], filter_size, with_score=True)
+            peaks_ice = peaks_ice[-4:, :]
+            peaks_ice = np.hstack((peaks_ice, np.zeros((4, 1))))
+            peaks_ice[:, 3] = 2
+
+            peaks = np.vstack((peaks, peaks_ice))
 
             # self.user_annotations = peaks
             self.patch_points = peaks[:, :3]
@@ -878,42 +809,19 @@ class AWSWidget_7(Container):
                 ]
             ).squeeze()
 
-        # ToDo move to the Cloud
         if self.logits_full is None:
-            if self.weights_bias is not None:
-                response = requests.get(
-                    f"http://{self.url}:8000/" + "show_tomogram",
-                    params={
-                        "f_name": self.image_name,
-                        "dataset": "7",
-                        "high_res": int(self.resolution.value),
-                        "patch_corner": ",".join(map(str, self.patch_corner)),
-                        "patch_size": patch_size,
-                        "pi": float(self.pi.value),
-                        "weights": ",".join(map(str, self.weights_bias[0])),
-                        "bias": ",".join(map(str, self.weights_bias[1])),
-                        "gauss_filter": gauss_filter,
-                        "filter_size": filter_size,
-                    },
-                    timeout=None,
+            if self.model is not None:
+                peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
+                    self.img_process,
+                    tm_scores=self.tm_scores,
+                    model=self.model,
+                    offset=patch_size,
+                    maximum_filter_size=filter_size,
+                    gauss_filter=gauss_filter,
                 )
-                response = response.json().split("|")
-                shape_ = tuple([int(i) for i in response[1].split(",")])
-                self.logits_full = np.array([int(i) for i in response[0].split(",")])
-                self.logits_full = self.logits_full.reshape(shape_)
-
-                if not self.resolution.value:
-                    self.logits_full, _ = scale_image(
-                        scale=[250, 1440, 1022],
-                        image=self.logits_full,
-                        nn=False,
-                        device="cpu",
-                    )
-
-                peaks = np.array([float(i) for i in response[2].split(",")])
-                peaks = peaks.reshape((len(peaks) // 3, 3))
-
-                peaks_confidence = np.array([float(i) for i in response[3].split(",")])
+                order = np.argsort(peaks_confidence)
+                peaks = peaks[order]
+                peaks_confidence = peaks_confidence[order]
 
                 self.peaks_full = peaks[-100:, :]
                 self.peaks_confidence_full = peaks_confidence[-100:]
@@ -921,7 +829,7 @@ class AWSWidget_7(Container):
         self.create_image_layer(self.img_process, name="Tomogram_Patch")
 
         self.create_image_layer(
-            self.tm_scores,
+            self.tm_scores[self.tm_idx],
             name="TM_Scores",
             transparency=True,
             visibility=False,
@@ -932,10 +840,11 @@ class AWSWidget_7(Container):
                 self.logits_full, name="Prediction", transparency=True, visibility=False
             )
 
-        if self.patch_corner != (0, 0, 0):
-            bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
-            bb_layer.add(all_vertices)
-            self.napari_viewer.add_layer(bb_layer)
+        if self.patch_corner is not None:
+            if self.patch_corner != (0, 0, 0):
+                bb_layer = BoundingBoxLayer(ndim=3, edge_color="red", edge_width=5)
+                bb_layer.add(all_vertices)
+                self.napari_viewer.add_layer(bb_layer)
 
         if self.model is not None:
             self.napari_viewer.add_points(
@@ -1018,11 +927,11 @@ class AWSWidget_7(Container):
                 self.patch_corner,
                 self.img_process,
                 (
-                    self.tm_scores[None, ...]
+                    self.tm_scores
                     if self.logits_patch is None
                     else self.logits_patch[None, ...]
                 ),
-                0,
+                self.tm_idx if self.logits_patch is None else 0,
                 int(self.box_size.value),
                 correct=True if self.logits_patch is None else False,
             )
@@ -1030,7 +939,7 @@ class AWSWidget_7(Container):
             self.create_image_layer(self.crop_grid_img_al, name="Particles_crops")
             if self.logits_patch is None:
                 self.create_image_layer(
-                    self.crop_grid_tm_scores_al / 128,
+                    self.crop_grid_tm_scores_al,
                     name="Particles_crops_scores",
                     transparency=True,
                     visibility=False,
@@ -1038,7 +947,7 @@ class AWSWidget_7(Container):
                 )
             else:
                 self.create_image_layer(
-                    self.crop_grid_tm_scores_al / 128,
+                    self.crop_grid_tm_scores_al,
                     name="Particles_crops_sigmoid",
                     transparency=True,
                     visibility=False,
@@ -1081,11 +990,11 @@ class AWSWidget_7(Container):
                 (0, 0, 0),
                 self.img_process,
                 (
-                    self.tm_scores[None, ...]
+                    self.tm_scores
                     if self.logits_full is None
                     else self.logits_full[None, ...]
                 ),
-                0,
+                self.tm_idx if self.logits_full is None else 0,
                 int(self.box_size.value),
                 correct=False,
             )
@@ -1102,11 +1011,11 @@ class AWSWidget_7(Container):
                     (0, 0, 0),
                     self.img_process,
                     (
-                        self.tm_scores[None, ...]
+                        self.tm_scores
                         if self.logits_full is None
                         else self.logits_full[None, ...]
                     ),
-                    0,
+                    self.tm_idx if self.logits_full is None else 0,
                     int(self.box_size.value),
                     correct=False,
                 )
@@ -1275,19 +1184,6 @@ class AWSWidget_7(Container):
                     particles_filter,
                     name="Particle_Prediction_Filtered",
                     properties={"label": confidence_filter},
-                    edge_color="black",
-                    face_color="label",
-                    face_colormap=colormap_for_display,
-                    edge_width=0.1,
-                    face_contrast_limits=(0, 1),
-                    symbol="disc",
-                    size=5,
-                )
-            else:
-                self.napari_viewer.add_points(
-                    particles_all,
-                    name="Particle_Prediction_Filtered",
-                    properties={"label": confidence_all},
                     edge_color="black",
                     face_color="label",
                     face_colormap=colormap_for_display,
@@ -1486,18 +1382,17 @@ class AWSWidget_7(Container):
         and save it as a pickle torch .pt file
         """
         if self.model is not None:
+            filename, _ = QFileDialog.getSaveFileName(
+                caption="Save File", directory="Active_learn_model.pt"
+            )
+
             # Check for AL_weights
-            if self.weights_bias is not None:
-                filename, _ = QFileDialog.getSaveFileName(
-                    caption="Save File", directory="Active_learn_model.pt"
-                )
+            if (
+                self.AL_weights is None
+            ):  # Hard-fix in case self.AL_weights is not save yet
+                self.AL_weights = [self.model.weights, self.model.bias]
 
-                self.weights_bias = [
-                    torch.Tensor(self.weights_bias[0]),
-                    torch.Tensor(self.weights_bias[1]),
-                ]
-
-            torch.save(self.weights_bias, filename)
+            torch.save(self.AL_weights, filename)
 
     def _load_model(self):
         """
@@ -1510,8 +1405,18 @@ class AWSWidget_7(Container):
         self.filename, _ = QFileDialog.getOpenFileName(caption="Load File")
         self.AL_weights = torch.load(f"{self.filename}")
 
-        if self.weights_bias is None:
-            self.weights_bias = self.AL_weights
+        if self.model is not None:
+            self.model.fit(pre_train=self.AL_weights)
+        else:
+            self.model = BinaryLogisticRegression(
+                n_features=self.AL_weights[0].shape[0],
+                l2=1.0,
+                pi=float(self.pi.value),
+                pi_weight=1000,
+            )
+            self.model.fit(pre_train=self.AL_weights)
+
+        self.AL_weights = None  # Reset to allow re-training
 
     """""" """""" """""" """""
     Mouse and keys bindings
@@ -1595,32 +1500,32 @@ class AWSWidget_7(Container):
                         np.insert(point, 3, [label], axis=1),
                         axis=0,
                     )
-        # elif func == "remove":
-        #     if self.all_grid:
-        #         name = self.napari_viewer.layers.selection.active.name
-        #         point_layer = self.napari_viewer.layers[name]
+        elif func == "remove":
+            points = point_layer.data
+            labels = point_layer.properties["label"]
 
-        #         self.user_annotations = np.delete(self.user_annotations, index, axis=0)
+            # Remove point from user annotation storage
+            if self.correct_positions:
+                idx = np.where(
+                    np.all(
+                        self.user_annotations[:, :3]
+                        == correct_coord(points[index], self.patch_corner, True),
+                        axis=1,
+                    )
+                )
+            else:
+                idx = np.where(
+                    np.all(self.user_annotations[:, :3] == points[index], axis=1)
+                )
 
-        #         points = point_layer.data
-        #         labels = point_layer.properties["label"]
+            if len(idx) == 0:
+                show_info("No matching point in index to remove.")
+            else:
+                self.user_annotations = np.delete(self.user_annotations, idx, axis=0)
 
-        #         points = np.delete(points, index, axis=0)
-        #         labels = np.delete(labels, index, axis=0)
-        #     else:
-        #         self.patch_points = np.delete(self.patch_points, index, axis=0)
-        #         self.patch_label = np.delete(self.patch_label, index, axis=0)
-
-        #         points = np.delete(points, index, axis=0)
-        #         labels = np.delete(labels, index, axis=0)
-
-        #         idx = point in self.user_annotations[:, :3]
-        #         if idx:  # Remove point to self.user_annotation
-        #             idx = np.where(points in self.user_annotations[:, :3])[0][0]
-
-        #             self.user_annotations = np.delete(
-        #                 self.user_annotations, index, axis=0
-        #             )
+            # Remove point from layer
+            points = np.delete(points, index, axis=0)
+            labels = np.delete(labels, index, axis=0)
 
         self.create_point_layer(points, labels, "Particle_BLR_is_Uncertain")
 
@@ -1803,3 +1708,34 @@ class AWSWidget_7(Container):
 
     def CEvent(self, viewer):
         self.key_event(viewer, 2)
+
+
+class PlotPopup(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Napari Active Learning training progress")
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout()
+        plt.style.use(["dark_background"])
+
+        self.figure = plt.figure()
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
+        self.setLayout(layout)
+
+    def update_plot(self, y_values):
+        y_values = [round(value, 3) for value in y_values]
+
+        x_values = np.arange(
+            len(y_values)
+        )  # Automatically generate x-axis values based on length of y_values
+
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.plot(x_values, y_values, "-bo", label="line with marker")
+        ax.set_xlabel("Training step")
+        ax.set_ylabel("Score")
+        self.canvas.draw()

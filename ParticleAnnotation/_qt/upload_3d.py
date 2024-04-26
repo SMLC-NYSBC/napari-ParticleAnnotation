@@ -10,7 +10,7 @@ from magicgui.widgets import (
     Label,
 )
 
-from ParticleAnnotation.cloud.aws_api_3d import url
+from particleannotation.cloud.aws_api_3d import url
 from napari.utils.notifications import show_info
 from napari import Viewer
 

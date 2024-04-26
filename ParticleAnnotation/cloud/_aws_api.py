@@ -5,7 +5,7 @@ from typing import List
 
 from scipy.ndimage import maximum_filter
 
-from ParticleAnnotation.cloud.datatypes import Consensus, String, InitialValues
+from particleannotation.cloud.datatypes import Consensus, String, InitialValues
 
 import numpy as np
 import torch
@@ -15,39 +15,39 @@ from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import StreamingResponse
 from topaz.stats import normalize
 
-from ParticleAnnotation.cloud.utils import (
+from particleannotation.cloud.utils import (
     numpy_array_to_bytes_io,
     get_model_name_and_weights,
 )
 
-# from ParticleAnnotation.utils.load_data import load_image, downsample
-from ParticleAnnotation.utils.load_data import (
+# from particleannotation.utils.load_data import load_image, downsample
+from particleannotation.utils.load_data import (
     load_template,
     load_coordinates,
     load_tomogram,
 )
 
-# from ParticleAnnotation.utils.model.active_learning_model import (
+# from particleannotation.utils.model.active_learning_model import (
 #     BinaryLogisticRegression,
 #     initialize_model,
 #     label_points_to_mask,
 # )
-from ParticleAnnotation.utils.model.active_learning_model import (
+from particleannotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
     predict_3d_with_AL,
     stack_all_labels,
 )
 
-# from ParticleAnnotation.utils.model.utils import get_device
-from ParticleAnnotation.utils.model.utils import (
+# from particleannotation.utils.model.utils import get_device
+from particleannotation.utils.model.utils import (
     correct_coord,
     find_peaks,
     get_device,
     get_random_patch,
     rank_candidate_locations,
 )
-from ParticleAnnotation.utils.viewer.viewer_functionality import (
+from particleannotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )

@@ -29,7 +29,7 @@ from scipy.ndimage import maximum_filter
 from napari.layers import Points
 from napari.utils.notifications import show_info
 import napari
-from ParticleAnnotation.utils.model.active_learning_model import (
+from particleannotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     initialize_model,
     label_points_to_mask,
@@ -37,20 +37,20 @@ from ParticleAnnotation.utils.model.active_learning_model import (
     update_true_labels,
 )
 
-from ParticleAnnotation.utils.load_data import (
+from particleannotation.utils.load_data import (
     downsample,
     load_template,
     load_coordinates,
     save_coordinates,
 )
-from ParticleAnnotation.utils.model.utils import (
+from particleannotation.utils.model.utils import (
     rank_candidate_locations,
     get_device,
     get_random_patch,
     correct_coord,
     find_peaks,
 )
-from ParticleAnnotation._qt.viewer_utils import (
+from particleannotation._qt.viewer_utils import (
     ViewerModel,
     QtViewerWrap,
     get_property_names,

@@ -1,6 +1,6 @@
 import numpy as np
 
-from ParticleAnnotation.utils.model.utils import correct_coord
+from particleannotation.utils.model.utils import correct_coord
 
 
 def draw_patch_and_scores(
@@ -57,23 +57,34 @@ def build_gird_with_particles(
     gap_size = 2
 
     for i in patch_points:
-        if correct:
-            i = correct_coord(np.array(i), patch_corner, True)
-        else:
-            i = np.array(i)
+        i_ = correct_coord(np.array(i), patch_corner, True)
+        i = np.array(i)
+
+        i_min_ = np.max((i_ - patch_size, [0, 0, 0]), axis=0).astype(np.int16)
+        i_max_ = np.max((i_ + patch_size, [0, 0, 0]), axis=0).astype(np.int16)
 
         i_min = np.max((i - patch_size, [0, 0, 0]), axis=0).astype(np.int16)
         i_max = np.max((i + patch_size, [0, 0, 0]), axis=0).astype(np.int16)
 
         crop_particle = img_process[
-            i_min[0] : i_max[0], i_min[1] : i_max[1], i_min[2] : i_max[2]
+            i_min_[0] : i_max_[0], i_min_[1] : i_max_[1], i_min_[2] : i_max_[2]
         ]
-        crop_tm_score = tm_scores[
-            tm_idx,
-            i_min[0] : i_max[0],
-            i_min[1] : i_max[1],
-            i_min[2] : i_max[2],
-        ]
+
+        if correct:
+            crop_tm_score = tm_scores[
+                tm_idx,
+                i_min_[0] : i_max_[0],
+                i_min_[1] : i_max_[1],
+                i_min_[2] : i_max_[2],
+            ]
+        else:
+            crop_tm_score = tm_scores[
+                tm_idx,
+                i_min[0] : i_max[0],
+                i_min[1] : i_max[1],
+                i_min[2] : i_max[2],
+            ]
+
         crop_particles.append(crop_particle)
         crop_tm_scores.append(crop_tm_score)
 

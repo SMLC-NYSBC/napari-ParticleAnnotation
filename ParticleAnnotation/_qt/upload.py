@@ -12,7 +12,7 @@ from magicgui.widgets import (
 from napari.utils.notifications import show_info
 from napari import Viewer
 
-from ParticleAnnotation.cloud.aws_api import url
+from particleannotation.cloud.aws_api import url
 
 
 class WidgetUpload(Container):

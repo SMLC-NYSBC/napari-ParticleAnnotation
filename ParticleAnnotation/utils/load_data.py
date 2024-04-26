@@ -7,7 +7,7 @@ import tifffile.tifffile as tiff
 import torch
 import starfile
 import torch.nn.functional as F
-from ParticleAnnotation.utils.model.utils import get_device
+from particleannotation.utils.model.utils import get_device
 from qtpy.QtWidgets import QFileDialog
 
 
@@ -58,11 +58,12 @@ def load_coordinates(path):
     elif path.endswith(".star"):
         # Implement reading of .star file
         data = starfile.read(path)
-        x = data["rlnCoordinateX"]
-        y = data["rlnCoordinateY"]
-        z = data["rlnCoordinateZ"]
-        data = np.column_stack((x, y, z))
-        return None, None
+        x = np.array(data["_rlnCoordinateX"])
+        y = np.array(data["_rlnCoordinateY"])
+        z = np.array(data["_rlnCoordinateZ"])
+        c = np.array(data["_rlnConfidence"])
+        data = np.column_stack((z, y ,x))
+        return data, c
     elif path.endswith(".txt"):
         data = np.genfromtxt(path, delimiter=",", dtype=float)
     elif path.endswith(".npy"):

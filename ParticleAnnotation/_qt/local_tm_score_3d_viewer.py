@@ -27,25 +27,25 @@ from qtpy.QtWidgets import QFileDialog
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
 from PyQt5.QtWidgets import QVBoxLayout
 
-from ParticleAnnotation.utils.load_data import (
+from particleannotation.utils.load_data import (
     load_template,
     load_coordinates,
     load_tomogram,
 )
-from ParticleAnnotation.utils.model.active_learning_model import (
+from particleannotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
     predict_3d_with_AL,
     stack_all_labels,
 )
-from ParticleAnnotation.utils.model.utils import (
+from particleannotation.utils.model.utils import (
     correct_coord,
     find_peaks,
     get_device,
     get_random_patch,
     rank_candidate_locations,
 )
-from ParticleAnnotation.utils.viewer.viewer_functionality import (
+from particleannotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
     draw_patch_and_scores,
 )
@@ -144,7 +144,7 @@ class AnnotationWidget(Container):
             ),
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
-        self.pi = LineEdit(name="Ratio of particles [%]", value=0.01)
+        self.pi = LineEdit(name="Fraction of particles [%]", value=0.01)
         self.pi.changed.connect(self._pdb_id_update)
         self.gauss = LineEdit(name="Gaussian filter size", value=1)
 
@@ -554,7 +554,7 @@ class AnnotationWidget(Container):
             self.tm_scores[self.tm_idx], "TM_Score", transparency=True, visibility=False
         )
         self.create_image_layer(
-            self.logits_full, "Sigmoid", transparency=True, range_=(0, 1)
+            self.logits_full, "Prediction", transparency=True, range_=(0, 1)
         )
 
         self.create_point_layer(
@@ -634,6 +634,7 @@ class AnnotationWidget(Container):
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
         self.init, self.init_done, self.AL, self.Predict = True, False, False, False
         self.AL_weights = None
+        self.logits_patch, self.logits_full = None, None
 
     """""" """""" """""" """
     Viewer functionality
@@ -840,7 +841,7 @@ class AnnotationWidget(Container):
 
         if self.logits_full is not None:
             self.create_image_layer(
-                self.logits_full, name="Sigmoid", transparency=True, visibility=False
+                self.logits_full, name="Prediction", transparency=True, visibility=False
             )
 
         if self.patch_corner is not None:
@@ -1206,6 +1207,7 @@ class AnnotationWidget(Container):
         """
         General export function to .star file format
         """
+        name = f"{self.filename}_{self.pdb_id.value}_{name}"
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File",
@@ -1300,7 +1302,7 @@ class AnnotationWidget(Container):
                 (prediction, np.repeat(self.pdb_id.value, len(prediction))[:, None])
             )
 
-            self._export(prediction, f"{self.pdb_id.value}_prediction.star")
+            self._export(prediction, "Prediction.star")
         except:
             pass
 
@@ -1333,7 +1335,7 @@ class AnnotationWidget(Container):
                 (prediction, np.repeat(self.pdb_id.value, len(prediction))[:, None])
             )
 
-            self._export(prediction, f"{self.pdb_id.value}_prediction_filtered.star")
+            self._export(prediction, "Prediction_filtered.star")
 
         except:
             pass

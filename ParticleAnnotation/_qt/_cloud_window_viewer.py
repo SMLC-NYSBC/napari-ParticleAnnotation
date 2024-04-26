@@ -24,16 +24,16 @@ from napari.layers import Points
 import napari
 from scipy.spatial import KDTree
 
-from ParticleAnnotation.cloud.aws_api import url
+from particleannotation.cloud.aws_api import url
 
-from ParticleAnnotation._qt.viewer_utils import (
+from particleannotation._qt.viewer_utils import (
     ViewerModel,
     QtViewerWrap,
     get_property_names,
     copy_layer,
     OwnPartial,
 )
-from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
+from particleannotation.cloud.utils import bytes_io_to_numpy_array
 
 
 class MultipleViewerWidget(QSplitter):

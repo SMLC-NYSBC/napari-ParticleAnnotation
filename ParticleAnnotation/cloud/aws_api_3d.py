@@ -1,4 +1,3 @@
-import json
 from os import listdir
 from typing import List
 
@@ -6,28 +5,27 @@ import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from topaz.stats import normalize
 
-from ParticleAnnotation.cloud.utils import (
+from particleannotation.cloud.utils import (
     numpy_array_to_bytes_io,
 )
-from ParticleAnnotation.utils.scale import scale_image
-from ParticleAnnotation.utils.load_data import (
+from particleannotation.utils.scale import scale_image
+from particleannotation.utils.load_data import (
     load_template,
     load_tomogram,
 )
-from ParticleAnnotation.utils.model.active_learning_model import (
+from particleannotation.utils.model.active_learning_model import (
     BinaryLogisticRegression,
     label_points_to_mask,
     predict_3d_with_AL,
     stack_all_labels,
 )
-from ParticleAnnotation.utils.model.utils import (
+from particleannotation.utils.model.utils import (
     correct_coord,
     find_peaks,
     rank_candidate_locations,
 )
-from ParticleAnnotation.utils.viewer.viewer_functionality import draw_patch_and_scores
+from particleannotation.utils.viewer.viewer_functionality import draw_patch_and_scores
 
 app = FastAPI()
 # url = "http://localhost:8000/"  # Debugging
@@ -121,9 +119,14 @@ async def get_raw_tomos(f_name: str, dataset: str, high_res: int):
     )
 
     if not bool(high_res):
-        tomogram, _ = scale_image(
-            scale=[125, 720, 511], image=tomogram, nn=False, device="cpu"
-        )
+        if dataset == '7':
+            tomogram, _ = scale_image(
+                scale=[125, 720, 511], image=tomogram, nn=False, device="cpu"
+            )
+        else:
+            tomogram, _ = scale_image(
+                scale=[187, 720, 511], image=tomogram, nn=False, device="cpu"
+            )
 
     min_ = tomogram.min()
     max_ = tomogram.max()
@@ -156,12 +159,20 @@ async def get_raw_templates(f_name: str, dataset: str, pdb_name: str, high_res: 
             template = template[0, :]
 
         if not bool(high_res):
-            template, _ = scale_image(
-                scale=[125, 720, 511],
-                image=template.astype(np.float32),
-                nn=False,
-                device="cpu",
-            )
+            if dataset == '7':
+                template, _ = scale_image(
+                    scale=[125, 720, 511],
+                    image=template.astype(np.float32),
+                    nn=False,
+                    device="cpu",
+                )
+            else:
+                template, _ = scale_image(
+                    scale=[187, 720, 511],
+                    image=template.astype(np.float32),
+                    nn=False,
+                    device="cpu",
+                )
 
         min_ = template.min()
         max_ = template.max()
@@ -475,12 +486,20 @@ async def show_tomogram(
     peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
 
     if not bool(high_res):
-        logits_full, _ = scale_image(
-            scale=[125, 720, 511],
-            image=logits_full.astype(np.float32),
-            nn=False,
-            device="cpu",
-        )
+        if dataset == '7':
+            logits_full, _ = scale_image(
+                scale=[125, 720, 511],
+                image=logits_full.astype(np.float32),
+                nn=False,
+                device="cpu",
+            )
+        else:
+            logits_full, _ = scale_image(
+                scale=[187, 720, 511],
+                image=logits_full.astype(np.float32),
+                nn=False,
+                device="cpu",
+            )
 
     min_ = logits_full.min()
     max_ = logits_full.max()
@@ -542,12 +561,20 @@ async def predict(
     peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
 
     if not bool(high_res):
-        logits_full, _ = scale_image(
-            scale=[125, 720, 511],
-            image=logits_full.astype(np.float32),
-            nn=False,
-            device="cpu",
-        )
+        if dataset == '7':
+            logits_full, _ = scale_image(
+                scale=[125, 720, 511],
+                image=logits_full.astype(np.float32),
+                nn=False,
+                device="cpu",
+            )
+        else:
+            logits_full, _ = scale_image(
+                scale=[187, 720, 511],
+                image=logits_full.astype(np.float32),
+                nn=False,
+                device="cpu",
+            )
 
     min_ = logits_full.min()
     max_ = logits_full.max()

@@ -1,3 +1,4 @@
+import uuid
 import requests
 import numpy as np
 from magicgui.widgets import (
@@ -20,22 +21,22 @@ from napari_bbox import BoundingBoxLayer
 import torch
 import pandas as pd
 
-from ParticleAnnotation.utils.load_data import (
+from particleannotation.utils.load_data import (
     load_coordinates,
 )
-from ParticleAnnotation.utils.scale import scale_image
-from ParticleAnnotation.utils.model.utils import (
+from particleannotation.utils.scale import scale_image
+from particleannotation.utils.model.utils import (
     correct_coord,
     get_device,
     get_random_patch,
 )
-from ParticleAnnotation.utils.viewer.viewer_functionality import (
+from particleannotation.utils.viewer.viewer_functionality import (
     build_gird_with_particles,
 )
 import starfile
 
-from ParticleAnnotation.cloud.utils import bytes_io_to_numpy_array
-from ParticleAnnotation._qt.local_tm_score_3d_viewer import PlotPopup
+from particleannotation.cloud.utils import bytes_io_to_numpy_array
+from particleannotation._qt.local_tm_score_3d_viewer import PlotPopup
 
 colormap_for_display = "Spectral"
 
@@ -117,7 +118,8 @@ class AWSWidget_3(Container):
         self.click_add_point_callback = None
 
         spacer_1 = Label(value="------------------- Options --------------------")
-        self.url = LineEdit(name="Server", value="3.230.8.116")
+        # "3.230.8.116"
+        self.url = "3.230.8.116"
         self.resolution = CheckBox(name="High-Res", value=False)
         self.box_size = LineEdit(name="Model Mask Size [px]", value=5)
         self.filter_size = LineEdit(name="Particle size [px]", value=15)
@@ -132,7 +134,7 @@ class AWSWidget_3(Container):
             ),
         )
         self.pdb_id.changed.connect(self._pdb_id_update)
-        self.pi = LineEdit(name="Ratio of particles [%]", value=0.01)
+        self.pi = LineEdit(name="Fraction of particles [%]", value=0.01)
         self.pi.changed.connect(self._pdb_id_update)
         self.gauss = LineEdit(name="Gaussian filter size", value=1)
 
@@ -156,7 +158,7 @@ class AWSWidget_3(Container):
         self.predict.clicked.connect(self._predict)
         self.filter_particle_by_confidence = FloatSlider(
             name="Filter Particle",
-            value=0.5,
+            value=0.0,
             min=0,
             max=1,
         )
@@ -195,7 +197,6 @@ class AWSWidget_3(Container):
                 ),
                 HBox(
                     widgets=[
-                        self.url,
                         self.resolution,
                     ]
                 ),
@@ -256,6 +257,11 @@ class AWSWidget_3(Container):
                         self.show_particle_grid,
                     ]
                 ),
+            ]
+        )
+
+        widget_left = VBox(
+            widgets=[
                 HBox(
                     widgets=[
                         spacer_5,
@@ -290,11 +296,11 @@ class AWSWidget_3(Container):
                         self.reset_session,
                     ]
                 ),
-            ]
-        )
+                ])
 
         widget.max_width = 400
         self.napari_viewer.window.add_dock_widget(widget, area="right")
+        self.napari_viewer.window.add_dock_widget(widget_left, area="left")
 
         self.device_ = get_device()
         show_info(f"Active learning model runs on: {self.device_}")
@@ -310,7 +316,7 @@ class AWSWidget_3(Container):
         # Call API for response
         try:
             response = requests.get(
-                url=f"http://{self.url.value}:8000/" + "list_tomograms",
+                url=f"http://{self.url}:8000/" + "list_tomograms",
                 params={"dataset": "3"},
             )
 
@@ -321,13 +327,13 @@ class AWSWidget_3(Container):
                 return tuple(self.file_list)
             else:
                 show_info(
-                    f"Connection Error to http://{self.url.value}:8000/. With error code: {response.status_code}."
+                    f"Connection Error to http://{self.url}:8000/. With error code: {response.status_code}."
                 )
                 return ()
 
         except:
             show_info(
-                f"Connection Error to http://{self.url.value}:8000/. Check if server is running."
+                f"Connection Error to http://{self.url}:8000/. Check if server is running."
             )
             return ()
 
@@ -345,7 +351,7 @@ class AWSWidget_3(Container):
         if self.tm_list is None:
             try:
                 response = requests.get(
-                    f"http://{self.url.value}:8000/" + "list_templates",
+                    f"http://{self.url}:8000/" + "list_templates",
                     params={"tomo_name": self.image_name, "dataset": "3"},
                     timeout=None,
                 )
@@ -354,13 +360,13 @@ class AWSWidget_3(Container):
                     self.tm_list = response.json()
                 else:
                     show_info(
-                        f"Connection Error to http://{self.url.value}:8000/. With error code: {response.status_code}."
+                        f"Connection Error to http://{self.url}:8000/. With error code: {response.status_code}."
                     )
                     self.tm_list = None
             except:
                 self.tm_list = None
                 show_info(
-                    f"Connection Error to http://{self.url.value}:8000/. Check if server is running."
+                    f"Connection Error to http://{self.url}:8000/. Check if server is running."
                 )
 
         if not self.init_done:
@@ -370,10 +376,10 @@ class AWSWidget_3(Container):
 
             # Call API for response
             response = requests.get(
-                url=f"http://{self.url.value}:8000/get_raw_tomos",
+                url=f"http://{self.url}:8000/get_raw_tomos",
                 params={
                     "f_name": self.image_name,
-                    "dataset": "7",
+                    "dataset": "3",
                     "high_res": int(self.resolution.value),
                 },
                 timeout=None,
@@ -386,7 +392,7 @@ class AWSWidget_3(Container):
 
             if not self.resolution.value:
                 self.img_process, _ = scale_image(
-                    scale=[250, 1440, 1022],
+                    scale=[374, 1440, 1022],
                     image=self.img_process,
                     nn=False,
                     device="cpu",
@@ -421,43 +427,13 @@ class AWSWidget_3(Container):
             except:
                 pass
 
-            response = requests.get(
-                url=f"http://{self.url.value}:8000/get_raw_templates",
-                params={
-                    "f_name": self.image_name,
-                    "dataset": "3",
-                    "pdb_name": self.tm_list[self.tm_idx],
-                    "high_res": int(self.resolution.value),
-                },
-                timeout=None,
-            )
-
-            # Decode bytes to np.array
-            self.tm_scores = bytes_io_to_numpy_array(response.content)
-            if not self.resolution.value:
-                self.tm_scores, _ = scale_image(
-                    scale=[250, 1440, 1022],
-                    image=self.tm_scores,
-                    nn=False,
-                    device="cpu",
-                )
-
-            if self.tm_scores.ndim == 4:
-                self.tm_scores = self.tm_scores[0, ...].astype(np.uint8)
-
-            self.create_image_layer(
-                self.tm_scores,
-                name="TM_Scores",
-                transparency=False,
-                visibility=False,
-            )
-
             self._pdb_id_update()
         else:
             return
 
     def _train_BLR_on_patch(self):
         if len(self.user_annotations) == 0:
+            # when 
             show_info("Please label any particle first!")
             return
 
@@ -490,7 +466,7 @@ class AWSWidget_3(Container):
 
         self.clean_viewer()
         response = requests.get(
-            f"http://{self.url.value}:8000/" + "re_train_model",
+            f"http://{self.url}:8000/" + "re_train_model",
             params={
                 "f_name": self.image_name,
                 "dataset": "3",
@@ -524,7 +500,7 @@ class AWSWidget_3(Container):
 
         """Draw new patch and find new particle for user to label"""
         response = requests.get(
-            f"http://{self.url.value}:8000/" + "new_proposal",
+            f"http://{self.url}:8000/" + "new_proposal",
             params={
                 "f_name": self.image_name,
                 "dataset": "3",
@@ -568,8 +544,16 @@ class AWSWidget_3(Container):
         filter_size = int(self.filter_size.value)
         gauss_filter = float(self.gauss.value)
 
+        # ToDo if self.weights_bias is None feed in zero weights with TM scores and ice -1
+        if self.weights_bias == None:
+            self.weights_bias = [
+                [0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1],
+                [0]
+                ]
+            self.weights_bias[0][self.tm_idx] = 1
+
         response = requests.get(
-            f"http://{self.url.value}:8000/" + "predict",
+            f"http://{self.url}:8000/" + "predict",
             params={
                 "f_name": self.image_name,
                 "dataset": "3",
@@ -592,7 +576,7 @@ class AWSWidget_3(Container):
 
         if not self.resolution.value:
             self.logits_full, _ = scale_image(
-                scale=[250, 1440, 1022], image=self.logits_full, nn=False, device="cpu"
+                scale=[374, 1440, 1022], image=self.logits_full, nn=False, device="cpu"
             )
 
         peaks = np.array([float(i) for i in response[2].split(",")])
@@ -607,7 +591,7 @@ class AWSWidget_3(Container):
             self.tm_scores[self.tm_idx], "TM_Score", transparency=True, visibility=False
         )
         self.create_image_layer(
-            self.logits_full, "Sigmoid", transparency=True, range_=(0, 1)
+            self.logits_full / 128, "Prediction", transparency=True, range_=(0, 1)
         )
 
         self.create_point_layer(
@@ -652,6 +636,8 @@ class AWSWidget_3(Container):
         self.user_annotations = np.zeros((0, 4))  # Z, Y, X, Label
         self.selected_particle_id = None
 
+        self.logits_full, self.logits_patch = None, None
+
         # Remove after testing
         self.particle = None
         self.confidence = None
@@ -684,6 +670,8 @@ class AWSWidget_3(Container):
         self.particle = None
         self.confidence = None
         self.patch_points, self.patch_label = np.zeros((0, 3)), np.zeros((1,))
+
+        self.logits_full, self.logits_patch = None, None
 
         # BLR model
         self.model, self.model_pred, self.weights, self.bias = None, None, None, None
@@ -722,13 +710,44 @@ class AWSWidget_3(Container):
         except:
             return
 
+        response = requests.get(
+            url=f"http://{self.url}:8000/get_raw_templates",
+            params={
+                "f_name": self.image_name,
+                "dataset": "3",
+                "pdb_name": self.tm_list[self.tm_idx],
+                "high_res": int(self.resolution.value),
+            },
+            timeout=None,
+        )
+
+        # Decode bytes to np.array
+        self.tm_scores = bytes_io_to_numpy_array(response.content)
+        if not self.resolution.value:
+            self.tm_scores, _ = scale_image(
+                scale=[374, 1440, 1022],
+                image=self.tm_scores,
+                nn=False,
+                device="cpu",
+            )
+
+        if self.tm_scores.ndim == 4:
+            self.tm_scores = self.tm_scores[0, ...].astype(np.uint8)
+
+        self.create_image_layer(
+            self.tm_scores,
+            name="TM_Scores",
+            transparency=False,
+            visibility=False,
+        )
+
         if self.init:
             filter_size = int(self.filter_size.value)
             # Restart user annotation storage
             self.user_annotations = np.zeros((0, 4))
 
             response = requests.get(
-                f"http://{self.url.value}:8000/" + "get_initial_peaks",
+                f"http://{self.url}:8000/" + "get_initial_peaks",
                 params={
                     "f_name": self.image_name,
                     "dataset": "3",
@@ -859,7 +878,7 @@ class AWSWidget_3(Container):
         if self.logits_full is None:
             if self.weights_bias is not None:
                 response = requests.get(
-                    f"http://{self.url.value}:8000/" + "show_tomogram",
+                    f"http://{self.url}:8000/" + "show_tomogram",
                     params={
                         "f_name": self.image_name,
                         "dataset": "3",
@@ -881,7 +900,7 @@ class AWSWidget_3(Container):
 
                 if not self.resolution.value:
                     self.logits_full, _ = scale_image(
-                        scale=[250, 1440, 1022],
+                        scale=[374, 1440, 1022],
                         image=self.logits_full,
                         nn=False,
                         device="cpu",
@@ -906,7 +925,7 @@ class AWSWidget_3(Container):
 
         if self.logits_full is not None:
             self.create_image_layer(
-                self.logits_full, name="Sigmoid", transparency=True, visibility=False
+                self.logits_full, name="Prediction", transparency=True, visibility=False
             )
 
         if self.patch_corner != (0, 0, 0):
@@ -1007,7 +1026,7 @@ class AWSWidget_3(Container):
             self.create_image_layer(self.crop_grid_img_al, name="Particles_crops")
             if self.logits_patch is None:
                 self.create_image_layer(
-                    self.crop_grid_tm_scores_al,
+                    self.crop_grid_tm_scores_al / 128,
                     name="Particles_crops_scores",
                     transparency=True,
                     visibility=False,
@@ -1015,7 +1034,7 @@ class AWSWidget_3(Container):
                 )
             else:
                 self.create_image_layer(
-                    self.crop_grid_tm_scores_al,
+                    self.crop_grid_tm_scores_al / 128,
                     name="Particles_crops_sigmoid",
                     transparency=True,
                     visibility=False,
@@ -1260,6 +1279,19 @@ class AWSWidget_3(Container):
                     symbol="disc",
                     size=5,
                 )
+            else:
+                self.napari_viewer.add_points(
+                    particles_all,
+                    name="Particle_Prediction_Filtered",
+                    properties={"label": confidence_all},
+                    edge_color="black",
+                    face_color="label",
+                    face_colormap=colormap_for_display,
+                    edge_width=0.1,
+                    face_contrast_limits=(0, 1),
+                    symbol="disc",
+                    size=5,
+                )
         except Exception as e:
             pass
 
@@ -1271,6 +1303,7 @@ class AWSWidget_3(Container):
         """
         General export function to .star file format
         """
+        name = f"{self.filename}_{self.pdb_id.value}_{name}"
         # Save only user annotations (positive labels)
         filename, _ = QFileDialog.getSaveFileName(
             caption="Save File",
@@ -1284,12 +1317,17 @@ class AWSWidget_3(Container):
                 "_rlnCoordinateY",
                 "_rlnCoordinateX",
                 "_rlnConfidence",
+                "_rlnTomogramName",
+                "_rlnGroup",
+                "_rlnUserID",
+                "_rlnPDBID",
             ],
         )
         starfile.write(data, filename)
 
     def _export_particles_all(self):
         user_annotations = self.user_annotations.copy()
+        groups = np.repeat("user_annotations", len(user_annotations))
 
         try:
             prediction_particle = self.napari_viewer.layers["Particle_Prediction"].data
@@ -1305,14 +1343,33 @@ class AWSWidget_3(Container):
             prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
             min_, max_ = np.min(prediction_labels), np.max(prediction_labels)
 
-        user_annotations[user_annotations[:, 3] == 0, 3] = min_
-        user_annotations[user_annotations[:, 3] == 1, 3] = max_
-        data = np.concatenate((user_annotations, prediction))
+            user_annotations[user_annotations[:, 3] == 0, 3] = min_
+            user_annotations[user_annotations[:, 3] == 1, 3] = max_
+            data = np.concatenate((user_annotations, prediction))
 
+            groups = np.hstack((groups, np.repeat("predictions", len(prediction))))
+
+        data = np.hstack((data, np.repeat(self.image_name, len(data))[:, None]))
+        data = np.hstack((data, groups[:, None]))
+        data = np.hstack(
+            (data, np.repeat(str(uuid.UUID(int=uuid.getnode())), len(data))[:, None])
+        )
+        data = np.hstack((data, np.repeat(self.pdb_id.value, len(data))[:, None]))
+
+        print(data)
         self._export(data, "all_annotations.star")
 
     def _export_particles_labeled(self):
-        self._export(self.user_annotations.copy(), "user_annotations.star")
+        data = self.user_annotations.copy()
+
+        data = np.hstack((data, np.repeat(self.image_name, len(data))[:, None]))
+        data = np.hstack((data, np.repeat("user_annotations", len(data))[:, None]))
+        data = np.hstack(
+            (data, np.repeat(str(uuid.UUID(int=uuid.getnode())), len(data))[:, None])
+        )
+        data = np.hstack((data, np.repeat(self.pdb_id.value, len(data))[:, None]))
+
+        self._export(data, "user_annotations.star")
 
     def _export_particles_predict(self):
         try:
@@ -1320,13 +1377,30 @@ class AWSWidget_3(Container):
             prediction_labels = self.napari_viewer.layers[
                 "Particle_Prediction"
             ].properties["label"]
+
+            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
+
+            prediction = np.hstack(
+                (prediction, np.repeat(self.image_name, len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat("user_annotations", len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (
+                    prediction,
+                    np.repeat(str(uuid.UUID(int=uuid.getnode())), len(prediction))[
+                        :, None
+                    ],
+                )
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat(self.pdb_id.value, len(prediction))[:, None])
+            )
+
+            self._export(prediction, "Prediction.star")
         except:
-            prediction_particle, prediction_labels = [], []
-
-        prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
-
-        self.pdb_id.value
-        self._export(prediction, f"{self.pdb_id.value}_prediction.star")
+            pass
 
     def _export_particles_filter(self):
         try:
@@ -1336,12 +1410,31 @@ class AWSWidget_3(Container):
             prediction_labels = self.napari_viewer.layers[
                 "Particle_Prediction_Filtered"
             ].properties["label"]
+
+            prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
+
+            prediction = np.hstack(
+                (prediction, np.repeat(self.image_name, len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat("user_annotations", len(prediction))[:, None])
+            )
+            prediction = np.hstack(
+                (
+                    prediction,
+                    np.repeat(str(uuid.UUID(int=uuid.getnode())), len(prediction))[
+                        :, None
+                    ],
+                )
+            )
+            prediction = np.hstack(
+                (prediction, np.repeat(self.pdb_id.value, len(prediction))[:, None])
+            )
+
+            self._export(prediction, "Prediction_filtered.star")
+
         except:
-            prediction_particle, prediction_labels = [], []
-
-        prediction = np.hstack((prediction_particle, prediction_labels[:, None]))
-
-        self._export(prediction, f"{self.pdb_id.value}_prediction_filtered.star")
+            pass
 
     def _import_particles(self):
         """
@@ -1498,32 +1591,32 @@ class AWSWidget_3(Container):
                         np.insert(point, 3, [label], axis=1),
                         axis=0,
                     )
-        elif func == "remove":
-            if self.all_grid:
-                name = self.napari_viewer.layers.selection.active.name
-                point_layer = self.napari_viewer.layers[name]
+        # elif func == "remove":
+        #     if self.all_grid:
+        #         name = self.napari_viewer.layers.selection.active.name
+        #         point_layer = self.napari_viewer.layers[name]
 
-                self.user_annotations = np.delete(self.user_annotations, index, axis=0)
+        #         self.user_annotations = np.delete(self.user_annotations, index, axis=0)
 
-                points = point_layer.data
-                labels = point_layer.properties["label"]
+        #         points = point_layer.data
+        #         labels = point_layer.properties["label"]
 
-                points = np.delete(points, index, axis=0)
-                labels = np.delete(labels, index, axis=0)
-            else:
-                self.patch_points = np.delete(self.patch_points, index, axis=0)
-                self.patch_label = np.delete(self.patch_label, index, axis=0)
+        #         points = np.delete(points, index, axis=0)
+        #         labels = np.delete(labels, index, axis=0)
+        #     else:
+        #         self.patch_points = np.delete(self.patch_points, index, axis=0)
+        #         self.patch_label = np.delete(self.patch_label, index, axis=0)
 
-                points = np.delete(points, index, axis=0)
-                labels = np.delete(labels, index, axis=0)
+        #         points = np.delete(points, index, axis=0)
+        #         labels = np.delete(labels, index, axis=0)
 
-                idx = point in self.user_annotations[:, :3]
-                if idx:  # Remove point to self.user_annotation
-                    idx = np.where(points in self.user_annotations[:, :3])[0][0]
+        #         idx = point in self.user_annotations[:, :3]
+        #         if idx:  # Remove point to self.user_annotation
+        #             idx = np.where(points in self.user_annotations[:, :3])[0][0]
 
-                    self.user_annotations = np.delete(
-                        self.user_annotations, index, axis=0
-                    )
+        #             self.user_annotations = np.delete(
+        #                 self.user_annotations, index, axis=0
+        #             )
 
         self.create_point_layer(points, labels, "Particle_BLR_is_Uncertain")
 

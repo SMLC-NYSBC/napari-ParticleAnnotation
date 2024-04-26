@@ -142,3 +142,6 @@ dmypy.json
 
 api/data/models/topaz_al_model_000.pth
 *.avi
+*.star
+*.star~
+*.star
