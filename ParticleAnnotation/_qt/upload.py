@@ -2,17 +2,15 @@ from os.path import splitext
 
 import requests
 from PyQt5.QtWidgets import QFileDialog
-
 from magicgui.widgets import (
     Container,
     VBox,
     PushButton,
     Label,
 )
-from napari.utils.notifications import show_info
 from napari import Viewer
-
-from particleannotation.cloud.aws_api import url
+from napari.utils.notifications import show_info
+from particleannotation.cloud._aws_api import url
 
 
 class WidgetUpload(Container):

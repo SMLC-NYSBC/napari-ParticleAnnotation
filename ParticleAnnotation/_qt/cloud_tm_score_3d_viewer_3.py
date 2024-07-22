@@ -296,7 +296,8 @@ class AWSWidget_3(Container):
                         self.reset_session,
                     ]
                 ),
-                ])
+            ]
+        )
 
         widget.max_width = 400
         self.napari_viewer.window.add_dock_widget(widget, area="right")
@@ -433,7 +434,7 @@ class AWSWidget_3(Container):
 
     def _train_BLR_on_patch(self):
         if len(self.user_annotations) == 0:
-            # when 
+            # when
             show_info("Please label any particle first!")
             return
 
@@ -544,12 +545,8 @@ class AWSWidget_3(Container):
         filter_size = int(self.filter_size.value)
         gauss_filter = float(self.gauss.value)
 
-        # ToDo if self.weights_bias is None feed in zero weights with TM scores and ice -1
         if self.weights_bias == None:
-            self.weights_bias = [
-                [0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1],
-                [0]
-                ]
+            self.weights_bias = [[0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1], [0]]
             self.weights_bias[0][self.tm_idx] = 1
 
         response = requests.get(
@@ -874,7 +871,6 @@ class AWSWidget_3(Container):
                 ]
             ).squeeze()
 
-        # ToDo move to the Cloud
         if self.logits_full is None:
             if self.weights_bias is not None:
                 response = requests.get(

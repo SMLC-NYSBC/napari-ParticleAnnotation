@@ -3,7 +3,6 @@ import torch
 import torch.nn.functional as F
 from scipy.ndimage import maximum_filter, convolve
 
-
 size = (37, 37)
 
 

@@ -1,8 +1,8 @@
 import io
 from os import listdir
 
-import torch
 import numpy as np
+import torch
 
 
 def numpy_array_to_bytes_io(array: np.ndarray) -> io.BytesIO:

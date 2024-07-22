@@ -322,19 +322,15 @@ class AnnotationWidget(Container):
 
                 self.create_image_layer(img, name=name, transparency=False)
 
-            self.image_name = (
-                self.filename
-            ) = self.napari_viewer.layers.selection.active.name
+            self.image_name = self.filename = (
+                self.napari_viewer.layers.selection.active.name
+            )
             img = self.napari_viewer.layers[self.image_name]
             self.img_process = img.data
             self.img_process, _ = normalize(
                 self.img_process.copy(), method="affine", use_cuda=False
             )
 
-            # Load and pre-process tm_scores data
-            # ToDo 1 add regularizer for pushing the negative weights towards ice scores
-            # add fantom data which will push the scores down. Fore each label negative array
-            # ToDo 2: randome feature expansion with furier for all scores
             # Option Gaussian model
             self.tm_scores, self.tm_list = load_template()
 
@@ -535,7 +531,6 @@ class AnnotationWidget(Container):
         patch_size = int(self.patch_size.value)
         gauss_filter = float(self.gauss.value)
 
-        # ToDo Preiction of filamets with skeletonization and down scaling
         peaks, peaks_confidence, self.logits_full = predict_3d_with_AL(
             self.img_process,
             tm_scores=self.tm_scores,

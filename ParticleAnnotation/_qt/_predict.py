@@ -1,6 +1,5 @@
 import requests
 from imageio import imwrite
-
 from magicgui.widgets import (
     Container,
     VBox,
@@ -9,10 +8,10 @@ from magicgui.widgets import (
     FloatSlider,
     ComboBox,
 )
-from napari.utils.notifications import show_info
 from napari import Viewer
-
+from napari.utils.notifications import show_info
 from particleannotation.cloud.aws_api import url
+
 from particleannotation.cloud.utils import bytes_io_to_numpy_array
 
 

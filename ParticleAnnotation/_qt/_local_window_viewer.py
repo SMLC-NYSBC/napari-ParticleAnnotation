@@ -1,7 +1,8 @@
 import warnings
 
+import napari
+import numpy as np
 import scipy.ndimage as nd
-
 import torch
 from magicgui.widgets import (
     Container,
@@ -13,43 +14,17 @@ from magicgui.widgets import (
     LineEdit,
     FloatSlider,
 )
-
-from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QSplitter
-
 from napari import Viewer
+from napari.layers import Points
+from napari.utils.notifications import show_info
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QFileDialog
+from qtpy.QtWidgets import QSplitter
+from scipy.ndimage import maximum_filter
 from scipy.spatial import KDTree
 from topaz.stats import normalize
 from vispy.geometry import Rect
 
-import numpy as np
-from qtpy.QtWidgets import QFileDialog
-
-from scipy.ndimage import maximum_filter
-from napari.layers import Points
-from napari.utils.notifications import show_info
-import napari
-from particleannotation.utils.model.active_learning_model import (
-    BinaryLogisticRegression,
-    initialize_model,
-    label_points_to_mask,
-    predict_3d_with_AL,
-    update_true_labels,
-)
-
-from particleannotation.utils.load_data import (
-    downsample,
-    load_template,
-    load_coordinates,
-    save_coordinates,
-)
-from particleannotation.utils.model.utils import (
-    rank_candidate_locations,
-    get_device,
-    get_random_patch,
-    correct_coord,
-    find_peaks,
-)
 from particleannotation._qt.viewer_utils import (
     ViewerModel,
     QtViewerWrap,
@@ -57,6 +32,26 @@ from particleannotation._qt.viewer_utils import (
     copy_layer,
     copy_layer_viewer2,
     OwnPartial,
+)
+from particleannotation.utils.load_data import (
+    downsample,
+    load_template,
+    load_coordinates,
+    save_coordinates,
+)
+from particleannotation.utils.model.active_learning_model import (
+    BinaryLogisticRegression,
+    initialize_model,
+    label_points_to_mask,
+    predict_3d_with_AL,
+    update_true_labels,
+)
+from particleannotation.utils.model.utils import (
+    rank_candidate_locations,
+    get_device,
+    get_random_patch,
+    correct_coord,
+    find_peaks,
 )
 
 
@@ -710,8 +705,6 @@ class AnnotationWidgetv2(Container):
             self.x = torch.from_numpy(tm_score.copy()).float().permute(1, 2, 3, 0)
             self.x = self.x.reshape(-1, self.x.shape[-1])
 
-            # ToDo Use here rank_candidate_locations() set proposals to [] and
-            #  use this method to get entropy scores to pick top 10 entropy
             with torch.no_grad():
                 logits = self.model(self.x).reshape(*self.shape)
             logits = logits.cpu().detach()
@@ -835,7 +828,7 @@ class AnnotationWidgetv2(Container):
             self.model.fit(self.x, self.y.ravel(), weights=self.count.ravel())
 
             self.cur_proposal_index, self.proposals = rank_candidate_locations(
-                self.model, self.x, self.shape, self.proposals, id_=1
+                self.model, self.x
             )
 
             # Add point which model are least certain about
@@ -911,7 +904,7 @@ class AnnotationWidgetv2(Container):
             # Initialize dataset
             if self.img_process.ndim == 2:
                 self.x, _, p_label = initialize_model(
-                    self.img_process, img_name=self.image_layer_name
+                    self.img_process
                 )
 
                 self.y = label_points_to_mask([], self.shape, self.box_size.value)

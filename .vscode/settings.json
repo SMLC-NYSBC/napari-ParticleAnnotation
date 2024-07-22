@@ -1,9 +1,9 @@
 {
-	"[python]": {
-		"editor.defaultFormatter": "ms-python.black-formatter"
-	},
-	"python.formatting.provider": "none",
-	"cSpell.words": [
-		"Napari"
-	]
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter"
+  },
+  "python.formatting.provider": "none",
+  "cSpell.words": [
+    "Napari"
+  ]
 }

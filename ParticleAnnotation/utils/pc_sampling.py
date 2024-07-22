@@ -15,7 +15,8 @@ class DownSampling:
         else:
             self.sample = voxel
 
-        # If true downs sample with class ids. expect [ID x X x Y x (Z)] [[N, 3] or [N, 4]]
+        # If true downs sample with class ids.
+        # Expect [ID x X x Y x (Z)] [[N, 3] or [N, 4]]
         self.labels = labels
         self.KNN = KNN
 
@@ -65,11 +66,11 @@ class DownSampling:
                     rgb_df = rgb[idx]
 
                     coord_df, rgb_df = self.pc_down_sample(
-                        coord=coord_df, rgb=rgb_df, sampling=self.sample
+                        coord=coord_df, rgb=rgb_df
                     )
                     ds_rgb.append(rgb_df)
                 else:
-                    coord_df = self.pc_down_sample(coord=coord_df, sampling=self.sample)
+                    coord_df = self.pc_down_sample(coord=coord_df)
 
                 ds_pc.append(
                     np.hstack((np.repeat(id, len(coord_df)).reshape(-1, 1), coord_df))
@@ -79,9 +80,9 @@ class DownSampling:
         else:
             """Down-sample entire point cloud at once"""
             if rgb is not None:
-                return self.pc_down_sample(coord=coord, rgb=rgb, sampling=self.sample)
+                return self.pc_down_sample(coord=coord, rgb=rgb)
             else:
-                return self.pc_down_sample(coord=coord, sampling=self.sample)
+                return self.pc_down_sample(coord=coord)
 
 
 class VoxelDownSampling(DownSampling):

@@ -1,6 +1,8 @@
 from typing import Union, Sequence, List, Callable, Optional
-from particleannotation.utils.load_data import load_image, load_xyz
+
 from napari.types import LayerData
+
+from particleannotation.utils.load_data import load_image, load_xyz
 
 PathOrPaths = Union[str, Sequence[str]]
 ReaderFunction = Callable[[PathOrPaths], List[LayerData]]

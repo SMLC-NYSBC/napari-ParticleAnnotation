@@ -1,20 +1,18 @@
 import json
+import shutil
 from os import listdir, mkdir
 from os.path import isdir, isfile
 from typing import List
 
-from scipy.ndimage import maximum_filter
-
-from particleannotation.cloud.datatypes import Consensus, String, InitialValues
-
 import numpy as np
 import torch
-from fastapi.responses import JSONResponse
-import shutil
 from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.responses import StreamingResponse
+from scipy.ndimage import maximum_filter
 from topaz.stats import normalize
 
+from particleannotation.cloud.datatypes import Consensus, String, InitialValues
 from particleannotation.cloud.utils import (
     numpy_array_to_bytes_io,
     get_model_name_and_weights,
@@ -53,7 +51,7 @@ from particleannotation.utils.viewer.viewer_functionality import (
 )
 
 app = FastAPI()
-url = "http://3.230.8.116:8000/"
+url = "http://loaclhost:8000/"
 dir_ = "api/"
 formats = ("mrc", "rec", "tiff")
 

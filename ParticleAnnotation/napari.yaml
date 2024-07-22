@@ -1,5 +1,5 @@
 name: particleannotation
-display_name: Topaz Active Learning 
+display_name: Topaz Active Learning
 contributions:
   commands:
     # Read/Write files
@@ -18,47 +18,47 @@ contributions:
       python_name: particleannotation._qt.local_tm_score_3d_viewer:AnnotationWidget
       title: Local 3D TM Score
 
-    - id: particleannotation.viewer_tm_score_3d_ecoli
-      python_name: particleannotation._qt.local_tm_score_3d_viewer_ecoli:AnnotationWidget
-      title: Local 3D TM Score [Ecoli]
-
-    - id: particleannotation.viewer_cloud_tm_score_3d_3
-      python_name: particleannotation._qt.cloud_tm_score_3d_viewer_3:AWSWidget_3
-      title: AWS Cloud [3 protein mix]
-
-    - id: particleannotation.viewer_cloud_tm_score_3d_7
-      python_name: particleannotation._qt.cloud_tm_score_3d_viewer_7:AWSWidget_7
-      title: AWS Cloud [7 protein mix]
-
-    - id: particleannotation.viewer_cloud_tm_score_3d_ecoli
-      python_name: particleannotation._qt.cloud_tm_score_3d_viewer_ecoli:AWSWidget_ecoli
-      title: AWS Cloud [Ecoli]
+#    - id: particleannotation.viewer_tm_score_3d_ecoli
+#      python_name: particleannotation._qt.local_tm_score_3d_viewer_ecoli:AnnotationWidget
+#      title: Local 3D TM Score [Ecoli]
+#
+#    - id: particleannotation.viewer_cloud_tm_score_3d_3
+#      python_name: particleannotation._qt.cloud_tm_score_3d_viewer_3:AWSWidget_3
+#      title: AWS Cloud [3 protein mix]
+#
+#    - id: particleannotation.viewer_cloud_tm_score_3d_7
+#      python_name: particleannotation._qt.cloud_tm_score_3d_viewer_7:AWSWidget_7
+#      title: AWS Cloud [7 protein mix]
+#
+#    - id: particleannotation.viewer_cloud_tm_score_3d_ecoli
+#      python_name: particleannotation._qt.cloud_tm_score_3d_viewer_ecoli:AWSWidget_ecoli
+#      title: AWS Cloud [Ecoli]
 
   readers:
     - command: particleannotation.import_data
       accepts_directories: False
-      filename_patterns: ['*.mrc', '*.rec', '*.tiff', '*.tif', '*.am']
+      filename_patterns: [ '*.mrc', '*.rec', '*.tiff', '*.tif', '*.am' ]
     - command: particleannotation.import_xyz
       accepts_directories: False
-      filename_patterns: [ '*.csv','*.npy', '*.star']
+      filename_patterns: [ '*.csv','*.npy', '*.star' ]
 
   writers:
     - command: particleannotation.write_to_file
-      layer_types: ['points*', 'image*', 'shapes*']
-      filename_extensions: ['.csv']
+      layer_types: [ 'points*', 'image*', 'shapes*' ]
+      filename_extensions: [ '.csv' ]
 
   widgets:
     - command: particleannotation.viewer_tm_score_3d
       display_name: Local 3D TM Score
 
-    - command: particleannotation.viewer_tm_score_3d_ecoli
-      display_name: Local 3D TM Score [Ecoli]
-
-    - command: particleannotation.viewer_cloud_tm_score_3d_3
-      display_name: AWS Cloud [3 protein mix]
-
-    - command: particleannotation.viewer_cloud_tm_score_3d_7
-      display_name: AWS Cloud [7 protein mix]
-
-    - command: particleannotation.viewer_cloud_tm_score_3d_ecoli
-      display_name: AWS Cloud [Ecoli]
+#    - command: particleannotation.viewer_tm_score_3d_ecoli
+#      display_name: Local 3D TM Score [Ecoli]
+#
+#    - command: particleannotation.viewer_cloud_tm_score_3d_3
+#      display_name: AWS Cloud [3 protein mix]
+#
+#    - command: particleannotation.viewer_cloud_tm_score_3d_7
+#      display_name: AWS Cloud [7 protein mix]
+#
+#    - command: particleannotation.viewer_cloud_tm_score_3d_ecoli
+#      display_name: AWS Cloud [Ecoli]

@@ -42,7 +42,6 @@ def build_gird_with_particles(
     img_process: np.ndarray,
     tm_scores: np.ndarray,
     tm_idx: int,
-    box_size: int,
     correct=True,
 ):
     # Particles are in self.patch_points, self.patch_label

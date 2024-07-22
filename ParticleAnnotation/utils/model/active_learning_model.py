@@ -1,11 +1,14 @@
-import torch.nn.functional as F
+import io
+
+import numpy as np
+import requests
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from scipy.ndimage import gaussian_filter
 from scipy.ndimage import maximum_filter
 from scipy.optimize import minimize
-import numpy as np
 from topaz.model.factory import load_model
-import torch
-from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 
 from particleannotation.utils.model.utils import (
@@ -13,9 +16,6 @@ from particleannotation.utils.model.utils import (
     get_device,
     divide_grid,
 )
-import io
-import requests
-
 from particleannotation.utils.pc_sampling import VoxelDownSampling
 
 
@@ -37,7 +37,7 @@ def predict_3d_with_AL(
     #     init_model = torch.load(
     #         io.BytesIO(
     #             requests.get(
-    #                 "https://topaz-al.s3.dualstack.us-east-1.amazonaws.com/topaz3d.sav",
+    #                 "...",
     #                 timeout=(5, None),
     #             ).content
     #         )

@@ -104,8 +104,6 @@ async def list_templates(tomo_name: str, dataset: str):
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
-# # TODO new_model, upload_file_prediction, upload particles and import particles
-
 """
 Retrive data for the visualization
 """
@@ -119,7 +117,7 @@ async def get_raw_tomos(f_name: str, dataset: str, high_res: int):
     )
 
     if not bool(high_res):
-        if dataset == '7':
+        if dataset == "7":
             tomogram, _ = scale_image(
                 scale=[125, 720, 511], image=tomogram, nn=False, device="cpu"
             )
@@ -159,7 +157,7 @@ async def get_raw_templates(f_name: str, dataset: str, pdb_name: str, high_res: 
             template = template[0, :]
 
         if not bool(high_res):
-            if dataset == '7':
+            if dataset == "7":
                 template, _ = scale_image(
                     scale=[125, 720, 511],
                     image=template.astype(np.float32),
@@ -419,7 +417,6 @@ async def new_proposal(
         )
     )
 
-    # ToDo replace for procentiles
     min_ = logits_patch.min()
     max_ = logits_patch.max()
     logits_patch = ((logits_patch - min_) / (max_ - min_)) * 128
@@ -486,7 +483,7 @@ async def show_tomogram(
     peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
 
     if not bool(high_res):
-        if dataset == '7':
+        if dataset == "7":
             logits_full, _ = scale_image(
                 scale=[125, 720, 511],
                 image=logits_full.astype(np.float32),
@@ -561,7 +558,7 @@ async def predict(
     peaks_confidence = ",".join(map(str, peaks_confidence[order].flatten()))
 
     if not bool(high_res):
-        if dataset == '7':
+        if dataset == "7":
             logits_full, _ = scale_image(
                 scale=[125, 720, 511],
                 image=logits_full.astype(np.float32),

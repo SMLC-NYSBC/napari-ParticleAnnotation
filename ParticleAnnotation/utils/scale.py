@@ -24,6 +24,8 @@ def scale_image(
         image (np.ndarray, Optional): image data
         mask (np.ndarray, Optional): Optional binary mask image data
         scale (tuple): scale value for image
+        nn:
+        scale:
     """
     dim = 1
     type_i = image.dtype
@@ -87,7 +89,7 @@ def pil_LANCZOS(img: np.ndarray, scale: tuple, dtype: np.dtype) -> np.ndarray:
     Args:
         img: image array.
         scale: Scale array size.
-        dtype: Output dtype for scale array.
+        dtype: Output dtype for a scale array.
 
     Returns:
         no.ndarray: Up or Down scale 3D array.
@@ -102,7 +104,7 @@ def pil_LANCZOS(img: np.ndarray, scale: tuple, dtype: np.dtype) -> np.ndarray:
             scaled_image = image.resize((new_width, new_height), Image.LANCZOS)
             scaled.append(np.asarray(scaled_image, dtype=dtype))
 
-        # Convert list to 3D array
+        # Convert a list to 3D array
         img = np.array(scaled, dtype=dtype)
 
         # Down-sample each slice in the Z direction if 3D
@@ -129,12 +131,13 @@ def linear_scaling(
     img: np.ndarray, scale: tuple, dtype: np.dtype, device="cpu"
 ) -> np.ndarray:
     """
-    Scaling of 2D/3D array using trilinear method from pytorch
+    Scaling of 2D/3D array using a trilinear method from pytorch
 
     Args:
         img: image array.
         scale: Scale array size.
-        dtype: Output dtype for scale array.
+        dtype: Output dtype for a scale array.
+        device: Torch device for computation
 
     Returns:
         no.ndarray: Up or Down scale 3D array.
@@ -244,7 +247,8 @@ def area_scaling(
     Args:
         img: 3D array.
         scale: Scale array size.
-        dtype: Output dtype for scale array.
+        dtype: Output dtype for a scale array.
+        device: torch device for computation
 
     Returns:
         no.ndarray: Up or Down scale 3D array.

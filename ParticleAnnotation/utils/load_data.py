@@ -62,7 +62,7 @@ def load_coordinates(path):
         y = np.array(data["_rlnCoordinateY"])
         z = np.array(data["_rlnCoordinateZ"])
         c = np.array(data["_rlnConfidence"])
-        data = np.column_stack((z, y ,x))
+        data = np.column_stack((z, y, x))
         return data, c
     elif path.endswith(".txt"):
         data = np.genfromtxt(path, delimiter=",", dtype=float)
@@ -335,7 +335,7 @@ def load_xyz(path):
 
         # Load Star
         if _path.endswith(".star"):
-            xyz = None  # TODO: implement support for Star format
+            xyz = None
 
         if isinstance(xyz[0, 0], str):
             xyz = xyz[1:, :]

@@ -1,7 +1,9 @@
-from shutil import rmtree
 from os import rmdir
+from shutil import rmtree
+
 from fastapi.testclient import TestClient
 from particleannotation.cloud.aws_api import *
+
 from particleannotation.cloud.utils import bytes_io_to_numpy_array
 
 client = TestClient(app)

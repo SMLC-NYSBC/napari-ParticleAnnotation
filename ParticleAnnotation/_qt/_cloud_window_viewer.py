@@ -1,7 +1,6 @@
-from os.path import splitext
-
+import napari
+import numpy as np
 import requests
-
 from magicgui.widgets import (
     Container,
     VBox,
@@ -12,19 +11,13 @@ from magicgui.widgets import (
     ComboBox,
     HBox,
 )
+from napari import Viewer
+from napari.layers import Points
 from napari.utils.notifications import show_info
+from particleannotation.cloud._aws_api import url
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QSplitter
-
-from napari import Viewer
-
-import numpy as np
-
-from napari.layers import Points
-import napari
 from scipy.spatial import KDTree
-
-from particleannotation.cloud.aws_api import url
 
 from particleannotation._qt.viewer_utils import (
     ViewerModel,
@@ -93,7 +86,7 @@ class MultipleViewerWidget(QSplitter):
         points = np.round(event.position).astype(np.int32)
         points = np.where(points < 0, 0, points)
 
-        # Update the points layer in the target viewer with the mapped position
+        # Update the point layer in the target viewer with the mapped position
         if len(points) == 2:
             points = (0, points[0], points[1])
         self.points_layer.data = [points]
@@ -380,7 +373,7 @@ class AnnotationWidgetv2(Container):
         try:
             response = requests.get(url + "new_model")
 
-            # Update model name and indicate we are working on a new model not pre-trained
+            # Update the model name and indicate we are working on a new model not pre-trained
             self.model_name = response.json()
             self.model_type = "New"
         except:
@@ -393,7 +386,7 @@ class AnnotationWidgetv2(Container):
 
         Note:
             Sent to local machine images are already down-sample to reduce the size.
-            Shown image is just a visual, all calculations are handle by server.
+            The Shown image is just a visual, all calculations are handled by server.
 
          Returns:
               tuple: List of available pre-trained models

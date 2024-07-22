@@ -1,4 +1,5 @@
 from typing import Union, Sequence
+
 import numpy as np
 
 PathOrPaths = Union[str, Sequence[str]]

@@ -1,23 +1,18 @@
+from copy import deepcopy
 from enum import Enum
 from functools import partial
 
-from napari import Viewer
-
-from napari.components import ViewerModel
-from copy import deepcopy
-
-import numpy as np
-
-from packaging.version import parse as parse_version
-
 import napari
+import numpy as np
+from napari import Viewer
+from napari.components import ViewerModel
 from napari.components.viewer_model import ViewerModel
 from napari.layers import Image, Points, Layer
 from napari.qt import QtViewer
 from napari.utils.action_manager import action_manager
 from napari.utils.events.event import WarningEmitter
 from napari.utils.notifications import show_info
-
+from packaging.version import parse as parse_version
 
 NAPARI_GE_4_16 = parse_version(napari.__version__) > parse_version("0.4.16")
 

@@ -42,12 +42,6 @@ from particleannotation.utils.viewer.viewer_functionality import (
 class PredictionWidget(Container):
     def __init__(self, viewer_tm_score_3d: Viewer):
         """
-        ToDo
-            - centering of patches
-            - marge initialize blr to re-train
-            - make a clear gui
-                - Load data, Train, Predict, Utils
-            -
         """
         super().__init__(layout="vertical")
         self.napari_viewer = viewer_tm_score_3d
@@ -266,9 +260,9 @@ class PredictionWidget(Container):
         # Restart user annotation storage
         self.user_annotations = np.zeros((0, 4))
 
-        self.image_name = (
-            self.filename
-        ) = self.napari_viewer.layers.selection.active.name
+        self.image_name = self.filename = (
+            self.napari_viewer.layers.selection.active.name
+        )
 
         # Load and pre-process tm_scores data
         self.tm_scores, self.tm_idx = load_template(template=self.pdb_id.value)
